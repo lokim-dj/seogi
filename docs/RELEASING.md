@@ -2,8 +2,10 @@
 
 순서대로 합니다. 한 단계가 빨간불이면 다음으로 가지 않습니다. 판을 내는 것은 주인이 정합니다(AGENTS.md, Who decides).
 
-1.  **main 이 초록인지 봅니다.** 마지막 커밋의 Check 와 Build 가 모두 통과.
-2.  **버전을 세 곳에 올립니다.** `package.json` · `src-tauri/tauri.conf.json` · `src-tauri/Cargo.toml`. (`Cargo.lock` 은 빌드가 따라 고칩니다.) `bun run check:version` 이 맞는지 봐 줍니다.
+판을 내는 동안(4번 머지부터 7번 Publish 까지) main 에는 아무것도 머지하지 않습니다. 초안과 태그가 가리키는 커밋이 어긋납니다.
+
+1.  **main 이 초록인지 봅니다.** 마지막 커밋의 Check 가 통과. Build 는 앱 코드가 바뀐 커밋에만 돌므로, 앱 코드가 마지막으로 바뀐 커밋의 Build 가 통과했는지 봅니다(Actions › Build). 문서만 바뀐 커밋에는 Build 가 없습니다.
+2.  **버전을 올립니다.** `package.json` · `src-tauri/tauri.conf.json` · `src-tauri/Cargo.toml` 세 곳을 고치고, `cd src-tauri && cargo metadata --format-version 1 > /dev/null` 로 `Cargo.lock` 의 seogi 줄을 따라 바꿔 **`Cargo.lock` 도 같은 PR 에 넣습니다.** `bun run check:version` 이 네 곳이 맞는지 봐 줍니다.
 3.  **판 노트를 씁니다.** `docs/release-notes/v<버전>.md`. 이 파일이 없으면 Release 가 중간에 멈춥니다. 쓰는 사람 말로, 바뀐 점과 설치 방법만. 사람·회사 이름, AGENTS.md 의 Hard rules 가 피하라고 한 말은 쓰지 않습니다(`bun run check:public`).
 4.  **`chore: version <버전>` PR 을 머지합니다.**
 5.  **Actions › Release › Run workflow.** "Publish at once" 는 끕니다. 30분쯤 뒤 초안이 생깁니다. 초안은 주인만 봅니다.

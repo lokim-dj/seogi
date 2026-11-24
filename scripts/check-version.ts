@@ -1,5 +1,6 @@
-// The version is written in three files, and the Release workflow needs the
-// notes of that version (docs/release-notes/v<version>.md) or it stops halfway.
+// The version is written in three files and follows into Cargo.lock, and the
+// Release workflow needs the notes of that version
+// (docs/release-notes/v<version>.md) or it stops halfway.
 //   bun scripts/check-version.ts
 import fs from "fs";
 
@@ -11,6 +12,10 @@ const versions: Record<string, string | undefined> = {
   // The first `version =` line is the [package] one.
   "src-tauri/Cargo.toml": read("src-tauri/Cargo.toml").match(
     /^version\s*=\s*"([^"]+)"/m,
+  )?.[1],
+  // Cargo writes it here on the next build; a version PR carries it too.
+  "src-tauri/Cargo.lock": read("src-tauri/Cargo.lock").match(
+    /^name = "seogi"\nversion = "([^"]+)"/m,
   )?.[1],
 };
 
@@ -28,4 +33,4 @@ if (problems.length) {
   console.error(problems.join("\n"));
   process.exit(1);
 }
-console.log(`version ${unique[0]} in all three files, ${notes} exists`);
+console.log(`version ${unique[0]} in all four files, ${notes} exists`);
