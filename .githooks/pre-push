@@ -44,5 +44,9 @@ done
 
 python3 eval/synthetic/check_names.py
 bun run check:version
-bun run format:check
-bun run lint
+if [ -d node_modules ]; then
+  bun run format:check
+  bun run lint
+else
+  echo "no node_modules here (a fresh worktree?): formatting and lint left to CI" >&2
+fi
