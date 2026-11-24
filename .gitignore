@@ -41,6 +41,10 @@ blob-report/
 .direnv
 .envrc
 
+# Secrets never live in the repository
+.env
+.env.*
+
 # Nix build output
 result
 
