@@ -24,7 +24,8 @@
     "build:cjk-font": "bun scripts/build-cjk-font.ts",
     "check:cjk-font": "bun scripts/build-cjk-font.ts --check",
     "check:public": "bun scripts/check-public-text.ts",
-    "check:version": "bun scripts/check-version.ts"
+    "check:version": "bun scripts/check-version.ts",
+    "setup:hooks": "git config core.hooksPath .githooks"
   },
   "dependencies": {
     "@handy-computer/models": "0.2.3",

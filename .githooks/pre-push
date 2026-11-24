@@ -1,0 +1,24 @@
+#!/bin/sh
+# Runs before every push. Set it up once per clone: bun run setup:hooks
+#
+# The private lists (names, words; see scripts/check-public-text.ts) exist only
+# on the maintainer's computer, so this is the one place they can stop a name
+# before it becomes public. Everything else here also runs in CI.
+# Nothing runs on commit: small commits stay quick.
+set -eu
+export PATH="$HOME/.bun/bin:$HOME/.cargo/bin:$PATH"
+cd "$(git rev-parse --show-toplevel)"
+
+# The files as they are now, and the messages of the commits being pushed
+# (those no remote branch has yet).
+bun run check:public
+zero=0000000000000000000000000000000000000000
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue # deleting a branch
+  bun scripts/check-public-text.ts --messages "$local_sha" --not --remotes
+done
+
+python3 eval/synthetic/check_names.py
+bun run check:version
+bun run format:check
+bun run lint

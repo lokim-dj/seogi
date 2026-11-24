@@ -1,7 +1,8 @@
 // Keeps private things out of this public repository.
 //
 //   bun scripts/check-public-text.ts                  every tracked file
-//   bun scripts/check-public-text.ts --messages A..B  the commit messages in a range
+//   bun scripts/check-public-text.ts --messages <rev-list arguments>
+//                                                     the commit messages there
 //
 // 1. Shapes that never belong here: real-looking email addresses, phone
 //    numbers, access tokens, private keys. Checked everywhere, also in CI.
@@ -47,10 +48,11 @@ const SHAPES: [string, RegExp][] = [
   ],
   ["private key", /-----BEGIN [A-Z ]*PRIVATE KEY-----/g],
 ];
-// Reserved made-up domains (RFC 2606), keys spelled as fakes in tests, and
-// image names such as icon@2x.png.
+// Reserved made-up domains (RFC 2606), addresses nobody reads (the
+// co-author lines of commits), keys spelled as fakes in tests, and image
+// names such as icon@2x.png.
 const ALLOWED_SHAPE =
-  /\.(example|test|invalid)\b|example\.(com|org|net)|secret-key|@\dx\./;
+  /\.(example|test|invalid)\b|example\.(com|org|net)|^no-?reply@|secret-key|@\dx\./;
 
 // ---- the private folder --------------------------------------------------
 
@@ -150,12 +152,14 @@ function checkText(where: string, text: string, prose: boolean) {
 const git = (...args: string[]) =>
   execFileSync("git", args, { encoding: "utf8", maxBuffer: 1 << 28 });
 
-const range = process.argv.includes("--messages")
-  ? process.argv[process.argv.indexOf("--messages") + 1]
-  : undefined;
+// Everything after --messages is handed to `git rev-list`.
+const flag = process.argv.indexOf("--messages");
+const range = flag >= 0 ? process.argv.slice(flag + 1) : undefined;
 let what: string;
 if (range) {
-  const shas = git("rev-list", range).split("\n").filter(Boolean);
+  const shas = git("rev-list", ...range)
+    .split("\n")
+    .filter(Boolean);
   for (const sha of shas)
     checkText(
       `commit ${sha.slice(0, 10)}`,
