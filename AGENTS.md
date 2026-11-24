@@ -28,6 +28,32 @@ The product's main objects are **recordings and their minutes**. Dictation (hotk
 - **Third-party code keeps its notice.** A file derived from another project keeps that project's copyright line in its header, and the project is listed in `THIRD_PARTY_NOTICES.md`.
 - Push with the explicit URL form: `git push https://github.com/lokim-dj/seogi.git <ref>`.
 
+## How work lands
+
+One issue, one branch, one pull request, one commit on main.
+
+1. **Issue first.** Open one with the task template: the problem, what is true when it is done, what is left out. If you were given an issue number, use it.
+2. **Branch from fresh `origin/main`**, named `fix/123-short-name` (the prefix is the commit prefix). When another session may be using this folder, work in a worktree under `.claude/worktrees/` instead of switching branches here.
+3. **Only what the issue asks.** A problem you notice next door goes in a new issue, not in this branch.
+4. **Check it yourself.** Run the tests that touch the change. A screen change is looked at in the preview page. A change to transcription, chunking, speakers or minutes prompts carries the eval numbers before and after (principle 7).
+5. **Review before pushing.** A fresh agent that did not write the code reviews the branch with `.claude/agents/seogi-reviewer.md`. Fix and ask again. After two rounds of "needs fixes", stop and ask the maintainer.
+6. **Push through the hook.** `bun run setup:hooks` once per clone; the pre-push hook checks public text against the maintainer's private lists, which CI cannot see. Never skip it (`--no-verify`).
+7. **Pull request** from the template; the title is the commit line (`fix: …`), the body ends with `Closes #123`.
+8. **Merge by squash when both checks are green** (`text` and `rust` in `.github/workflows/check.yml`; `gh pr merge --squash`). Never get around a check (`--admin`).
+9. **Close the loop.** Comment on the issue: what changed, what turned out different from the issue, what is left. Remove the worktree and the branch.
+
+## Who decides
+
+The maintainer decides these. Bring options and a recommendation, then wait; silence is not a yes.
+
+- Anything that touches an original recording, or the files and layout of a meeting folder that people already have on disk.
+- Anything that sends audio, text or names off the computer, or moves a default from local and free to cloud or paid.
+- What the app is allowed to do on the system: entitlements, capabilities, the permission prompts and their wording.
+- The path to users: the workflows, the updater key and address, version numbers, publishing a release (see `docs/RELEASING.md`), the repository's settings and rules.
+- Reversing a decision recorded in `docs/adr/`, or adding a dependency or bundled file whose license is not MIT, Apache-2.0 or BSD.
+
+Everything else the agent decides, and writes the reason where the next reader will look: the commit body, or an ADR line marked `Decided by: agent`.
+
 ## Development commands
 
 Prerequisites: Rust (stable), Bun, CMake. See [BUILD.md](BUILD.md).
@@ -40,6 +66,9 @@ cd src-tauri && cargo test        # Rust tests
 bun run lint                      # ESLint
 bun run format                    # Prettier + cargo fmt
 bun run check:translations        # every locale has every key
+bun run check:public              # no private names, emails or tokens (private lists only on the maintainer's computer)
+bun run check:version             # the version agrees in three files and has release notes
+bun run setup:hooks               # once per clone: the pre-push hook
 ```
 
 On a Homebrew toolchain: `export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.bun/bin:$PATH"`.
@@ -117,7 +146,7 @@ To try things without touching your own meetings, point a development run at its
 
 **Text:** all user-facing strings go through i18next. Seogi's own screens keep theirs in `src/seogi/i18n/ko.ts` and `en.ts` (the type makes a missing English key a build error); other locales fall back to English. No emoji as UI icons. UI text is set in Gmarket Sans (bundled, see `THIRD_PARTY_NOTICES.md`), falling back to Pretendard.
 
-**Names in examples:** an invented name in a test, a fixture or a comment must not be a real one. `python3 eval/synthetic/check_names.py` compares the practice scripts against a private vocabulary when one is on the computer.
+**Names in examples:** an invented name in a test, a fixture or a comment must not be a real one. `python3 eval/synthetic/check_names.py` compares the practice scripts against a private vocabulary when one is on the computer, and `bun run check:public` compares every file with the private lists (in `~/seogi/private`, or `SEOGI_PRIVATE_DIR`) without printing them.
 
 **Errors the user must see** while not looking at the window go through `notices::raise` (`src-tauri/src/notices.rs`); Rust sends codes, the frontend maps them to text in `src/lib/notices.ts`.
 
