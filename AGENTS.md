@@ -30,17 +30,17 @@ The product's main objects are **recordings and their minutes**. Dictation (hotk
 
 ## How work lands
 
-One issue, one branch, one pull request, one commit on main.
+One pull request, one commit on main. Seogi has one maintainer, so the flow stays light.
 
-1. **Issue first.** Open one with the task template: the problem, what is true when it is done, what is left out. If you were given an issue number, use it.
-2. **Branch from fresh `origin/main`**, named `fix/123-short-name` (the prefix is the commit prefix). When another session may be using this folder, work in a worktree under `.claude/worktrees/` instead of switching branches here.
-3. **Only what the issue asks.** A problem you notice next door goes in a new issue, not in this branch.
+1. **Issue first only for a bigger change** (a feature, a behaviour change, anything on the "Who decides" list): open one with the task template — the problem, what is true when it is done, what is left out. A typo, wording or a small fix goes straight to a pull request. If you were given an issue number, use it.
+2. **Branch from fresh `origin/main`**, named `fix/short-name` (or `fix/123-short-name` with an issue; the prefix is the commit prefix). When another session may be using this folder, work in a worktree under `.claude/worktrees/` instead of switching branches here.
+3. **Only what was asked.** A problem you notice next door goes in its own pull request or issue, not in this branch.
 4. **Check it yourself.** Run the tests that touch the change. A screen change is looked at in the preview page. A change to transcription, chunking, speakers or minutes prompts carries the eval numbers before and after (principle 7).
-5. **Review before pushing.** A fresh agent that did not write the code reviews the branch with `.claude/agents/seogi-reviewer.md`. Fix and ask again. After two rounds of "needs fixes", stop and ask the maintainer.
-6. **Push through the hook.** `bun run setup:hooks` once per clone; the pre-push hook checks public text against the maintainer's private lists, which CI cannot see. Never skip it (`--no-verify`).
-7. **Pull request** from the template; the title is the commit line (`fix: …`), the body ends with `Closes #123`.
-8. **Merge by squash when both checks are green** (`text` and `rust` in `.github/workflows/check.yml`; `gh pr merge --squash`). Never get around a check (`--admin`).
-9. **Close the loop.** Comment on the issue: what changed, what turned out different from the issue, what is left. Remove the worktree and the branch.
+5. **One review.** Before the pull request is merged, an agent that did not write the code — another model when one is at hand — reviews the branch once with `.claude/agents/seogi-reviewer.md`. Fix what it confirms. If it still says "needs fixes" on something you cannot settle, ask the maintainer.
+6. **Push through the hook.** `bun run setup:hooks` once per clone; the pre-push hook checks what is pushed against the maintainer's private lists, which CI cannot see. Never skip it (`--no-verify`).
+7. **Pull request** from the template; the title is the commit line (`fix: …`); with an issue, the body ends with `Closes #123`. Check its title and body yourself (`bun scripts/check-public-text.ts --stdin`); the hook does not see them.
+8. **Merge by squash when both checks are green** (`text` and `rust` in `.github/workflows/check.yml`; `gh pr merge --squash`). main is protected: no direct push, no getting around a check.
+9. **Close the loop.** With an issue, comment on it: what changed, what turned out different, what is left. Remove the worktree and the branch.
 
 ## Who decides
 
