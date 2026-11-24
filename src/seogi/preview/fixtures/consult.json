@@ -1,0 +1,1180 @@
+{
+  "id": "20261120-140200-19bc",
+  "title": "이서진 1차 상담",
+  "title_is_auto": false,
+  "started_at_ms": 1795150920000,
+  "time_source": "file_name",
+  "duration_ms": 215875,
+  "origin": "imported",
+  "audio_file": "20261120_140200.m4a",
+  "source_path": "/Users/me/Downloads/20261120_140200.m4a",
+  "sha256": "776ca588ad64f00daf2250ebca2eacb4d32a9197cb0f1b317dfab285b22d3ccf",
+  "status": "done",
+  "stage": "",
+  "percent": 100,
+  "error": "",
+  "error_detail": "",
+  "attempts": 1,
+  "minutes_attempts": 1,
+  "queued_at_ms": 1795470042120,
+  "retry_at_ms": 0,
+  "template_id": "consult",
+  "people": ["김서윤", "박도현", "이서진"],
+  "place": "회의실A",
+  "marks_ms": [67000, 134000],
+  "event": {
+    "uid": "consult-1",
+    "title": "[회의실A] 이서진 / 1차 상담",
+    "start_ms": 1795150800000,
+    "end_ms": 1795154400000
+  },
+  "device": "",
+  "capture_note": "",
+  "transcript": {
+    "language": "ko",
+    "model": "handy-computer/whisper-large-v3-turbo-gguf/whisper-large-v3-turbo-Q8_0.gguf",
+    "segments": [
+      {
+        "start_ms": 1164,
+        "end_ms": 6244,
+        "speaker": 1,
+        "text": "안녕하세요 이서진 고객님 저는 디자인을 맡은 김서윤 실장입니다",
+        "confidence": 0.9325156,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 6828,
+        "end_ms": 14388,
+        "speaker": 2,
+        "text": "현장을 맡은 박도현 소장입니다. 오늘 한빛아파트 103동 1502호 실측 결과를 같이 보시겠습니다.",
+        "confidence": 0.9577122,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 15340,
+        "end_ms": 21060,
+        "speaker": 1,
+        "text": "네 안녕하세요 32평인데 예산은 4500만원 안쪽으로 맞추고 싶어요",
+        "confidence": 0.8976039,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 21060,
+        "end_ms": 28780,
+        "speaker": 1,
+        "text": "알겠습니다 먼저 거실부터 말씀드리면 우물천장을 살리고 간접등을 넣는 안을 준비했습니다",
+        "confidence": 0.8976039,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 28780,
+        "end_ms": 33340,
+        "speaker": 1,
+        "text": "간접등은 좋은데 우물천장은 너무 낮아 보이지 않을까요?",
+        "confidence": 0.8976039,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 33612,
+        "end_ms": 39812,
+        "speaker": 2,
+        "text": "지금 천장고가 2300밀리라서 우물천장탄을 100밀리만 내리면 답답하지 않습니다.",
+        "confidence": 0.9014104,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 40716,
+        "end_ms": 45116,
+        "speaker": 1,
+        "text": "그럼 그렇게 해주세요. 거실 아트월은 타일로 하고 싶어요.",
+        "confidence": 0.8310311,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 45116,
+        "end_ms": 51516,
+        "speaker": 1,
+        "text": "아트월은 600에 1200포세린 타일로 하고 줄눈은 밝은 회색으로 결정하겠습니다.",
+        "confidence": 0.8310311,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 51516,
+        "end_ms": 56180,
+        "speaker": 1,
+        "text": "좋아요. 그리고 현관에 중문을 꼭 달고 싶어요.",
+        "confidence": 0.8310311,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 56588,
+        "end_ms": 62028,
+        "speaker": 2,
+        "text": "중문은 3연동 슬라이딩으로 탈 수 있는데 신발장 폭을 150mm 줄여야 합니다.",
+        "confidence": 0.877063,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 62860,
+        "end_ms": 67520,
+        "speaker": 1,
+        "text": "신발장이 줄어드는 건 조금 고민되네요. 일단 생각해 볼게요.",
+        "confidence": 0.897925,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 68020,
+        "end_ms": 72700,
+        "speaker": 1,
+        "text": "네, 중문은 신발장 도면을 다시 그려서 금요일까지 보내드리겠습니다.",
+        "confidence": 0.897925,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 73820,
+        "end_ms": 77500,
+        "speaker": 1,
+        "text": "바닥은 마루로 할지 타일로 할지 아직 못 청했어요.",
+        "confidence": 0.897925,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 77920,
+        "end_ms": 82480,
+        "speaker": 2,
+        "text": "거실과 방은 각마루로 하고 주방만 타일로 나누는 분들이 많습니다",
+        "confidence": 0.89013517,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 83340,
+        "end_ms": 89280,
+        "speaker": 1,
+        "text": "아이가 있어서 마루가 좋겠어요. 방은 방마루로 해주세요.",
+        "confidence": 0.8305577,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 89286,
+        "end_ms": 92946,
+        "speaker": 3,
+        "text": "가게와 거실은 박마루, 주방 바닥은 타일로 정리하겠습니다.",
+        "confidence": 0.79772645,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 93676,
+        "end_ms": 95916,
+        "speaker": 1,
+        "text": "걸레바지는 꼭 신색이어야 하나요?",
+        "confidence": 0.88549876,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 96396,
+        "end_ms": 101936,
+        "speaker": 3,
+        "text": "걸레바지와 몰딩은 벽지색에 맞춰서 흰색 무광으로 통일하는 것을 권해드립니다.",
+        "confidence": 0.91696227,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 102668,
+        "end_ms": 106608,
+        "speaker": 1,
+        "text": "네 그렇게 해주세요. 도배는 실크 겹지로 하고 싶어요.",
+        "confidence": 0.833848,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 107148,
+        "end_ms": 111368,
+        "speaker": 2,
+        "text": "도배는 실크로 하면 이틀이 걸리고 마루 시공 전에 끝내야 합니다.",
+        "confidence": 0.88176394,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 111884,
+        "end_ms": 116444,
+        "speaker": 1,
+        "text": "주방은 상부장을 없애고 싶은데 수납이 부족할까 봐 걱정이에요.",
+        "confidence": 0.917698,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 116876,
+        "end_ms": 122876,
+        "speaker": 3,
+        "text": "상부장을 없애는 대신 하부장을 깊게 짜고 키 큰 장을 하나 넣으면 수납은 충분합니다.",
+        "confidence": 0.90734494,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 123340,
+        "end_ms": 125700,
+        "speaker": 1,
+        "text": "그건 견적을 보고 결정할게요",
+        "confidence": 0.7740774,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 126188,
+        "end_ms": 130728,
+        "speaker": 2,
+        "text": "주방 가구 견적은 제가 업체에 확인해서 다음 주 화요일까지 드리겠습니다.",
+        "confidence": 0.92039275,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 131596,
+        "end_ms": 134476,
+        "speaker": 1,
+        "text": "안방에는 붙박이장을 새로 짜고 싶어요",
+        "confidence": 0.8916575,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 134988,
+        "end_ms": 140368,
+        "speaker": 3,
+        "text": "붙박이장은 폭 2400에 슬라이딩 도어로 하면 280만원 정도입니다.",
+        "confidence": 0.86485195,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 140908,
+        "end_ms": 144948,
+        "speaker": 1,
+        "text": "생각보다 비싸네요. 여다지로 하면 얼마나 줄어드나요?",
+        "confidence": 0.9439574,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 145324,
+        "end_ms": 148464,
+        "speaker": 3,
+        "text": "여다지로 바꾸면 40만원 정도 줄어듭니다.",
+        "confidence": 0.9152245,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 148844,
+        "end_ms": 150344,
+        "speaker": 1,
+        "text": "그럼 여다지로 할게요",
+        "confidence": 0.71069396,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 151276,
+        "end_ms": 155936,
+        "speaker": 2,
+        "text": "샷시는 교체하지 않고 실리콘만 다시 쏘는 걸로 보시면 됩니다.",
+        "confidence": 0.9034958,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 156716,
+        "end_ms": 161376,
+        "speaker": 1,
+        "text": "샷시는 그대로 두는 걸로 하죠. 욕실 타일은 언제 고를 수 있나요?",
+        "confidence": 0.94295555,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 161836,
+        "end_ms": 166056,
+        "speaker": 3,
+        "text": "욕실 타일은 토요일 오후 2시에 쇼룸에서 같이 고르시면 됩니다.",
+        "confidence": 0.91765344,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 166668,
+        "end_ms": 169748,
+        "speaker": 1,
+        "text": "토요일은 괜찮아요. 남편도 같이 갈게요.",
+        "confidence": 0.9002746,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 170348,
+        "end_ms": 175148,
+        "speaker": 2,
+        "text": "공사기간은 4주로 보고 있고 착공은 12월 8일을 생각하고 있습니다.",
+        "confidence": 0.93325025,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 176140,
+        "end_ms": 180180,
+        "speaker": 1,
+        "text": "12월 8일이면 관리사무소에 공사 신고를 해야 하지요?",
+        "confidence": 0.93467575,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 180716,
+        "end_ms": 185956,
+        "speaker": 2,
+        "text": "네, 공사 신고와 엘리베이터 보양은 제가 착공 일주일 전까지 처리하겠습니다",
+        "confidence": 0.9270213,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 186732,
+        "end_ms": 189112,
+        "speaker": 1,
+        "text": "계약금은 얼마를 언제 드리면 되나요?",
+        "confidence": 0.9033133,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 189804,
+        "end_ms": 195224,
+        "speaker": 3,
+        "text": "계약금은 총액의 10%이고 계약서와 함께 이번 주안의 메일로 안내 드리겠습니다.",
+        "confidence": 0.900309,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 195948,
+        "end_ms": 200968,
+        "speaker": 1,
+        "text": "네 알겠습니다. 저는 집에 가서 냉장고 크기를 재서 알려드릴게요.",
+        "confidence": 0.90738046,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 201644,
+        "end_ms": 206524,
+        "speaker": 3,
+        "text": "감사합니다. 냉장고 치수만 주시면 주방 도면을 바로 고치겠습니다.",
+        "confidence": 0.9163651,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 207404,
+        "end_ms": 212024,
+        "speaker": 2,
+        "text": "그럼 오늘 정한 내용은 정리해서 보내드리겠습니다. 수고하셨습니다.",
+        "confidence": 0.94670635,
+        "unsure": false,
+        "overlap": false
+      },
+      {
+        "start_ms": 212876,
+        "end_ms": 215216,
+        "speaker": 1,
+        "text": "네 감사합니다. 안녕히 계세요.",
+        "confidence": 0.8680245,
+        "unsure": false,
+        "overlap": false
+      }
+    ],
+    "speakers": [
+      {
+        "id": 1,
+        "name": "김서윤 실장"
+      },
+      {
+        "id": 2,
+        "name": "박도현 소장"
+      },
+      {
+        "id": 3,
+        "name": "화자 3"
+      }
+    ],
+    "corrections": []
+  },
+  "stats": {
+    "audio_ms": 215875,
+    "speech_ms": 189136,
+    "chunks": 36,
+    "failed_chunks": 0,
+    "dropped_lines": 0,
+    "corrected": 0,
+    "diarized": true,
+    "diarize_skipped": null,
+    "max_speakers": 4,
+    "vad_ms": 118,
+    "diarize_ms": 6851,
+    "transcribe_ms": 26194
+  },
+  "minutes": [
+    {
+      "template_id": "consult",
+      "template_name": "고객 상담",
+      "title": "한빛아파트 1502호 상담",
+      "summary": "이서진 고객과 한빛아파트 32평 리모델링을 상담해 거실 천장과 바닥, 중문 방향을 정했다.",
+      "sections": [
+        {
+          "key": "our_tasks",
+          "title": "우리 숙제",
+          "kind": "actions",
+          "entries": [
+            {
+              "text": "신발장 도면을 다시 그려서 보내기로 했다.",
+              "owner": "김서윤",
+              "due": "금요일까지",
+              "sources": [
+                {
+                  "ms": 68020,
+                  "quote": "신발장 도면을 다시 그려서 금요일까지 보내드리겠습니다"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "주방 가구 견적을 업체에 확인해서 전달하기로 했다.",
+              "owner": "박도현",
+              "due": "다음 주 화요일까지",
+              "sources": [
+                {
+                  "ms": 126188,
+                  "quote": "주방 가구 견적은 제가 업체에 확인해서 다음 주 화요일까지 드리겠습니다"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "공사 신고와 엘리베이터 보양을 처리하기로 했다.",
+              "owner": "박도현",
+              "due": "착공 일주일 전까지",
+              "sources": [
+                {
+                  "ms": 180716,
+                  "quote": "공사 신고와 엘리베이터 보양은 제가 착공 일주일 전까지 처리하겠습니다"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "계약서와 함께 계약금 안내를 메일로 보내기로 했다.",
+              "owner": "",
+              "due": "이번 주안",
+              "sources": [
+                {
+                  "ms": 189804,
+                  "quote": "계약서와 함께 이번 주안의 메일로 안내 드리겠습니다"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "냉장고 치수를 받으면 주방 도면을 바로 고치기로 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 201644,
+                  "quote": "주방 도면을 바로 고치겠습니다"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "오늘 정한 내용을 정리해서 보내기로 했다.",
+              "owner": "박도현",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 207404,
+                  "quote": "오늘 정한 내용은 정리해서 보내드리겠습니다"
+                }
+              ],
+              "reasons": []
+            }
+          ]
+        },
+        {
+          "key": "customer_tasks",
+          "title": "고객 숙제",
+          "kind": "actions",
+          "entries": [
+            {
+              "text": "토요일 쇼룸에 남편과 함께 가기로 했다.",
+              "owner": "",
+              "due": "토요일",
+              "sources": [
+                {
+                  "ms": 166668,
+                  "quote": "토요일은 괜찮아요. 남편도 같이 갈게요"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "집에 가서 냉장고 크기를 재서 알려주기로 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 195948,
+                  "quote": "냉장고 크기를 재서 알려드릴게요"
+                }
+              ],
+              "reasons": []
+            }
+          ]
+        },
+        {
+          "key": "decisions",
+          "title": "결정 사항",
+          "kind": "items",
+          "entries": [
+            {
+              "text": "우물천장을 100밀리 내리는 안으로 하기로 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 40716,
+                  "quote": "그럼 그렇게 해주세요"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "아트월은 600에 1200포세린 타일, 줄눈은 밝은 회색으로 결정했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 45116,
+                  "quote": "600에 1200포세린 타일로 하고 줄눈은 밝은 회색으로 결정하겠습니다"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "방은 방마루로 하기로 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 83340,
+                  "quote": "방은 방마루로 해주세요"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "거실은 마루, 주방 바닥은 타일로 정리하기로 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 89286,
+                  "quote": "주방 바닥은 타일로 정리하겠습니다"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "걸레받이와 몰딩은 흰색 무광으로 통일하기로 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 102668,
+                  "quote": "네 그렇게 해주세요"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "붙박이장은 여닫이로 하기로 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 148844,
+                  "quote": "그럼 여다지로 할게요"
+                }
+              ],
+              "reasons": ["unsure_speech"]
+            },
+            {
+              "text": "샷시는 그대로 두기로 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 156716,
+                  "quote": "샷시는 그대로 두는 걸로 하죠"
+                }
+              ],
+              "reasons": []
+            }
+          ]
+        },
+        {
+          "key": "requests",
+          "title": "고객 요청 사항",
+          "kind": "items",
+          "entries": [
+            {
+              "text": "거실 아트월은 타일로 하고 싶다고 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 40716,
+                  "quote": "거실 아트월은 타일로 하고 싶어요"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "현관에 중문을 꼭 달고 싶다고 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 51516,
+                  "quote": "현관에 중문을 꼭 달고 싶어요"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "아이가 있어서 마루가 좋겠다고 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 83340,
+                  "quote": "아이가 있어서 마루가 좋겠어요"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "도배는 실크 겹지로 하고 싶다고 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 102668,
+                  "quote": "도배는 실크 겹지로 하고 싶어요"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "주방 상부장을 없애고 싶다고 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 111884,
+                  "quote": "주방은 상부장을 없애고 싶은데"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "안방에 붙박이장을 새로 짜고 싶다고 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 131596,
+                  "quote": "안방에는 붙박이장을 새로 짜고 싶어요"
+                }
+              ],
+              "reasons": []
+            }
+          ]
+        },
+        {
+          "key": "budget",
+          "title": "예산",
+          "kind": "items",
+          "entries": [
+            {
+              "text": "예산은 4500만원 안쪽으로 맞추고 싶다고 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 15340,
+                  "quote": "예산은 4500만원 안쪽으로 맞추고 싶어요"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "주방 가구 견적을 전달하기로 했다.",
+              "owner": "박도현",
+              "due": "다음 주 화요일까지",
+              "sources": [
+                {
+                  "ms": 126188,
+                  "quote": "주방 가구 견적은 제가 업체에 확인해서"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "붙박이장은 폭 2400에 슬라이딩 도어로 하면 280만원 정도이다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 134988,
+                  "quote": "폭 2400에 슬라이딩 도어로 하면 280만원 정도입니다"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "여닫이로 바꾸면 40만원 정도 줄어든다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 145324,
+                  "quote": "40만원 정도 줄어듭니다"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "계약금은 총액의 10%이다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 189804,
+                  "quote": "계약금은 총액의 10%이고"
+                }
+              ],
+              "reasons": []
+            }
+          ]
+        },
+        {
+          "key": "schedule",
+          "title": "일정",
+          "kind": "items",
+          "entries": [
+            {
+              "text": "실크 도배는 이틀이 걸리고 마루 시공 전에 끝내야 한다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 107148,
+                  "quote": "이틀이 걸리고 마루 시공 전에 끝내야 합니다"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "욕실 타일은 토요일 오후 2시에 쇼룸에서 함께 고른다.",
+              "owner": "",
+              "due": "토요일 오후 2시",
+              "sources": [
+                {
+                  "ms": 161836,
+                  "quote": "토요일 오후 2시에 쇼룸에서 같이 고르시면"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "공사기간은 4주, 착공은 12월 8일을 생각하고 있다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 170348,
+                  "quote": "공사기간은 4주로 보고 있고 착공은 12월 8일"
+                }
+              ],
+              "reasons": []
+            }
+          ]
+        },
+        {
+          "key": "materials",
+          "title": "자재·사양",
+          "kind": "items",
+          "entries": [
+            {
+              "text": "거실은 우물천장을 살리고 간접등을 넣는 안을 준비했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 21060,
+                  "quote": "우물천장을 살리고 간접등을 넣는 안"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "천장고는 2300밀리이고 우물천장탄을 100밀리만 내리면 답답하지 않다고 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 33612,
+                  "quote": "지금 천장고가 2300밀리라서"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "중문은 3연동 슬라이딩으로 달 수 있으나 신발장 폭을 150mm 줄여야 한다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 56588,
+                  "quote": "신발장 폭을 150mm 줄여야 합니다"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "거실과 방은 각마루, 주방만 타일로 나누는 경우가 많다고 안내했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 77920,
+                  "quote": "거실과 방은 각마루로 하고 주방만 타일로 나누는 분들이 많습니다"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "걸레받이와 몰딩은 벽지색에 맞춰 흰색 무광으로 통일하길 권했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 96396,
+                  "quote": "흰색 무광으로 통일하는 것을 권해드립니다"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "상부장을 없애는 대신 하부장을 깊게 짜고 키 큰 장을 하나 넣는 안을 제안했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 116876,
+                  "quote": "하부장을 깊게 짜고 키 큰 장을 하나 넣으면"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "샷시는 교체하지 않고 실리콘만 다시 쏜다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 151276,
+                  "quote": "샷시는 교체하지 않고 실리콘만 다시 쏘는 걸로"
+                }
+              ],
+              "reasons": []
+            }
+          ]
+        },
+        {
+          "key": "site",
+          "title": "현장 주소",
+          "kind": "items",
+          "entries": [
+            {
+              "text": "현장은 한빛아파트 103동 1502호이다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 6828,
+                  "quote": "한빛아파트 103동 1502호"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "평수는 32평이다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 15340,
+                  "quote": "32평인데"
+                }
+              ],
+              "reasons": []
+            }
+          ]
+        },
+        {
+          "key": "concerns",
+          "title": "고객의 우려",
+          "kind": "quotes",
+          "entries": [
+            {
+              "text": "우물천장은 너무 낮아 보이지 않을까 걱정했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 28780,
+                  "quote": "우물천장은 너무 낮아 보이지 않을까요"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "신발장이 줄어드는 건 조금 고민된다고 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 62860,
+                  "quote": "신발장이 줄어드는 건 조금 고민되네요"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "수납이 부족할까 봐 걱정이라고 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 111884,
+                  "quote": "수납이 부족할까 봐 걱정이에요"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "붙박이장 가격이 생각보다 비싸다고 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 140908,
+                  "quote": "생각보다 비싸네요"
+                }
+              ],
+              "reasons": []
+            }
+          ]
+        },
+        {
+          "key": "open",
+          "title": "아직 안 정한 것",
+          "kind": "items",
+          "entries": [
+            {
+              "text": "중문 설치 여부는 생각해 보겠다고 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 62860,
+                  "quote": "일단 생각해 볼게요"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "바닥을 마루로 할지 타일로 할지 아직 정하지 못했다고 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 73820,
+                  "quote": "마루로 할지 타일로 할지 아직 못 청했어요"
+                }
+              ],
+              "reasons": []
+            },
+            {
+              "text": "상부장 제거 여부는 견적을 보고 결정하겠다고 했다.",
+              "owner": "",
+              "due": "",
+              "sources": [
+                {
+                  "ms": 123340,
+                  "quote": "그건 견적을 보고 결정할게요"
+                }
+              ],
+              "reasons": []
+            }
+          ]
+        }
+      ],
+      "verified": 44,
+      "to_check": 1,
+      "dropped": 0,
+      "written_by": "claude sonnet",
+      "story": [
+        {
+          "title": "예산과 거실",
+          "text": "고객은 32평 리모델링 예산을 4500만 원 안쪽으로 잡았다. 실장은 우물천장을 살리고 간접등을 넣는 안을 내놓았고, 소장이 천장고를 근거로 단을 100밀리만 내리자고 해 그렇게 하기로 했다.",
+          "sources": [
+            {
+              "ms": 68020,
+              "quote": "신발장 도면을 다시 그려서 금요일까지 보내드리겠습니다"
+            },
+            {
+              "ms": 126188,
+              "quote": "주방 가구 견적은 제가 업체에 확인해서 다음 주 화요일까지 드리겠습니다"
+            }
+          ]
+        },
+        {
+          "title": "현관과 중문",
+          "text": "현관에는 3연동 슬라이딩 중문을 달기로 했다. 신발장 폭이 줄어드는 문제는 실장이 도면을 다시 그려 금요일까지 보내기로 했다.",
+          "sources": [
+            {
+              "ms": 180716,
+              "quote": "공사 신고와 엘리베이터 보양은 제가 착공 일주일 전까지 처리하겠습니다"
+            },
+            {
+              "ms": 189804,
+              "quote": "계약서와 함께 이번 주안의 메일로 안내 드리겠습니다"
+            }
+          ]
+        },
+        {
+          "title": "남은 것",
+          "text": "주방 상부장을 없앨지는 견적을 보고 정하기로 했다.",
+          "sources": [
+            {
+              "ms": 201644,
+              "quote": "주방 도면을 바로 고치겠습니다"
+            }
+          ]
+        }
+      ],
+      "feedback": {
+        "good": [
+          {
+            "text": "예산을 먼저 묻고 그 안에서 거실 안을 내놓았다.",
+            "sources": [
+              {
+                "ms": 68020,
+                "quote": "신발장 도면을 다시 그려서 금요일까지 보내드리겠습니다"
+              }
+            ]
+          },
+          {
+            "text": "신발장 폭 걱정에 도면을 다시 그려 금요일까지 보내겠다고 기한을 함께 말했다.",
+            "sources": [
+              {
+                "ms": 180716,
+                "quote": "공사 신고와 엘리베이터 보양은 제가 착공 일주일 전까지 처리하겠습니다"
+              }
+            ]
+          }
+        ],
+        "improve": [
+          {
+            "text": "주방 상부장 이야기에서 고객이 망설였을 때 견적을 보고 정하자고만 하고 기준을 묻지 않았다.",
+            "sources": [
+              {
+                "ms": 201644,
+                "quote": "주방 도면을 바로 고치겠습니다"
+              }
+            ]
+          }
+        ],
+        "missed_questions": [
+          {
+            "text": "냉장고를 언제 바꿀 계획인지 물었으면 주방 도면을 한 번에 정할 수 있었다.",
+            "sources": [
+              {
+                "ms": 189804,
+                "quote": "계약서와 함께 이번 주안의 메일로 안내 드리겠습니다"
+              }
+            ]
+          }
+        ],
+        "hesitations": [
+          {
+            "text": "우물천장이 낮아 보일까 걱정했고, 소장이 천장고를 들어 100밀리만 내리면 된다고 답했다.",
+            "sources": [
+              {
+                "ms": 126188,
+                "quote": "주방 가구 견적은 제가 업체에 확인해서 다음 주 화요일까지 드리겠습니다"
+              }
+            ]
+          }
+        ],
+        "next_time": [
+          {
+            "text": "상부장을 없앤 안과 둔 안의 견적 차이를 준비한다.",
+            "sources": [
+              {
+                "ms": 201644,
+                "quote": "주방 도면을 바로 고치겠습니다"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "minutes_ms": 59140,
+  "total_ms": 98705,
+  "mark_notes": ["도면", ""],
+  "customer": "이서진"
+}

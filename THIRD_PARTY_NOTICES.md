@@ -1,0 +1,78 @@
+# Third-party notices
+
+Seogi (서기) includes and builds on the open-source software listed here. Each
+entry keeps the project's copyright notice and license terms, as its license
+requires.
+
+## Handy
+
+- Project: <https://github.com/cjpais/Handy>
+- License: MIT
+- What Seogi uses: substantial portions of Seogi's source are derived from
+  Handy, including microphone capture, the speech-engine supervisor and model
+  manager, global shortcuts, pasting into other apps, the dictation overlay,
+  history, and the settings and onboarding screens. Source files derived from
+  Handy carry a `Derived from Handy` line in their header. Everything under
+  `src-tauri/src/seogi/` and `src/seogi/` is Seogi's own unless a file header
+  says otherwise.
+
+```text
+MIT License
+
+Copyright (c) 2025 CJ Pais
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## transcribe.cpp Rust bindings
+
+- Project: <https://github.com/handy-computer/transcribe.cpp>
+- License: MIT, Copyright (c) 2026 The transcribe.cpp authors
+- What Seogi uses: `src-tauri/vendor/transcribe-cpp` is a copy of the
+  `transcribe-cpp` 0.4.2 crate with one accessor added for Whisper's decode
+  measures. Its license file is kept in that folder.
+
+## Libraries
+
+Seogi links many Rust crates and npm packages, each under its own license. The
+exact versions are pinned in `src-tauri/Cargo.lock` and `bun.lock`, and each
+package ships its license text in its source distribution. Notable ones:
+
+- transcribe.cpp and ggml (MIT): the on-device speech engine.
+- Tauri (MIT or Apache-2.0): the desktop application framework.
+- React (MIT), Tailwind CSS (MIT), Lucide icons (ISC).
+
+## Fonts
+
+- Gmarket Sans (G마켓 산스) Medium and Bold (SIL Open Font License 1.1),
+  Copyright (c) 2019 eBay Korea Co., Ltd. (now Gmarket), with Reserved Font
+  Name "Gmarket Sans Font". Source: <https://corp.gmarket.com/fonts/>. The
+  original OpenType files are bundled unchanged in `src/seogi/fonts/`, with
+  the license text in `src/seogi/fonts/GmarketSans-OFL.txt`. The license
+  allows bundling with software and commercial use; selling the font on its
+  own is not allowed, and a modified version may not use the font's name.
+- Pretendard (SIL Open Font License 1.1), Copyright (c) 2021 Kil Hyung-jin,
+  with Reserved Font Name Pretendard.
+  <https://github.com/orioncactus/pretendard>. Shipped with the app, unchanged,
+  from the `pretendard` npm package.
+
+## Models
+
+Speech models are downloaded by the user from Hugging Face and are not part of
+this repository. Each model has its own license, shown on its model page.

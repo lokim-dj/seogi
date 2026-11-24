@@ -1,0 +1,804 @@
+//! Meetings on disk.
+//!
+//! Every meeting is a folder in the library, named `2026-11-24 1400 제목`.
+//! It holds the original recording (never changed), `회의록.md`, `전사.txt`,
+//! `원본정보.json`, and `meeting.json`, which is the app's own record of the
+//! meeting: its state, transcript and minutes. The folders are the truth;
+//! the app keeps nothing about a meeting anywhere else, so a library can be
+//! moved, synced or backed up as plain files.
+
+use std::path::{Path, PathBuf};
+
+use anyhow::{anyhow, Context, Result};
+use chrono::{DateTime, Datelike, Local, TimeZone};
+use log::warn;
+use serde::{Deserialize, Serialize};
+use specta::Type;
+
+use super::minutes::Minutes;
+use super::pipeline::Stats;
+use super::render::{self, Header};
+use super::transcript::Transcript;
+
+/// The app's record of a meeting, inside its folder.
+pub const RECORD_NAME: &str = "meeting.json";
+pub const MINUTES_NAME: &str = "회의록.md";
+pub const TRANSCRIPT_NAME: &str = "전사.txt";
+/// The file an in-app recording is written to.
+pub const RECORDING_NAME: &str = "녹음.wav";
+
+/// How a recording came to the app.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum Origin {
+    /// Recorded in the app.
+    Recorded,
+    /// Brought in by hand.
+    Imported,
+    /// Picked up from a watched folder.
+    Watched,
+}
+
+impl Origin {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Origin::Recorded => "recorded",
+            Origin::Imported => "imported",
+            Origin::Watched => "watched",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum Status {
+    /// Being recorded in the app right now.
+    Recording,
+    /// Waiting its turn to be processed.
+    Queued,
+    /// Being transcribed or written up; `stage` and `percent` say how far.
+    Working,
+    /// Transcribed, and the minutes are still to come: the summary model
+    /// could not be reached and will be tried again.
+    Transcribed,
+    /// The minutes are written.
+    Done,
+    /// It could not be processed; `error` says why.
+    Failed,
+}
+
+/// The calendar event a meeting was matched to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct EventRef {
+    pub uid: String,
+    pub title: String,
+    pub start_ms: i64,
+    pub end_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+pub struct Meeting {
+    pub id: String,
+    pub title: String,
+    /// Whether nobody chose the title: the minutes may then replace it with
+    /// one taken from what was said.
+    #[serde(default)]
+    pub title_is_auto: bool,
+    /// When the recording started, in milliseconds since 1970 UTC.
+    pub started_at_ms: i64,
+    /// Where `started_at_ms` comes from: `recorder` (recorded here),
+    /// `file_name` (a time in the imported file's name), `file_metadata`
+    /// (a time the recorder wrote inside the file), `file_modified`
+    /// (the file's modification time, not yet corrected) or
+    /// `file_modified_minus_length` (that time less the recording's length).
+    #[serde(default)]
+    pub time_source: String,
+    pub duration_ms: u64,
+    pub origin: Origin,
+    /// The original recording's file name, in the meeting's folder.
+    pub audio_file: String,
+    /// Where an imported or watched file came from.
+    #[serde(default)]
+    pub source_path: String,
+    #[serde(default)]
+    pub sha256: String,
+    pub status: Status,
+    /// What is being done to it while `Working`: `detecting_speech`,
+    /// `diarizing`, `transcribing`, `writing_minutes`.
+    #[serde(default)]
+    pub stage: String,
+    #[serde(default)]
+    pub percent: u8,
+    /// Why it is not done, as a short code the screen has words for:
+    /// `cannot_decode`, `speech_model`, `speech_model_missing`,
+    /// `summary_model`, `summary_model_refused`, `summary_limit`,
+    /// `no_speech`, `too_short`.
+    #[serde(default)]
+    pub error: String,
+    /// The error as the failing part reported it, for the log and for help.
+    #[serde(default)]
+    pub error_detail: String,
+    /// How many times transcription has been tried.
+    #[serde(default)]
+    pub attempts: u32,
+    /// How many times writing the minutes has been tried.
+    #[serde(default)]
+    pub minutes_attempts: u32,
+    /// When it joined the queue; the queue is worked in this order.
+    #[serde(default)]
+    pub queued_at_ms: i64,
+    /// When it is next tried again after a failure; 0 when it is not waiting.
+    #[serde(default)]
+    pub retry_at_ms: i64,
+    /// The minutes template chosen for it by a rule or the user; empty lets
+    /// the content decide.
+    #[serde(default)]
+    pub template_id: String,
+    #[serde(default)]
+    pub people: Vec<String>,
+    #[serde(default)]
+    pub place: String,
+    /// The customer, for a consultation: who the recording is about.
+    #[serde(default)]
+    pub customer: String,
+    /// What the user wrote about this meeting beforehand (or before it is
+    /// done again): what it is about, what to listen for.
+    #[serde(default)]
+    pub note: String,
+    /// Names and words for this meeting only: picked from its documents or
+    /// added by hand. With the vocabulary (which is for every meeting) they
+    /// steer the speech model and the minutes.
+    #[serde(default)]
+    pub terms: Vec<String>,
+    /// Times "중요 표시" was pressed, in milliseconds into the recording.
+    #[serde(default)]
+    pub marks_ms: Vec<u64>,
+    /// What the user wrote beside each mark, in the order of `marks_ms`.
+    #[serde(default)]
+    pub mark_notes: Vec<String>,
+    #[serde(default)]
+    pub event: Option<EventRef>,
+    /// The microphone, for a recording made in the app.
+    #[serde(default)]
+    pub device: String,
+    /// Set when a recording made here did not end as it should have:
+    /// `app_stopped`, `microphone_lost` or `file_incomplete`. It stays with
+    /// the meeting and is stated in the minutes and the evidence record.
+    #[serde(default)]
+    pub capture_note: String,
+    #[serde(default)]
+    pub transcript: Option<Transcript>,
+    #[serde(default)]
+    pub stats: Option<Stats>,
+    /// The minutes, one per template they were written with; the first is
+    /// the one shown by default and saved as `회의록.md`.
+    #[serde(default)]
+    pub minutes: Vec<Minutes>,
+    /// How long writing the minutes took, and the whole of the processing.
+    #[serde(default)]
+    pub minutes_ms: u64,
+    #[serde(default)]
+    pub total_ms: u64,
+}
+
+/// What a list of meetings shows of one.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+pub struct MeetingSummary {
+    pub id: String,
+    pub title: String,
+    pub started_at_ms: i64,
+    pub duration_ms: u64,
+    pub origin: Origin,
+    pub status: Status,
+    pub stage: String,
+    pub percent: u8,
+    pub error: String,
+    /// The template the minutes were written with: `고객 상담`.
+    pub kind: String,
+    /// That template's id, or the one chosen for it before the minutes.
+    pub template_id: String,
+    pub summary: String,
+    /// Tasks in the minutes.
+    pub actions: u32,
+    /// Entries the checks found nothing to doubt in.
+    pub verified: u32,
+    /// Entries marked for a look, and things the meeting left unsettled.
+    pub to_check: u32,
+    /// Tasks ticked off.
+    pub done: u32,
+    pub speakers: u32,
+    pub folder: String,
+}
+
+impl Meeting {
+    /// A meeting that has just arrived and has had nothing done to it.
+    pub fn new(started_at_ms: i64, origin: Origin, audio_file: &str) -> Self {
+        Self {
+            id: new_id(started_at_ms),
+            title: String::new(),
+            title_is_auto: true,
+            started_at_ms,
+            time_source: String::new(),
+            duration_ms: 0,
+            origin,
+            audio_file: audio_file.to_string(),
+            source_path: String::new(),
+            sha256: String::new(),
+            status: Status::Queued,
+            stage: String::new(),
+            percent: 0,
+            error: String::new(),
+            error_detail: String::new(),
+            attempts: 0,
+            minutes_attempts: 0,
+            queued_at_ms: 0,
+            retry_at_ms: 0,
+            template_id: String::new(),
+            people: Vec::new(),
+            place: String::new(),
+            customer: String::new(),
+            note: String::new(),
+            terms: Vec::new(),
+            marks_ms: Vec::new(),
+            mark_notes: Vec::new(),
+            event: None,
+            device: String::new(),
+            capture_note: String::new(),
+            transcript: None,
+            stats: None,
+            minutes: Vec::new(),
+            minutes_ms: 0,
+            total_ms: 0,
+        }
+    }
+
+    pub fn summary(&self, folder: &Path) -> MeetingSummary {
+        let minutes = self.minutes.first();
+        MeetingSummary {
+            id: self.id.clone(),
+            title: self.title.clone(),
+            started_at_ms: self.started_at_ms,
+            duration_ms: self.duration_ms,
+            origin: self.origin,
+            status: self.status,
+            stage: self.stage.clone(),
+            percent: self.percent,
+            error: self.error.clone(),
+            kind: minutes.map_or(String::new(), |m| m.template_name.clone()),
+            template_id: minutes
+                .map_or_else(|| self.template_id.clone(), |m| m.template_id.clone()),
+            summary: minutes.map_or(String::new(), |m| m.summary.clone()),
+            actions: minutes.map_or(0, |m| {
+                m.sections
+                    .iter()
+                    .filter(|s| s.kind == super::templates::SectionKind::Actions)
+                    .map(|s| s.entries.len() as u32)
+                    .sum()
+            }),
+            verified: minutes.map_or(0, |m| m.verified),
+            // Only what is worth a listen; what was left unsettled is part
+            // of the minutes, not something to check.
+            to_check: minutes.map_or(0, |m| m.to_check),
+            done: minutes.map_or(0, |m| {
+                m.sections
+                    .iter()
+                    .filter(|s| s.kind == super::templates::SectionKind::Actions)
+                    .map(|s| s.entries.iter().filter(|e| e.done).count() as u32)
+                    .sum()
+            }),
+            speakers: self
+                .transcript
+                .as_ref()
+                .map_or(0, |t| t.speakers.len() as u32),
+            folder: folder.display().to_string(),
+        }
+    }
+
+    /// Everything about the meeting that a search looks through.
+    pub fn search_text(&self) -> String {
+        let mut text = self.title.clone();
+        for minutes in &self.minutes {
+            text.push('\n');
+            text.push_str(&minutes.summary);
+            for section in &minutes.sections {
+                for entry in &section.entries {
+                    text.push('\n');
+                    text.push_str(&entry.text);
+                    text.push(' ');
+                    text.push_str(&entry.owner);
+                }
+            }
+        }
+        if let Some(transcript) = &self.transcript {
+            for segment in &transcript.segments {
+                text.push('\n');
+                text.push_str(&segment.text);
+            }
+        }
+        text.push('\n');
+        text.push_str(&self.people.join(" "));
+        text.to_lowercase()
+    }
+
+    /// When it was recorded, as the minutes show it: `2026-11-24 (화) 14:00`.
+    pub fn recorded_at(&self) -> String {
+        local(self.started_at_ms).map_or(String::new(), |time| {
+            const WEEKDAYS: [&str; 7] = ["월", "화", "수", "목", "금", "토", "일"];
+            format!(
+                "{} ({}) {}",
+                time.format("%Y-%m-%d"),
+                WEEKDAYS[time.weekday().num_days_from_monday() as usize],
+                time.format("%H:%M")
+            )
+        })
+    }
+
+    /// The day it was recorded, for the summary model to read dates against.
+    /// What the user told about this meeting, for the minutes' writer: the
+    /// place, their note and this meeting's words. Empty when nothing.
+    pub fn context(&self) -> String {
+        let mut lines: Vec<String> = Vec::new();
+        if !self.place.is_empty() {
+            lines.push(format!("현장·장소: {}", self.place));
+        }
+        if !self.terms.is_empty() {
+            lines.push(format!(
+                "이 회의에 나오는 이름·용어: {}",
+                self.terms.join(", ")
+            ));
+        }
+        if !self.note.is_empty() {
+            lines.push(format!("회의 메모: {}", self.note));
+        }
+        lines.join("\n")
+    }
+
+    pub fn recorded_on(&self) -> String {
+        local(self.started_at_ms).map_or(String::new(), |time| {
+            const WEEKDAYS: [&str; 7] = ["월", "화", "수", "목", "금", "토", "일"];
+            format!(
+                "{} {}요일",
+                time.format("%Y-%m-%d"),
+                WEEKDAYS[time.weekday().num_days_from_monday() as usize]
+            )
+        })
+    }
+}
+
+fn local(ms: i64) -> Option<DateTime<Local>> {
+    Local.timestamp_millis_opt(ms).single()
+}
+
+/// The time a recorder wrote into a file's name, as most phone and desktop
+/// recorders do: `20261124_140012`, `2026-11-24 14-00-12`, `261124_140012`,
+/// or this app's own `2026-11-24 1400 제목`. `None` when the name has none,
+/// or what looks like one is not a real date.
+pub fn time_in_name(name: &str) -> Option<i64> {
+    use regex::Regex;
+    use std::sync::LazyLock;
+    static FULL: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(
+            r"(20\d{2})[-_. ]?(\d{2})[-_. ]?(\d{2})[-_ T]+(\d{2})[-_.:시 ]?(\d{2})(?:[-_.:분 ]?(\d{2}))?",
+        )
+        .expect("a valid pattern")
+    });
+    static SHORT: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?:^|\D)(\d{2})(\d{2})(\d{2})[-_ ](\d{2})(\d{2})(\d{2})(?:\D|$)")
+            .expect("a valid pattern")
+    });
+    let number = |captures: &regex::Captures<'_>, index: usize| -> Option<u32> {
+        captures.get(index).and_then(|m| m.as_str().parse().ok())
+    };
+    let (year, captures) = match FULL.captures(name) {
+        Some(captures) => (number(&captures, 1)? as i32, captures),
+        None => {
+            let captures = SHORT.captures(name)?;
+            (2000 + number(&captures, 1)? as i32, captures)
+        }
+    };
+    let time = Local
+        .with_ymd_and_hms(
+            year,
+            number(&captures, 2)?,
+            number(&captures, 3)?,
+            number(&captures, 4)?,
+            number(&captures, 5)?,
+            number(&captures, 6).unwrap_or(0),
+        )
+        .single()?;
+    // A "time" in the future is a number that only looks like one.
+    let latest = Local::now() + chrono::Duration::days(1);
+    (time <= latest).then(|| time.timestamp_millis())
+}
+
+/// The title a person gave a file by naming it, or nothing when the name is
+/// only what a recorder made up (a date, a counter, "녹음", "Recording").
+pub fn title_in_name(stem: &str) -> String {
+    use regex::Regex;
+    use std::sync::LazyLock;
+    static NOISE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(
+            r"(?i)20\d{2}[-_. ]?\d{2}[-_. ]?\d{2}|\d{2,}|새로운 녹음|새 녹음|통화 ?녹음|음성 ?녹음|음성 ?메모|녹음|음성|new recording|voice memo|recording|voice|audio|memo|rec|am|pm|오전|오후",
+        )
+        .expect("a valid pattern")
+    });
+    let left = NOISE.replace_all(stem, " ");
+    let letters = left.chars().filter(|c| c.is_alphabetic()).count();
+    if letters >= 2 {
+        safe_name(stem)
+    } else {
+        String::new()
+    }
+}
+
+/// ISO 8601 with the local offset, for the evidence record.
+pub fn iso_local(ms: i64) -> String {
+    local(ms).map_or(String::new(), |time| {
+        time.to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
+    })
+}
+
+/// A new meeting id: the start time and a few random characters, so ids sort
+/// by time and two recordings in the same second still differ.
+pub fn new_id(started_at_ms: i64) -> String {
+    let stamp = local(started_at_ms).map_or_else(
+        || started_at_ms.to_string(),
+        |time| time.format("%Y%m%d-%H%M%S").to_string(),
+    );
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.subsec_nanos());
+    format!("{stamp}-{:04x}", (nanos ^ std::process::id()) & 0xffff)
+}
+
+/// Writes `bytes` to `path` so that a crash leaves either the old file or
+/// the new one, never half of one.
+pub fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
+    let partial = path.with_extension(format!(
+        "{}.partial",
+        path.extension().and_then(|e| e.to_str()).unwrap_or("tmp")
+    ));
+    std::fs::write(&partial, bytes)
+        .with_context(|| format!("could not write {}", partial.display()))?;
+    std::fs::rename(&partial, path).with_context(|| format!("could not write {}", path.display()))
+}
+
+/// A folder or file name that every system accepts: no path separators or
+/// characters Windows forbids, no leading or trailing dots and spaces.
+pub fn safe_name(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => ' ',
+            c if c.is_control() => ' ',
+            c => c,
+        })
+        .collect();
+    let cleaned = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    cleaned
+        .trim_matches(|c: char| c == '.' || c == ' ')
+        .chars()
+        .take(60)
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+/// The library: the folder that holds every meeting's folder.
+#[derive(Debug, Clone)]
+pub struct Library {
+    root: PathBuf,
+}
+
+impl Library {
+    pub fn new(root: PathBuf) -> Self {
+        Self { root }
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// The folder name for a meeting: `2026-11-24 1400 제목`.
+    pub fn folder_name(started_at_ms: i64, title: &str) -> String {
+        let stamp = local(started_at_ms).map_or_else(
+            || "녹음".to_string(),
+            |time| time.format("%Y-%m-%d %H%M").to_string(),
+        );
+        let title = safe_name(title);
+        if title.is_empty() {
+            stamp
+        } else {
+            format!("{stamp} {title}")
+        }
+    }
+
+    /// Makes a new, empty folder for a meeting and returns it. A name already
+    /// taken gets a number after it.
+    pub fn create_folder(&self, started_at_ms: i64, title: &str) -> Result<PathBuf> {
+        std::fs::create_dir_all(&self.root)
+            .with_context(|| format!("could not create {}", self.root.display()))?;
+        let name = Self::folder_name(started_at_ms, title);
+        for number in 1..1000 {
+            let candidate = if number == 1 {
+                self.root.join(&name)
+            } else {
+                self.root.join(format!("{name} ({number})"))
+            };
+            match std::fs::create_dir(&candidate) {
+                Ok(()) => return Ok(candidate),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => {
+                    return Err(e)
+                        .with_context(|| format!("could not create {}", candidate.display()))
+                }
+            }
+        }
+        Err(anyhow!("too many meetings named {name}"))
+    }
+
+    /// Renames a meeting's folder once its title or its start time is known
+    /// better. The folder keeps its name if the new one is taken or the
+    /// rename fails: a name is not worth losing track of a meeting for.
+    pub fn retitle_folder(&self, folder: &Path, started_at_ms: i64, title: &str) -> PathBuf {
+        let wanted = self.root.join(Self::folder_name(started_at_ms, title));
+        if wanted == folder || wanted.exists() {
+            return folder.to_path_buf();
+        }
+        match std::fs::rename(folder, &wanted) {
+            Ok(()) => wanted,
+            Err(e) => {
+                warn!("Could not rename {} ({e})", folder.display());
+                folder.to_path_buf()
+            }
+        }
+    }
+
+    /// Every meeting in the library with its folder, newest first. A folder
+    /// whose record cannot be read is skipped: one damaged file must not hide
+    /// the rest.
+    pub fn scan(&self) -> Vec<(Meeting, PathBuf)> {
+        let Ok(entries) = std::fs::read_dir(&self.root) else {
+            return Vec::new();
+        };
+        let mut meetings: Vec<(Meeting, PathBuf)> = entries
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .filter(|path| path.is_dir())
+            .filter_map(|folder| match Self::read(&folder) {
+                Ok(meeting) => Some((meeting, folder)),
+                Err(e) => {
+                    if folder.join(RECORD_NAME).exists() {
+                        warn!("Skipping {}: {e:#}", folder.display());
+                    }
+                    None
+                }
+            })
+            .collect();
+        meetings.sort_by_key(|(meeting, _)| std::cmp::Reverse(meeting.started_at_ms));
+        meetings
+    }
+
+    pub fn read(folder: &Path) -> Result<Meeting> {
+        let path = folder.join(RECORD_NAME);
+        let text = std::fs::read_to_string(&path)
+            .with_context(|| format!("could not read {}", path.display()))?;
+        serde_json::from_str(&text).with_context(|| format!("{} is damaged", path.display()))
+    }
+
+    /// Saves the meeting's record, and its minutes and transcript as plain
+    /// documents when it has them.
+    pub fn save(meeting: &Meeting, folder: &Path) -> Result<()> {
+        let json = serde_json::to_string_pretty(meeting)?;
+        write_atomically(&folder.join(RECORD_NAME), json.as_bytes())?;
+        if let Some(transcript) = &meeting.transcript {
+            write_atomically(
+                &folder.join(TRANSCRIPT_NAME),
+                transcript.to_text().as_bytes(),
+            )?;
+            if let Some(minutes) = meeting.minutes.first() {
+                let markdown = render::minutes_markdown(
+                    minutes,
+                    transcript,
+                    &meeting.header(),
+                    &meeting.marks_ms,
+                );
+                write_atomically(&folder.join(MINUTES_NAME), markdown.as_bytes())?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Meeting {
+    /// What the minutes document says about the recording itself.
+    pub fn header(&self) -> Header {
+        Header {
+            title: self.title.clone(),
+            recorded_at: self.recorded_at(),
+            duration_ms: self.duration_ms,
+            attendees: self.people.clone(),
+            place: self.place.clone(),
+            source_file: self.audio_file.clone(),
+            sha256: self.sha256.clone(),
+            transcribed_by: self
+                .transcript
+                .as_ref()
+                .map_or(String::new(), |t| short_model_name(&t.model)),
+            app_version: env!("CARGO_PKG_VERSION").to_string(),
+            capture_note: self.capture_note.clone(),
+        }
+    }
+}
+
+/// A model id as people know it: `whisper-large-v3-turbo` from
+/// `org/repo-gguf/whisper-large-v3-turbo-Q8_0.gguf`.
+pub fn short_model_name(id: &str) -> String {
+    let file = id.rsplit('/').next().unwrap_or(id);
+    let stem = file.strip_suffix(".gguf").unwrap_or(file);
+    // The quantization tag is the last dash-separated part: Q8_0, F16, ...
+    let is_quant = |tag: &str| {
+        matches!(tag, "F16" | "F32" | "BF16")
+            || (tag.starts_with('Q') && tag[1..].starts_with(|c: char| c.is_ascii_digit()))
+    };
+    match stem.rsplit_once('-') {
+        Some((name, tag)) if is_quant(tag) => name.to_string(),
+        _ => stem.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn meeting(id: &str, started_at_ms: i64) -> Meeting {
+        let mut meeting = Meeting::new(started_at_ms, Origin::Imported, "a.m4a");
+        meeting.id = id.to_string();
+        meeting.title = "주간 회의".to_string();
+        meeting.duration_ms = 60_000;
+        meeting
+    }
+
+    #[test]
+    fn what_the_user_told_about_a_meeting_is_given_to_the_minutes() {
+        let mut meeting = Meeting::new(0, Origin::Recorded, "녹음.wav");
+        assert_eq!(meeting.context(), "");
+        meeting.place = "새봄마을 101동".into();
+        meeting.terms = vec!["원목마루".into(), "우물천장".into()];
+        meeting.note = "주방 위치를 정함".into();
+        assert_eq!(
+            meeting.context(),
+            "현장·장소: 새봄마을 101동\n이 회의에 나오는 이름·용어: 원목마루, 우물천장\n회의 메모: 주방 위치를 정함"
+        );
+        // A record from before these existed still reads.
+        let old: Meeting = serde_json::from_value(serde_json::json!({
+            "id": "x", "title": "", "started_at_ms": 0, "duration_ms": 0,
+            "origin": "recorded", "audio_file": "a.wav", "status": "done"
+        }))
+        .unwrap();
+        assert!(old.terms.is_empty() && old.note.is_empty());
+    }
+
+    #[test]
+    fn names_are_safe_on_every_system() {
+        assert_eq!(
+            safe_name("  [회의실A] 김OO / 상담: 1차?  "),
+            "[회의실A] 김OO 상담 1차"
+        );
+        assert_eq!(safe_name("..."), "");
+        assert_eq!(safe_name("a\tb\nc"), "a b c");
+        assert!(safe_name(&"가".repeat(200)).chars().count() <= 60);
+    }
+
+    #[test]
+    fn folders_are_named_by_time_and_title_and_never_collide() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = Library::new(dir.path().join("서기"));
+        let at = Local
+            .with_ymd_and_hms(2026, 11, 24, 14, 0, 3)
+            .unwrap()
+            .timestamp_millis();
+        let first = library.create_folder(at, "주간 회의").unwrap();
+        assert_eq!(first.file_name().unwrap(), "2026-11-24 1400 주간 회의");
+        let second = library.create_folder(at, "주간 회의").unwrap();
+        assert_eq!(second.file_name().unwrap(), "2026-11-24 1400 주간 회의 (2)");
+        let untitled = library.create_folder(at, "").unwrap();
+        assert_eq!(untitled.file_name().unwrap(), "2026-11-24 1400");
+
+        // A title learned later renames the folder, unless the name is taken.
+        let renamed = library.retitle_folder(&untitled, at, "한빛아파트 상담");
+        assert_eq!(
+            renamed.file_name().unwrap(),
+            "2026-11-24 1400 한빛아파트 상담"
+        );
+        assert!(renamed.is_dir() && !untitled.exists());
+        assert_eq!(library.retitle_folder(&second, at, "주간 회의"), second);
+    }
+
+    #[test]
+    fn a_library_is_read_back_newest_first_and_skips_damage() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = Library::new(dir.path().to_path_buf());
+        for (id, at) in [("old", 1_000_000), ("new", 9_000_000)] {
+            let folder = library.create_folder(at, id).unwrap();
+            Library::save(&meeting(id, at), &folder).unwrap();
+        }
+        let broken = dir.path().join("broken");
+        std::fs::create_dir(&broken).unwrap();
+        std::fs::write(broken.join(RECORD_NAME), "{").unwrap();
+        std::fs::create_dir(dir.path().join("not a meeting")).unwrap();
+
+        let ids: Vec<String> = library.scan().into_iter().map(|(m, _)| m.id).collect();
+        assert_eq!(ids, vec!["new", "old"]);
+    }
+
+    #[test]
+    fn the_recorded_time_reads_in_korean() {
+        let at = Local
+            .with_ymd_and_hms(2026, 11, 24, 14, 5, 0)
+            .unwrap()
+            .timestamp_millis();
+        let meeting = meeting("a", at);
+        assert_eq!(meeting.recorded_at(), "2026-11-24 (화) 14:05");
+        assert_eq!(meeting.recorded_on(), "2026-11-24 화요일");
+        assert!(new_id(at).starts_with("20261124-140500-"));
+    }
+
+    #[test]
+    fn model_names_lose_their_repository_and_quantization() {
+        assert_eq!(
+            short_model_name(
+                "handy-computer/whisper-large-v3-turbo-gguf/whisper-large-v3-turbo-Q8_0.gguf"
+            ),
+            "whisper-large-v3-turbo"
+        );
+        assert_eq!(
+            short_model_name("Qwen3-ASR-1.7B-F16.gguf"),
+            "Qwen3-ASR-1.7B"
+        );
+        assert_eq!(short_model_name("custom-model"), "custom-model");
+    }
+
+    #[test]
+    fn a_recorder_s_file_name_gives_the_time_it_was_made() {
+        let at = |y, mo, d, h, mi, sec| {
+            Local
+                .with_ymd_and_hms(y, mo, d, h, mi, sec)
+                .unwrap()
+                .timestamp_millis()
+        };
+        assert_eq!(
+            time_in_name("20251124_140012.m4a"),
+            Some(at(2025, 11, 24, 14, 0, 12))
+        );
+        assert_eq!(
+            time_in_name("녹음 2025-11-24 14-00-12.m4a"),
+            Some(at(2025, 11, 24, 14, 0, 12))
+        );
+        assert_eq!(
+            time_in_name("음성 251124_140012.m4a"),
+            Some(at(2025, 11, 24, 14, 0, 12))
+        );
+        assert_eq!(
+            time_in_name("2025-11-24 1400 주간 회의.wav"),
+            Some(at(2025, 11, 24, 14, 0, 0))
+        );
+        assert_eq!(time_in_name("회의.m4a"), None);
+        assert_eq!(time_in_name("IMG_1234.m4a"), None);
+        // Not a date, and not a time that has happened yet.
+        assert_eq!(time_in_name("20251340_140012.m4a"), None);
+        assert_eq!(time_in_name("20991124_140012.m4a"), None);
+    }
+
+    #[test]
+    fn a_name_a_person_gave_is_a_title_and_a_recorder_s_is_not() {
+        assert_eq!(title_in_name("한빛아파트 상담"), "한빛아파트 상담");
+        assert_eq!(
+            title_in_name("2025-11-24 1400 주간 회의"),
+            "2025-11-24 1400 주간 회의"
+        );
+        assert_eq!(title_in_name("녹음 2025-11-24 14-00-12"), "");
+        assert_eq!(title_in_name("20251124_140012"), "");
+        assert_eq!(title_in_name("New Recording 12"), "");
+        assert_eq!(title_in_name("음성 251124_140012"), "");
+    }
+}

@@ -1,0 +1,3 @@
+/* The name Finder, Launchpad and the Dock show on a Korean Mac. */
+CFBundleDisplayName = "서기";
+CFBundleName = "서기";

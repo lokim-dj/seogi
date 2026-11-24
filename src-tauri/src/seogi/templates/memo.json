@@ -1,0 +1,26 @@
+{
+  "id": "memo",
+  "name": "혼잣말·생각 메모",
+  "description": "한 사람이 생각나는 대로 말해 둔 메모, 업무 기록",
+  "guidance": "말한 사람이 스스로 챙기려고 남긴 것입니다. 할 일과 기록해 둘 사실을 추려 줍니다.",
+  "sections": [
+    {
+      "key": "actions",
+      "title": "팔로업",
+      "kind": "actions",
+      "instruction": "해야 한다고 말한 일, 챙기려고 한 것."
+    },
+    {
+      "key": "discussion",
+      "title": "업무 로그",
+      "kind": "items",
+      "instruction": "기록해 두려고 말한 사실, 생각, 진행 상황."
+    },
+    {
+      "key": "open",
+      "title": "아직 안 정한 것",
+      "kind": "items",
+      "instruction": "나중에 알아보거나 정해야 한다고 말한 것."
+    }
+  ]
+}

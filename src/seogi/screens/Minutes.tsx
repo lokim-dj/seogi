@@ -1,0 +1,1309 @@
+// A meeting's minutes, read in one column: who does what, how the meeting
+// went, and everything else folded under "자세히". Every line points at the
+// moment of the recording it rests on; a thin line at the bottom plays it.
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import {
+  commands,
+  type Answer,
+  type Entry,
+  type Meeting,
+  type MinutesSection,
+  type NameScope,
+  type Segment,
+  type Template,
+} from "@/bindings";
+import {
+  isUnnamed,
+  TimeKey,
+  useLength,
+  useSpeakerName,
+} from "../components/common";
+import DocumentWords from "../components/DocumentWords";
+import Feedback from "../components/Feedback";
+import {
+  BackIcon,
+  CopyIcon,
+  MoreIcon,
+  PauseGlyph,
+  PlayGlyph,
+  RightIcon,
+} from "../components/icons";
+import MeetingContext, { setMeetingInfo } from "../components/MeetingContext";
+import { NamePicker, PeopleLine } from "../components/People";
+import { ConfirmDelete, busy } from "../components/DeleteMeeting";
+import { NS } from "../i18n";
+import { clock, fullDay, hm, hms, isoDay, shortModel } from "../lib/format";
+import { joinPath, usePlayer, type Player } from "../lib/player";
+import { useSeogi } from "../store";
+
+const bare = (text: string) => text.replace(/[\s.,!?'"「」…·]/g, "");
+
+export default function Minutes({ id }: { id: string }) {
+  const { t } = useTranslation(NS);
+  const detail = useSeogi((s) => s.detail);
+  const summary = useSeogi((s) => s.meetings.find((m) => m.id === id));
+  const templates = useSeogi((s) => s.templates);
+  const go = useSeogi((s) => s.go);
+  const meeting = detail?.id === id ? detail : null;
+  const [copied, setCopied] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const path =
+    summary && meeting ? joinPath(summary.folder, meeting.audio_file) : null;
+  const player = usePlayer(id, path, meeting?.duration_ms ?? 0);
+  const minutes = meeting?.minutes?.[0];
+  const tasks = (minutes?.sections ?? []).filter((s) => s.kind === "actions");
+
+  const copyTasks = async () => {
+    const lines = tasks.flatMap((section) =>
+      section.entries.map((entry) => {
+        const owner =
+          entry.owner && !isUnnamed(entry.owner)
+            ? entry.owner
+            : t("ownerUnknown");
+        const due = entry.due || t("dueUnknown");
+        const at = entry.sources[0] ? ` (${clock(entry.sources[0].ms)})` : "";
+        return `- [${entry.done ? "x" : " "}] ${owner} – ${entry.text} – ${due}${at}`;
+      }),
+    );
+    await navigator.clipboard.writeText(lines.join("\n"));
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  };
+
+  return (
+    <div className="min-h-full flex flex-col">
+      <header className="a-bar sticky top-0 z-10 bg-bg">
+        <button
+          type="button"
+          className="ib !pl-0.5"
+          onClick={() => go({ name: "home" })}
+        >
+          <BackIcon />
+          {t("home.box")}
+        </button>
+        <span className="tools relative">
+          {tasks.length > 0 ? (
+            <button
+              type="button"
+              className="ib"
+              onClick={() => void copyTasks()}
+            >
+              <CopyIcon />
+              {copied ? t("home.copied") : t("home.copyTasks")}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="ib"
+            aria-label={t("minutes.moreActions")}
+            aria-expanded={menu}
+            onClick={() => setMenu((on) => !on)}
+          >
+            <MoreIcon />
+          </button>
+          {menu && meeting ? (
+            <MoreMenu
+              meeting={meeting}
+              templates={templates}
+              onClose={() => setMenu(false)}
+              onDelete={() => {
+                setMenu(false);
+                setDeleting(true);
+              }}
+            />
+          ) : null}
+          {deleting && meeting ? (
+            <ConfirmDelete
+              meeting={{
+                id: meeting.id,
+                title: meeting.title,
+                status: meeting.status,
+              }}
+              onClose={() => setDeleting(false)}
+              onDeleted={() => go({ name: "home" })}
+            />
+          ) : null}
+        </span>
+      </header>
+
+      <main className="flex-1 a-col-wide pt-[22px] pb-16">
+        {meeting ? (
+          <Sheet
+            meeting={meeting}
+            folder={summary?.folder ?? ""}
+            player={player}
+          />
+        ) : null}
+      </main>
+
+      {meeting ? <PlayerLine player={player} meeting={meeting} /> : null}
+    </div>
+  );
+}
+
+/** What is done to the meeting as a whole, behind the "more" key. */
+function MoreMenu({
+  meeting,
+  templates,
+  onClose,
+  onDelete,
+}: {
+  meeting: Meeting;
+  templates: Template[];
+  onClose: () => void;
+  onDelete: () => void;
+}) {
+  const { t } = useTranslation(NS);
+  const refreshDetail = useSeogi((s) => s.refreshDetail);
+  const working = meeting.status === "working";
+  const kind = meeting.minutes?.[0]?.template_id ?? meeting.template_id ?? "";
+
+  useEffect(() => {
+    const away = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", away);
+    return () => window.removeEventListener("keydown", away);
+  }, [onClose]);
+
+  const item =
+    "w-full flex items-center justify-between gap-4 h-8 px-3 border-0 rounded-[6px] bg-transparent text-left text-[13.5px] hover:bg-s2";
+  return (
+    <div
+      role="menu"
+      className="absolute right-0 top-9 z-20 w-[240px] p-1.5 rounded-[10px] bg-s1 shadow-[0_8px_24px_var(--sh)]"
+    >
+      <label className="flex items-center justify-between gap-3 h-9 px-3 text-[13.5px]">
+        <span className="t2">{t("minutes.template")}</span>
+        <select
+          className="sel"
+          disabled={working || !meeting.transcript}
+          value={kind}
+          onChange={(event) => {
+            void setMeetingInfo(meeting.id, { template_id: event.target.value })
+              .then(() => commands.seogiRetry(meeting.id, true))
+              .then(() => refreshDetail());
+            onClose();
+          }}
+        >
+          {templates.some((item) => item.id === kind) ? null : (
+            <option value="">{"–"}</option>
+          )}
+          {templates.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {meeting.transcript ? (
+        <button
+          type="button"
+          role="menuitem"
+          className={item}
+          disabled={working}
+          onClick={() => {
+            void commands
+              .seogiRetry(meeting.id, true)
+              .then(() => refreshDetail());
+            onClose();
+          }}
+        >
+          {t("minutes.rewrite")}
+        </button>
+      ) : null}
+      {meeting.minutes?.length ? (
+        <button
+          type="button"
+          role="menuitem"
+          className={item}
+          onClick={() => {
+            void commands.seogiReveal(meeting.id, "minutes");
+            onClose();
+          }}
+        >
+          {t("minutes.showMinutesFile")}
+        </button>
+      ) : null}
+      <button
+        type="button"
+        role="menuitem"
+        className={item}
+        onClick={() => {
+          void commands.seogiReveal(meeting.id, "recording");
+          onClose();
+        }}
+      >
+        {t("minutes.showRecording")}
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className={item}
+        onClick={() => {
+          void commands.seogiOpenFolder(meeting.id);
+          onClose();
+        }}
+      >
+        {t("minutes.openFolder")}
+      </button>
+      <button type="button" role="menuitem" className={item} onClick={onDelete}>
+        <span>{t("trash.menu")}</span>
+        {busy(meeting) ? (
+          <span className="text-[12px] t3">{t("trash.busyShort")}</span>
+        ) : null}
+      </button>
+    </div>
+  );
+}
+
+/** The thin line along the bottom that plays the recording: red ticks
+ *  where "중요 표시" was pressed, dots where tasks were said. */
+function PlayerLine({ player, meeting }: { player: Player; meeting: Meeting }) {
+  const { t } = useTranslation(NS);
+  const total = Math.max(1, player.durationMs);
+  const at = (ms: number) => `${Math.min(100, (ms / total) * 100)}%`;
+  const marks = meeting.marks_ms ?? [];
+  const said = (meeting.minutes?.[0]?.sections ?? [])
+    .filter((section) => section.kind === "actions")
+    .flatMap((section) => section.entries)
+    .map((entry) => entry.sources[0]?.ms)
+    .filter((ms): ms is number => ms !== undefined);
+  return (
+    <div className="player">
+      <button
+        type="button"
+        className="pl"
+        disabled={!player.canPlayThrough}
+        aria-label={player.playing ? t("minutes.pause") : t("minutes.listen")}
+        onClick={player.toggle}
+      >
+        {player.playing ? <PauseGlyph /> : <PlayGlyph />}
+      </button>
+      <span className="tab t2 text-[13.5px]">
+        {clock(player.timeMs)}{" "}
+        <span className="t3">{`/ ${clock(player.durationMs)}`}</span>
+      </span>
+      <div
+        role="slider"
+        tabIndex={0}
+        aria-label={t("minutes.position", {
+          total: clock(player.durationMs),
+          at: clock(player.timeMs),
+          marks: marks.length,
+        })}
+        aria-valuemin={0}
+        aria-valuemax={Math.round(total / 1000)}
+        aria-valuenow={Math.round(player.timeMs / 1000)}
+        className="trk"
+        onClick={(event) => {
+          const box = event.currentTarget.getBoundingClientRect();
+          player.seek(((event.clientX - box.left) / box.width) * total);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowRight") player.seek(player.timeMs + 5000);
+          if (event.key === "ArrowLeft") player.seek(player.timeMs - 5000);
+        }}
+      >
+        <span className="done" style={{ width: at(player.timeMs) }} />
+        {marks.map((mark) => (
+          <span key={`m${mark}`} className="mk" style={{ left: at(mark) }} />
+        ))}
+        {said.map((ms, index) => (
+          <span key={`e${index}`} className="ev" style={{ left: at(ms) }} />
+        ))}
+      </div>
+      {player.canPlayThrough ? null : (
+        <span className="t3 text-[13px]">{t("minutes.cannotPlayShort")}</span>
+      )}
+      <button
+        type="button"
+        className="ib"
+        disabled={!player.canPlayThrough}
+        onClick={player.nextRate}
+      >
+        {t("minutes.speed", { x: player.rate })}
+      </button>
+    </div>
+  );
+}
+
+/** A part of the minutes that opens when pressed. */
+function Fold({
+  title,
+  count,
+  countRed = false,
+  open = false,
+  id,
+  children,
+}: {
+  title: React.ReactNode;
+  count?: number;
+  countRed?: boolean;
+  open?: boolean;
+  id?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <details open={open || undefined} id={id}>
+      <summary className="fold">
+        <span>{title}</span>
+        <span className="r">
+          {count !== undefined ? (
+            <span className={countRed ? "rt" : undefined}>{count}</span>
+          ) : null}
+          <RightIcon />
+        </span>
+      </summary>
+      <div className="fold-body">{children}</div>
+    </details>
+  );
+}
+
+/** Opens the transcript and goes to it, where a speaker's name is pressed
+ *  to change it. */
+function showTranscriptNames() {
+  const fold = document.getElementById("transcript-fold");
+  if (fold instanceof HTMLDetailsElement) {
+    fold.open = true;
+    fold.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+}
+
+function Sheet({
+  meeting,
+  folder,
+  player,
+}: {
+  meeting: Meeting;
+  folder: string;
+  player: Player;
+}) {
+  const { t, i18n } = useTranslation(NS);
+  const length = useLength();
+  const refreshDetail = useSeogi((s) => s.refreshDetail);
+  const minutes = meeting.minutes?.[0];
+  const working = meeting.status === "working";
+  const listen = (ms: number) => player.seek(ms - 500);
+  const hear = (ms: number) => player.seek(ms - 1000, 6000);
+
+  const sections = minutes?.sections ?? [];
+  const actionSections = sections.filter((s) => s.kind === "actions");
+  const taskCount = actionSections.reduce((n, s) => n + s.entries.length, 0);
+  const others = [
+    ...sections.filter((s) => s.kind !== "actions" && s.key !== "open"),
+    ...sections.filter((s) => s.key === "open"),
+  ];
+  const story = minutes?.story ?? [];
+  const checks = sections.flatMap((section) =>
+    section.entries
+      .filter((entry) => (entry.reasons ?? []).length > 0)
+      .map((entry, index) => ({
+        section,
+        entry,
+        key: `${section.key}-${index}`,
+      })),
+  );
+
+  const start = meeting.started_at_ms;
+  const end = start + meeting.duration_ms;
+  const setDone = async (section: string, index: number, done: boolean) => {
+    await commands.seogiSetActionDone(meeting.id, section, index, done);
+    await refreshDetail();
+  };
+
+  return (
+    <article>
+      <div className="mb-1 text-[13px] t3">{t("minutes.thisIsMinutes")}</div>
+      <h1 className="a-h1">{meeting.title || t("untitled")}</h1>
+      <div className="a-meta">
+        <span>{`${fullDay(start, i18n.language)} ${hm(start)}`}</span>
+        {meeting.duration_ms > 0 ? (
+          <span>{length(meeting.duration_ms)}</span>
+        ) : null}
+      </div>
+      <PeopleLine
+        meeting={meeting}
+        onChanged={refreshDetail}
+        className="mt-2"
+      />
+      {meeting.transcript ? (
+        <button
+          type="button"
+          className="lnk mt-1.5 text-[13.5px]"
+          onClick={showTranscriptNames}
+        >
+          {t("names.renameSpeakers")}
+        </button>
+      ) : null}
+      <NameSpeakers meeting={meeting} player={player} />
+
+      {!minutes ? (
+        <p className="mt-8 mb-0 max-w-[60ch] text-[15px] leading-[1.7] t2">
+          {working ? t("minutes.rewriting") : t("minutes.notReady")}{" "}
+          {meeting.error
+            ? t(`trouble.${meeting.error}`, { defaultValue: "" })
+            : null}
+        </p>
+      ) : (
+        <>
+          {taskCount > 0 ? (
+            <section className="a-sec" aria-labelledby="tasks-h">
+              <h2 id="tasks-h">
+                {t("minutes.tasks")}
+                <span className="t3">{taskCount}</span>
+              </h2>
+              {actionSections.map((section) => (
+                <TaskGroup
+                  key={section.key}
+                  section={section}
+                  showTitle={actionSections.length > 1}
+                  onListen={listen}
+                  onDone={(index, done) =>
+                    void setDone(section.key, index, done)
+                  }
+                />
+              ))}
+            </section>
+          ) : (
+            <section className="a-sec" aria-labelledby="tasks-h">
+              <h2 id="tasks-h">{t("minutes.tasks")}</h2>
+              <p className="m-0 t2">{t("minutes.noTasksPlain")}</p>
+            </section>
+          )}
+
+          {story.length > 0 || minutes.summary ? (
+            <section className="a-sec" aria-labelledby="story-h">
+              <h2 id="story-h">{t("minutes.story")}</h2>
+              {story.length > 0 ? (
+                story.map((part, index) => (
+                  <div key={`${part.title}-${index}`} className="mb-4">
+                    {part.title ? (
+                      <h3 className="m-0 mb-0.5 text-[13.5px] font-medium t3">
+                        {part.title}
+                      </h3>
+                    ) : null}
+                    <p className="story">{part.text}</p>
+                    {part.sources.length > 0 ? (
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {part.sources.map((source) => (
+                          <TimeKey
+                            key={source.ms}
+                            ms={source.ms}
+                            onListen={listen}
+                          />
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ))
+              ) : (
+                <p className="story">{minutes.summary}</p>
+              )}
+            </section>
+          ) : (
+            <p className="a-sec mb-0 t3">{t("minutes.nothingToTell")}</p>
+          )}
+        </>
+      )}
+
+      <section className="a-sec" aria-labelledby="more-h">
+        <h2 id="more-h">{t("minutes.more")}</h2>
+        {checks.length > 0 ? (
+          <Fold title={t("minutes.checkFold")} count={checks.length} countRed>
+            <p className="mt-0 mb-2 text-[13.5px] t3">
+              {t("minutes.checkLead")}
+            </p>
+            {checks.map(({ section, entry, key }) => (
+              <div
+                key={key}
+                className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-2 border-t border-line first:border-t-0"
+              >
+                <span>
+                  <span className="block">{entry.text}</span>
+                  <span className="block text-[13px] rt">
+                    {t(`minutes.reason.${entry.reasons[0]}`, {
+                      defaultValue: t("minutes.reason.weak_support"),
+                    })}
+                    <span className="t3">{` · ${section.title}`}</span>
+                  </span>
+                </span>
+                {entry.sources[0] ? (
+                  <button
+                    type="button"
+                    className="chip self-start"
+                    aria-label={t("minutes.listen5From", {
+                      time: clock(entry.sources[0].ms),
+                    })}
+                    onClick={() => hear(entry.sources[0].ms)}
+                  >
+                    <PlayGlyph />
+                    {t("minutes.listen5")}
+                  </button>
+                ) : null}
+              </div>
+            ))}
+          </Fold>
+        ) : null}
+        {others.map((section) => (
+          <Fold
+            key={section.key}
+            title={section.title}
+            count={section.entries.length}
+          >
+            <RuledList entries={section.entries} onListen={listen} />
+          </Fold>
+        ))}
+        {minutes?.feedback ? (
+          <Fold title={<b>{t("feedback.title")}</b>}>
+            <Feedback meeting={meeting} onListen={listen} onHear={hear} />
+          </Fold>
+        ) : null}
+        <Fold title={t("context.title")}>
+          <MeetingContext
+            meeting={meeting}
+            working={working}
+            onChanged={refreshDetail}
+            documents={
+              <DocumentWords meeting={meeting} onChanged={refreshDetail} />
+            }
+          />
+        </Fold>
+        {meeting.transcript ? (
+          <Fold title={t("minutes.transcript")} id="transcript-fold">
+            <p className="mt-0 mb-2 text-[13px] t3">{t("names.tapToRename")}</p>
+            <Transcript meeting={meeting} player={player} />
+          </Fold>
+        ) : null}
+        {meeting.transcript ? (
+          <Fold title={t("minutes.ask")}>
+            <Ask id={meeting.id} onListen={listen} />
+          </Fold>
+        ) : null}
+        <Fold title={t("minutes.keptShort")}>
+          <p className="mt-0 mb-2 max-w-[66ch] text-[13.5px] t3">
+            {t("minutes.keptLead")}
+          </p>
+          <dl className="m-0 grid grid-cols-[96px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13.5px]">
+            <dt className="t3">{t("minutes.file")}</dt>
+            <dd className="m-0 break-all">{meeting.audio_file}</dd>
+            <dt className="t3">{t("minutes.sha")}</dt>
+            <dd className="m-0 break-all tab">{meeting.sha256 || "–"}</dd>
+            <dt className="t3">{t("minutes.recordedAt")}</dt>
+            <dd className="m-0 tab">
+              {t("minutes.recordedRange", {
+                day: isoDay(start),
+                from: hms(start),
+                to: hms(end),
+              })}
+              {meeting.time_source === "recorder" ||
+              meeting.time_source === "file_name" ||
+              meeting.time_source === "file_metadata"
+                ? null
+                : t("minutes.estimated")}
+            </dd>
+            {meeting.capture_note ? (
+              <>
+                <dt className="t3">{t("minutes.note")}</dt>
+                <dd className="m-0 rt">
+                  {t(`minutes.captureNote.${meeting.capture_note}`, {
+                    defaultValue: t("minutes.captureNote.file_incomplete"),
+                  })}
+                </dd>
+              </>
+            ) : null}
+            <dt className="t3">{t("minutes.folder")}</dt>
+            <dd className="m-0 break-all">
+              {folder}{" "}
+              <button
+                type="button"
+                className="lnk ml-1"
+                onClick={() => void commands.seogiOpenFolder(meeting.id)}
+              >
+                {t("minutes.openFolder")}
+              </button>
+            </dd>
+          </dl>
+          <p className="mt-3 mb-0 text-[13px] leading-[1.6] t3">
+            {minutes && meeting.transcript
+              ? t("minutes.writtenBy", {
+                  speech: shortModel(meeting.transcript.model),
+                  summary: minutes.written_by,
+                })
+              : null}
+            {(meeting.total_ms ?? 0) > 0
+              ? ` · ${t("minutes.took", { length: length(meeting.total_ms ?? 0) })}`
+              : null}
+            {(meeting.transcript?.corrections ?? []).length > 0
+              ? ` · ${t("minutes.corrected")}: ${(
+                  meeting.transcript?.corrections ?? []
+                )
+                  .map((c) => `${c.from} → ${c.to}`)
+                  .join(", ")}`
+              : null}
+          </p>
+        </Fold>
+      </section>
+    </article>
+  );
+}
+
+function TaskGroup({
+  section,
+  showTitle,
+  onListen,
+  onDone,
+}: {
+  section: MinutesSection;
+  showTitle: boolean;
+  onListen: (ms: number) => void;
+  onDone: (index: number, done: boolean) => void;
+}) {
+  const { t } = useTranslation(NS);
+  const speakerName = useSpeakerName();
+  return (
+    <div className="mb-2">
+      {showTitle ? (
+        <h3 className="m-0 mt-2 mb-0.5 text-[13px] font-medium t3">
+          {section.title}
+        </h3>
+      ) : null}
+      {section.entries.map((entry, index) => {
+        const source = entry.sources[0];
+        const owner =
+          entry.owner && !isUnnamed(entry.owner)
+            ? speakerName(entry.owner)
+            : "";
+        return (
+          <div
+            key={`${section.key}-${index}`}
+            className={`task ${entry.faint ? "opacity-70" : ""}`}
+          >
+            <input
+              type="checkbox"
+              className="chk"
+              checked={entry.done ?? false}
+              onChange={() => onDone(index, !(entry.done ?? false))}
+              aria-label={t("home.doneLabel", { task: entry.text })}
+            />
+            <span
+              className={entry.done ? "t3 line-through" : undefined}
+              title={quoteOf(entry) ? `「${quoteOf(entry)}」` : undefined}
+            >
+              <span className={`who ${owner ? "" : "rt"}`}>
+                {owner || t("ownerUnknown")}
+              </span>
+              {entry.text}
+              {(entry.reasons ?? []).length > 0 ? (
+                <em>{t("minutes.checkMark")}</em>
+              ) : null}
+            </span>
+            <span className={`due ${entry.due ? "" : "none"}`}>
+              {entry.due || t("dueUnknown")}
+            </span>
+            {source ? <TimeKey ms={source.ms} onListen={onListen} /> : <span />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The words an entry rests on, unless they only repeat the entry. */
+function quoteOf(entry: Entry): string {
+  const quote = entry.sources[0]?.quote ?? "";
+  return quote && bare(quote) !== bare(entry.text) ? quote : "";
+}
+
+function RuledList({
+  entries,
+  onListen,
+}: {
+  entries: Entry[];
+  onListen: (ms: number) => void;
+}) {
+  const { t } = useTranslation(NS);
+  return (
+    <ul className="m-0 p-0 list-none">
+      {entries.map((entry, index) => {
+        const quote = quoteOf(entry);
+        const source = entry.sources[0];
+        return (
+          <li
+            key={index}
+            className={`grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-2 border-t border-line first:border-t-0 ${
+              entry.faint ? "opacity-70" : ""
+            }`}
+          >
+            <span>
+              {entry.text}
+              {(entry.reasons ?? []).length > 0 ? (
+                <em className="not-italic rt text-[13px] ml-2">
+                  {t("minutes.checkMark")}
+                </em>
+              ) : null}
+              {quote ? (
+                <span className="block text-[13px] t3">{`「${quote}」`}</span>
+              ) : null}
+            </span>
+            {source ? (
+              <TimeKey
+                ms={source.ms}
+                onListen={onListen}
+                className="self-start"
+              />
+            ) : (
+              <span />
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+interface Asked {
+  question: string;
+  answer: Answer | null;
+  trouble: string;
+}
+
+/** Questions put to the recording. Each answer shows the words it rests on;
+ *  one whose words are not in the transcript says so. */
+function Ask({ id, onListen }: { id: string; onListen: (ms: number) => void }) {
+  const { t } = useTranslation(NS);
+  const [question, setQuestion] = useState("");
+  const [asked, setAsked] = useState<Asked[]>([]);
+  const waiting = asked.some((item) => !item.answer && !item.trouble);
+
+  const ask = async () => {
+    const words = question.trim();
+    if (!words || waiting) return;
+    setQuestion("");
+    setAsked((list) => [
+      { question: words, answer: null, trouble: "" },
+      ...list,
+    ]);
+    const result = await commands.seogiAsk(id, words);
+    setAsked((list) =>
+      list.map((item, index) =>
+        index === 0
+          ? result.status === "ok"
+            ? { ...item, answer: result.data }
+            : { ...item, trouble: result.error }
+          : item,
+      ),
+    );
+  };
+
+  return (
+    <div>
+      <p className="mt-0 mb-2.5 text-[13.5px] text-dim">
+        {t("minutes.askLead")}
+      </p>
+      <form
+        className="flex gap-2 pb-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void ask();
+        }}
+      >
+        <input
+          type="text"
+          value={question}
+          onChange={(event) => setQuestion(event.target.value)}
+          placeholder={t("minutes.askPlaceholder")}
+          aria-label={t("minutes.ask")}
+          className="field field-soft flex-1 min-w-0"
+        />
+        <button
+          type="submit"
+          className="key key-small"
+          disabled={waiting || !question.trim()}
+        >
+          {t("minutes.askButton")}
+        </button>
+      </form>
+      {asked.map((item, index) => (
+        <div
+          key={asked.length - index}
+          className={`py-2.5 ${
+            index === 0 ? "border-t border-line" : "border-t border-line"
+          }`}
+        >
+          <strong className="text-[14px]">{item.question}</strong>
+          {item.trouble ? (
+            <p
+              role="alert"
+              className="must-check mt-1.5 mb-0 px-2 py-1 font-medium"
+            >
+              {t("failed", { reason: item.trouble })}
+            </p>
+          ) : !item.answer ? (
+            <p className="mt-1.5 mb-0 text-[13.5px] text-dim">
+              {t("minutes.asking")}
+            </p>
+          ) : (
+            <>
+              <p
+                className={`mt-1.5 mb-0 text-[14px] leading-[1.6] ${
+                  item.answer.found ? "" : "text-dim"
+                }`}
+              >
+                {item.answer.text}
+              </p>
+              {item.answer.unsupported ? (
+                <p className="must-check mt-1.5 mb-0 px-2 py-1 text-[13.5px] font-medium">
+                  {t("minutes.askUnsupported")}
+                </p>
+              ) : null}
+              {item.answer.sources.map((source) => (
+                <div key={source.ms} className="flex items-start gap-2 mt-1.5">
+                  <TimeKey
+                    ms={source.ms}
+                    onListen={onListen}
+                    icon={false}
+                    className="!h-7 !px-[7px] flex-none"
+                  />
+                  <span className="pt-0.5 text-[13.5px] text-dim">{`「${source.quote}」`}</span>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+interface Paragraph {
+  startMs: number;
+  endMs: number;
+  speaker: number;
+  text: string;
+  unsure: boolean;
+}
+
+/** Lines by the same speaker with no real pause between them, as one. */
+function paragraphs(segments: Segment[]): Paragraph[] {
+  const out: Paragraph[] = [];
+  for (const line of segments) {
+    const last = out[out.length - 1];
+    if (
+      last &&
+      last.speaker === line.speaker &&
+      line.start_ms - last.endMs <= 2000
+    ) {
+      last.text = `${last.text} ${line.text}`;
+      last.endMs = line.end_ms;
+      last.unsure = last.unsure || (line.unsure ?? false);
+    } else {
+      out.push({
+        startMs: line.start_ms,
+        endMs: line.end_ms,
+        speaker: line.speaker,
+        text: line.text,
+        unsure: line.unsure ?? false,
+      });
+    }
+  }
+  return out;
+}
+
+/** A speaker who said less than this share is asked about last. */
+const QUIET_SHARE = 1;
+
+/**
+ * The lines that best show who a speaker is: long, clearly heard, and apart
+ * from each other.
+ */
+function telltaleLines(meeting: Meeting, speaker: number): Segment[] {
+  const lines = (meeting.transcript?.segments ?? [])
+    .filter(
+      (line) =>
+        line.speaker === speaker &&
+        !(line.unsure ?? false) &&
+        !(line.overlap ?? false) &&
+        (line.confidence ?? 1) >= 0.6,
+    )
+    .sort((a, b) => b.text.length - a.text.length);
+  const chosen: Segment[] = [];
+  for (const line of lines) {
+    if (
+      chosen.every((other) => Math.abs(other.start_ms - line.start_ms) > 60000)
+    ) {
+      chosen.push(line);
+    }
+    if (chosen.length === 2) break;
+  }
+  return chosen.sort((a, b) => a.start_ms - b.start_ms);
+}
+
+/**
+ * Speakers with no name yet, asked about one at a time from a thin line at
+ * the top of the minutes: never a window after the recording ends.
+ */
+function NameSpeakers({
+  meeting,
+  player,
+}: {
+  meeting: Meeting;
+  player: Player;
+}) {
+  const { t } = useTranslation(NS);
+  const speakerName = useSpeakerName();
+  const refreshDetail = useSeogi((s) => s.refreshDetail);
+  const [open, setOpen] = useState(false);
+  const [skipped, setSkipped] = useState<number[]>([]);
+  const [share, setShare] = useState<Record<number, number>>({});
+  const [other, setOther] = useState<Segment | null>(null);
+  const speakers = meeting.transcript?.speakers ?? [];
+  const shape = speakers.map((s) => `${s.id}:${s.name}`).join("|");
+
+  useEffect(() => {
+    void commands.seogiTalk(meeting.id).then((result) => {
+      if (result.status !== "ok") return;
+      const shares: Record<number, number> = {};
+      for (const s of result.data.speakers) shares[s.speaker] = s.share;
+      setShare(shares);
+    });
+  }, [meeting.id, shape]);
+
+  // The unnamed, those who said most first, the quiet ones last.
+  const unnamed = speakers
+    .filter((s) => isUnnamed(s.name) && (share[s.id] ?? 0) > 0)
+    .sort((a, b) => (share[b.id] ?? 0) - (share[a.id] ?? 0));
+  const loud = unnamed.filter((s) => (share[s.id] ?? 0) >= QUIET_SHARE);
+  const quiet = unnamed.filter((s) => (share[s.id] ?? 0) < QUIET_SHARE);
+  const queue = [...loud, ...quiet].filter((s) => !skipped.includes(s.id));
+  if (unnamed.length === 0 || !meeting.transcript) return null;
+
+  const current = queue[0];
+  const give = async (name: string, line: Segment | null) => {
+    if (!current) return;
+    await commands.seogiNameSpeaker(
+      meeting.id,
+      current.id,
+      name,
+      line ? "here" : "all",
+      line ? line.start_ms : 0,
+      line ? line.end_ms : 0,
+    );
+    setOther(null);
+    await refreshDetail();
+  };
+
+  const bar =
+    "flex flex-wrap items-center gap-x-3 mt-3 py-2 px-3 rounded-[9px] bg-s1 text-[13.5px]";
+  if (!open) {
+    return (
+      <div className={bar}>
+        <span>{t("names.unnamed", { n: loud.length || unnamed.length })}</span>
+        <button type="button" className="lnk" onClick={() => setOpen(true)}>
+          {t("names.start")}
+        </button>
+      </div>
+    );
+  }
+  if (!current) {
+    return (
+      <div className={bar}>
+        <span>{t("names.allSeen")}</span>
+        <button type="button" className="lnk" onClick={() => setOpen(false)}>
+          {t("names.cancel")}
+        </button>
+      </div>
+    );
+  }
+  const lines = telltaleLines(meeting, current.id);
+  const quietOne = (share[current.id] ?? 0) < QUIET_SHARE;
+  const noPeople = (meeting.people ?? []).length === 0;
+  return (
+    <section
+      aria-label={t("names.cardLabel")}
+      className="mt-3 p-4 rounded-[10px] bg-s1 text-[14px]"
+    >
+      {noPeople ? (
+        <div className="mb-3 pb-3 border-b border-line">
+          <div className="mb-2 font-medium">{t("names.peopleFirst")}</div>
+          <PeopleLine meeting={meeting} onChanged={refreshDetail} open />
+        </div>
+      ) : null}
+      <div className="flex flex-wrap items-baseline gap-x-3 mb-2">
+        <b className="text-[15px]">
+          {quietOne ? t("names.quiet") : speakerName(current.name)}
+        </b>
+        <span className="text-[13px] t3">
+          {t("names.cardShare", {
+            share: Math.round(share[current.id] ?? 0),
+            left: queue.length,
+          })}
+        </span>
+        <span className="ml-auto flex gap-3">
+          <button
+            type="button"
+            className="lnk text-[13px]"
+            onClick={() => setSkipped((now) => [...now, current.id])}
+          >
+            {t("names.skip")}
+          </button>
+          <button
+            type="button"
+            className="lnk text-[13px]"
+            onClick={() => setOpen(false)}
+          >
+            {t("names.later")}
+          </button>
+        </span>
+      </div>
+      <ul className="m-0 mb-3 p-0 list-none">
+        {lines.map((line) => (
+          <li key={line.start_ms} className="py-1.5 border-t border-line">
+            <div className="flex items-start gap-2.5">
+              <TimeKey
+                ms={line.start_ms}
+                onListen={() =>
+                  player.seek(line.start_ms, line.end_ms - line.start_ms + 500)
+                }
+              />
+              <span className="flex-1">{`「${line.text}」`}</span>
+              <button
+                type="button"
+                className="lnk text-[13px] t3"
+                aria-expanded={other === line}
+                onClick={() => setOther(other === line ? null : line)}
+              >
+                {t("names.someoneElse")}
+              </button>
+            </div>
+            {other === line ? (
+              <div className="mt-2 ml-[62px]">
+                <div className="mb-1 text-[13px] t3">
+                  {t("names.whoSaidLine")}
+                </div>
+                <NamePicker
+                  meeting={meeting}
+                  current={current.name}
+                  onPick={(name) => void give(name, line)}
+                />
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      <div className="mb-1.5 font-medium">{t("names.whoSaid")}</div>
+      <NamePicker
+        meeting={meeting}
+        current={current.name}
+        onPick={(name) => void give(name, null)}
+      />
+      <div className="mt-2 text-[13px] t3">{t("names.followHint")}</div>
+    </section>
+  );
+}
+
+/**
+ * Who a speaker is, from a line in the transcript: a name pressed is given
+ * at once, to the whole meeting unless "from here" or "this line" is chosen.
+ */
+function SpeakerNamer({
+  meeting,
+  speaker,
+  current,
+  fromMs,
+  toMs,
+  onDone,
+}: {
+  meeting: Meeting;
+  speaker: number;
+  current: string;
+  fromMs: number;
+  toMs: number;
+  onDone: (changed: boolean) => Promise<void> | void;
+}) {
+  const { t } = useTranslation(NS);
+  const [scope, setScope] = useState<NameScope>("all");
+  const [trouble, setTrouble] = useState("");
+
+  const give = async (name: string) => {
+    const result = await commands.seogiNameSpeaker(
+      meeting.id,
+      speaker,
+      name,
+      scope,
+      fromMs,
+      toMs,
+    );
+    if (result.status === "error") {
+      setTrouble(t("failed", { reason: result.error }));
+      return;
+    }
+    await onDone(true);
+  };
+
+  return (
+    <div
+      role="group"
+      aria-label={t("names.title")}
+      className="mt-2 mb-1 p-3 rounded-[10px] bg-s1 text-[13.5px]"
+    >
+      <NamePicker
+        meeting={meeting}
+        current={current}
+        onPick={(name) => void give(name)}
+      />
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[13px] t3">
+        <span>{t("names.where")}</span>
+        {(["all", "from_here", "here"] as const).map((option) => (
+          <button
+            key={option}
+            type="button"
+            aria-pressed={scope === option}
+            onClick={() => setScope(option)}
+            className={`p-0 border-0 bg-transparent ${
+              scope === option ? "t1 underline underline-offset-4" : "t3"
+            }`}
+          >
+            {t(`names.scope.${option}`)}
+          </button>
+        ))}
+        <button
+          type="button"
+          className="lnk ml-auto text-[13px]"
+          onClick={() => void onDone(false)}
+        >
+          {t("names.cancel")}
+        </button>
+      </div>
+      {trouble ? <p className="m-0 mt-1.5 rt">{trouble}</p> : null}
+    </div>
+  );
+}
+
+function Transcript({ meeting, player }: { meeting: Meeting; player: Player }) {
+  const { t } = useTranslation(NS);
+  const speakerName = useSpeakerName();
+  const refreshDetail = useSeogi((s) => s.refreshDetail);
+  // The line (by its start) whose speaker is being named.
+  const [naming, setNaming] = useState<number | null>(null);
+  const current = useRef<HTMLDivElement | null>(null);
+  const transcript = meeting.transcript;
+  const marks = meeting.marks_ms ?? [];
+
+  const lines = useMemo(
+    () => paragraphs(transcript?.segments ?? []),
+    [transcript],
+  );
+  const nowIndex = lines.findIndex(
+    (line, index) =>
+      player.timeMs >= line.startMs &&
+      player.timeMs < (lines[index + 1]?.startMs ?? Number.MAX_SAFE_INTEGER),
+  );
+  const following = player.playing || player.timeMs > 0;
+
+  useEffect(() => {
+    if (player.playing) {
+      current.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [nowIndex, player.playing]);
+
+  if (!transcript || lines.length === 0) return null;
+  const nameOf = (id: number) =>
+    transcript.speakers.find((speaker) => speaker.id === id)?.name ?? "";
+
+  return (
+    <div
+      aria-label={t("minutes.transcript")}
+      className="max-h-[70vh] overflow-y-auto pr-1"
+    >
+      <p className="mt-0 mb-2 text-[13.5px] t3">
+        {t("minutes.transcriptLead")}
+      </p>
+      {lines.map((line, index) => {
+        const on = following && index === nowIndex;
+        const marked = marks.some(
+          (mark) =>
+            mark >= line.startMs - 2000 &&
+            mark < (lines[index + 1]?.startMs ?? line.endMs + 1),
+        );
+        const raw = nameOf(line.speaker);
+        const band = on || marked;
+        return (
+          <div
+            key={line.startMs}
+            ref={on ? current : undefined}
+            className={`py-2 px-2 -mx-2 rounded-[8px] ${
+              band
+                ? marked
+                  ? "bg-s1 shadow-[inset_2px_0_0_var(--red)]"
+                  : "bg-s1"
+                : ""
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <TimeKey
+                ms={line.startMs}
+                onListen={(ms) => player.seek(ms)}
+                active={on}
+                icon={false}
+              />
+              <button
+                type="button"
+                aria-expanded={naming === line.startMs}
+                aria-label={t("names.change", { name: speakerName(raw) })}
+                onClick={() =>
+                  setNaming(naming === line.startMs ? null : line.startMs)
+                }
+                className="p-0 border-0 bg-transparent text-[13.5px] font-medium underline decoration-dotted decoration-[var(--t3)] underline-offset-4 cursor-pointer"
+              >
+                {speakerName(raw)}
+              </button>
+              {on || marked ? (
+                <span className="ml-auto text-[13px] rt">
+                  {[
+                    marked ? t("minutes.markedHere") : "",
+                    on ? t("minutes.nowHere") : "",
+                  ]
+                    .filter(Boolean)
+                    .join(", ")}
+                </span>
+              ) : isUnnamed(raw) && naming !== line.startMs ? (
+                <button
+                  type="button"
+                  className="lnk ml-auto"
+                  onClick={() => setNaming(line.startMs)}
+                >
+                  {t("minutes.nameIt")}
+                </button>
+              ) : null}
+            </div>
+            {naming === line.startMs ? (
+              <SpeakerNamer
+                meeting={meeting}
+                speaker={line.speaker}
+                current={raw}
+                fromMs={line.startMs}
+                toMs={line.endMs}
+                onDone={async (changed) => {
+                  setNaming(null);
+                  if (changed) await refreshDetail();
+                }}
+              />
+            ) : null}
+            <p
+              className={`mt-1 mb-0 text-[14.5px] leading-[1.7] ${
+                on ? "font-medium" : ""
+              } ${line.unsure ? "underline decoration-dotted decoration-[var(--t3)] underline-offset-4" : ""}`}
+            >
+              {line.text}
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}

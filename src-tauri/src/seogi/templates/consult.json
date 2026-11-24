@@ -1,0 +1,73 @@
+{
+  "id": "consult",
+  "name": "고객 상담",
+  "description": "고객과 만나 원하는 것, 예산, 일정, 자재를 이야기하는 상담",
+  "feedback": true,
+  "guidance": "고객이 한 말과 우리가 한 약속을 나눠서 봅니다. 고객이 원한 것과 걱정한 것은 고객의 말투를 살려 적습니다. 금액·치수·날짜는 한 글자도 바꾸지 않습니다.",
+  "sections": [
+    {
+      "key": "our_tasks",
+      "title": "우리 숙제",
+      "kind": "actions",
+      "instruction": "우리 쪽(상담하는 쪽)이 하겠다고 한 일. 도면 수정, 견적 전달, 일정 안내 같은 것."
+    },
+    {
+      "key": "customer_tasks",
+      "title": "고객 숙제",
+      "kind": "actions",
+      "instruction": "고객이 하겠다고 했거나 고객에게 부탁한 일. 치수 재기, 자재 고르기, 결정해서 알려 주기 같은 것."
+    },
+    {
+      "key": "decisions",
+      "title": "결정 사항",
+      "kind": "items",
+      "instruction": "고객이 분명하게 정한 것, 양쪽이 합의한 것만."
+    },
+    {
+      "key": "requests",
+      "title": "고객 요청 사항",
+      "kind": "items",
+      "instruction": "고객이 원한다고 말한 것. 아직 정해지지 않은 바람도 포함합니다."
+    },
+    {
+      "key": "budget",
+      "title": "예산",
+      "kind": "items",
+      "instruction": "예산, 금액, 견적, 계약금처럼 돈에 관한 말.",
+      "style": "fact"
+    },
+    {
+      "key": "schedule",
+      "title": "일정",
+      "kind": "items",
+      "instruction": "착공일, 공사 기간, 미팅 약속처럼 날짜와 기간에 관한 말.",
+      "style": "fact"
+    },
+    {
+      "key": "materials",
+      "title": "자재·사양",
+      "kind": "items",
+      "instruction": "자재, 색, 치수, 시공 방법에 관해 나온 말.",
+      "style": "fact"
+    },
+    {
+      "key": "site",
+      "title": "현장 주소",
+      "kind": "items",
+      "instruction": "아파트 이름, 동·호수, 평수처럼 현장을 가리키는 말.",
+      "style": "fact"
+    },
+    {
+      "key": "concerns",
+      "title": "고객의 우려",
+      "kind": "quotes",
+      "instruction": "고객이 걱정하거나 망설인 말. 고객이 한 말 그대로 짧게 인용합니다."
+    },
+    {
+      "key": "open",
+      "title": "아직 안 정한 것",
+      "kind": "items",
+      "instruction": "고객이 생각해 보겠다고 했거나 견적을 보고 정하겠다고 한 것처럼 아직 정해지지 않은 것."
+    }
+  ]
+}

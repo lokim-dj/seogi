@@ -1,0 +1,32 @@
+{
+  "id": "call",
+  "name": "통화",
+  "description": "두 사람이 전화로 짧게 용건을 주고받은 녹음",
+  "guidance": "용건이 무엇이었고 무엇을 약속했는지만 짧게 남깁니다.",
+  "sections": [
+    {
+      "key": "actions",
+      "title": "할 일",
+      "kind": "actions",
+      "instruction": "통화에서 하기로 한 일."
+    },
+    {
+      "key": "decisions",
+      "title": "약속한 것",
+      "kind": "items",
+      "instruction": "날짜, 금액, 방법처럼 통화에서 정해진 것."
+    },
+    {
+      "key": "discussion",
+      "title": "용건",
+      "kind": "items",
+      "instruction": "전화한 까닭과 주고받은 중요한 내용."
+    },
+    {
+      "key": "open",
+      "title": "아직 안 정한 것",
+      "kind": "items",
+      "instruction": "다시 연락하기로 했거나 정하지 못한 것."
+    }
+  ]
+}

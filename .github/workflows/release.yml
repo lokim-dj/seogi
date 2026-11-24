@@ -1,0 +1,83 @@
+name: Release
+
+# Run by hand: builds both platforms from the chosen ref, then makes a GitHub
+# Release named after the version in tauri.conf.json. The release is a draft
+# (seen only by the repository's owners) unless "publish" is ticked, so the
+# installers can be tried before anyone else sees them. Installed copies
+# learn of a version only once its release is published (latest.json of the
+# latest release).
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish at once instead of leaving a draft"
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    # The updater's signing key.
+    secrets: inherit
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      # What an installed Seogi reads to learn of a new version: the version,
+      # what changed, and for each platform the file and its signature.
+      - name: Write latest.json
+        run: |
+          version="$(grep -o '"version": "[^"]*"' src-tauri/tauri.conf.json | head -1 | cut -d'"' -f4)"
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${version}"
+          mac="Seogi_${version}_aarch64.app.tar.gz"
+          win="Seogi_${version}_x64-setup.exe"
+          ls -la artifacts
+          for file in "$mac" "$mac.sig" "$win" "$win.sig"; do
+            test -f "artifacts/$file" || { echo "missing $file"; exit 1; }
+          done
+          jq -n \
+            --arg version "$version" \
+            --arg notes "$(cat docs/release-notes/v${version}.md)" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg mac_url "$base/$mac" --rawfile mac_sig "artifacts/$mac.sig" \
+            --arg win_url "$base/$win" --rawfile win_sig "artifacts/$win.sig" \
+            '{version: $version, notes: $notes, pub_date: $date, platforms: {
+               "darwin-aarch64": {url: $mac_url, signature: $mac_sig},
+               "windows-x86_64": {url: $win_url, signature: $win_sig}}}' \
+            > artifacts/latest.json
+          cat artifacts/latest.json
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(grep -o '"version": "[^"]*"' src-tauri/tauri.conf.json | cut -d'"' -f4)"
+          ls -la artifacts
+          draft="--draft"
+          if [ "${{ inputs.publish }}" = "true" ]; then draft=""; fi
+          # A draft of this version from an earlier run is brought up to
+          # date instead of failing because it exists. A draft has no tag
+          # yet, so it is looked up among the releases by its name.
+          existing="$(gh release list --limit 50 --json name,isDraft,tagName \
+            --jq ".[] | select(.isDraft and .name == \"서기 v${version}\") | .tagName" | head -1)"
+          if [ -n "$existing" ]; then
+            gh release upload "$existing" artifacts/* --clobber
+            gh release edit "$existing" --notes-file docs/release-notes/v${version}.md \
+              --target "${GITHUB_SHA}" ${draft:+--draft}
+          else
+            gh release create "v${version}" artifacts/* $draft \
+              --title "서기 v${version}" \
+              --notes-file docs/release-notes/v${version}.md \
+              --target "${GITHUB_SHA}"
+          fi

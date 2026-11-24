@@ -1,0 +1,52 @@
+# transcribe-cpp 0.4.2, the Rust bindings for transcribe.cpp, vendored so Seogi
+# can read Whisper's decode telemetry (Session::whisper_decode_windows). The
+# native library still comes from the transcribe-cpp-sys crate on crates.io.
+# Copyright (c) 2026 The transcribe.cpp authors, MIT License; see LICENSE in
+# this folder.
+
+[package]
+edition = "2021"
+rust-version = "1.74"
+name = "transcribe-cpp"
+version = "0.4.2"
+build = "build.rs"
+links = "transcribe_cpp"
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+description = "Rust bindings for transcribe.cpp, a C/C++ speech-to-text library built on ggml"
+license = "MIT"
+repository = "https://github.com/handy-computer/transcribe.cpp"
+publish = false
+
+[features]
+cuda = ["transcribe-cpp-sys/cuda"]
+default = ["metal"]
+dynamic-backends = ["shared", "transcribe-cpp-sys/dynamic-backends"]
+metal = ["transcribe-cpp-sys/metal"]
+openmp = ["transcribe-cpp-sys/openmp"]
+rocm = ["transcribe-cpp-sys/rocm"]
+serde = ["dep:serde"]
+shared = ["transcribe-cpp-sys/shared"]
+vulkan = ["transcribe-cpp-sys/vulkan"]
+
+[lib]
+name = "transcribe_cpp"
+path = "src/lib.rs"
+
+[dependencies.log]
+version = "0.4"
+
+[dependencies.serde]
+version = "1"
+features = ["derive"]
+optional = true
+
+[dependencies.thiserror]
+version = "2"
+
+[dependencies.transcribe-cpp-sys]
+version = "0.4.2"
+default-features = false

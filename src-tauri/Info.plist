@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- The bundle's file name is Seogi.app; the base name must match it for
+       Finder to show the localized name (서기 on a Korean Mac). -->
+  <key>CFBundleDisplayName</key>
+  <string>Seogi</string>
+  <key>LSHasLocalizedDisplayName</key>
+  <true/>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>ko</string>
+    <string>en</string>
+  </array>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>녹음이 어느 일정의 회의인지 알아 회의 이름을 붙이려고 캘린더를 읽습니다. 캘린더는 고치지 않습니다.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>녹음이 어느 일정의 회의인지 알아 회의 이름을 붙이려고 캘린더를 읽습니다. 캘린더는 고치지 않습니다.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>회의를 녹음하고 받아쓰려면 마이크가 필요합니다. 소리는 이 컴퓨터 안에서만 글로 바뀝니다.</string>
+</dict>
+</plist>

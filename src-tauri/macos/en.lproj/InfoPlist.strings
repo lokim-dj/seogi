@@ -1,0 +1,6 @@
+/* The name shown on a Mac in English. */
+CFBundleDisplayName = "Seogi";
+CFBundleName = "Seogi";
+NSMicrophoneUsageDescription = "Seogi needs the microphone to record and transcribe meetings. The sound becomes text on this computer only.";
+NSCalendarsFullAccessUsageDescription = "Seogi reads your calendar to know which event a recording belongs to and name it. The calendar is not changed.";
+NSCalendarsUsageDescription = "Seogi reads your calendar to know which event a recording belongs to and name it. The calendar is not changed.";

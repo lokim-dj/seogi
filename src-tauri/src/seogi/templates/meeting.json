@@ -1,0 +1,45 @@
+{
+  "id": "meeting",
+  "name": "회의",
+  "description": "여러 사람이 안건을 놓고 이야기하고 정하는 내부 회의",
+  "guidance": "안건마다 무엇이 정해졌고 누가 무엇을 언제까지 하기로 했는지를 가장 먼저 봅니다.",
+  "sections": [
+    {
+      "key": "actions",
+      "title": "액션 아이템",
+      "kind": "actions",
+      "instruction": "누군가 하겠다고 했거나 하라고 정해진 일. 한 가지 일은 한 항목으로 씁니다."
+    },
+    {
+      "key": "decisions",
+      "title": "결정 사항",
+      "kind": "items",
+      "instruction": "분명하게 합의된 것만. 이유가 말로 나왔으면 함께 적습니다."
+    },
+    {
+      "key": "discussion",
+      "title": "핵심 논의",
+      "kind": "items",
+      "instruction": "결정이나 할 일로 이어지지 않았더라도 나중에 알아야 할 사실, 수치, 진행 상황."
+    },
+    {
+      "key": "risks",
+      "title": "리스크",
+      "kind": "items",
+      "instruction": "일정이 밀리거나 비용이 늘 수 있다고 말한 것, 걱정으로 나온 것."
+    },
+    {
+      "key": "open",
+      "title": "아직 안 정한 것",
+      "kind": "items",
+      "instruction": "결론이 나지 않았거나, 검토해 보겠다·생각해 보겠다처럼 모호하게 넘어간 것, 다음에 다시 정하기로 한 것."
+    },
+    {
+      "key": "next",
+      "title": "다음 회의",
+      "kind": "items",
+      "instruction": "다음 회의의 날짜·시각·안건이 말로 나온 경우만.",
+      "style": "fact"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "id": "vendor",
+  "name": "업체·외부 미팅",
+  "description": "협력 업체나 다른 회사와 가격, 납기, 조건을 이야기하는 미팅",
+  "guidance": "가격, 수량, 납기, 조건은 말한 그대로 적습니다. 어느 쪽이 무엇을 하기로 했는지 나눠서 봅니다.",
+  "sections": [
+    {
+      "key": "our_tasks",
+      "title": "우리 할 일",
+      "kind": "actions",
+      "instruction": "우리 쪽이 하겠다고 한 일."
+    },
+    {
+      "key": "their_tasks",
+      "title": "상대 할 일",
+      "kind": "actions",
+      "instruction": "상대 업체가 하겠다고 했거나 상대에게 부탁한 일."
+    },
+    {
+      "key": "decisions",
+      "title": "합의한 것",
+      "kind": "items",
+      "instruction": "양쪽이 분명하게 합의한 가격, 수량, 납기, 조건."
+    },
+    {
+      "key": "discussion",
+      "title": "핵심 논의",
+      "kind": "items",
+      "instruction": "합의까지 가지 않았더라도 나중에 알아야 할 제안, 조건, 사정."
+    },
+    {
+      "key": "open",
+      "title": "아직 안 정한 것",
+      "kind": "items",
+      "instruction": "확인해서 알려 주기로 한 것, 검토하겠다고만 한 것."
+    }
+  ]
+}
