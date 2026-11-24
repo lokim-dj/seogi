@@ -23,7 +23,8 @@
     "check:catalog": "bun scripts/sync-catalog.ts --check",
     "build:cjk-font": "bun scripts/build-cjk-font.ts",
     "check:cjk-font": "bun scripts/build-cjk-font.ts --check",
-    "check:public": "bun scripts/check-public-text.ts"
+    "check:public": "bun scripts/check-public-text.ts",
+    "check:version": "bun scripts/check-version.ts"
   },
   "dependencies": {
     "@handy-computer/models": "0.2.3",
