@@ -11,7 +11,7 @@ this compares the scripts against it:
     python3 eval/synthetic/check_names.py --private-vocab ~/somewhere/vocabulary.json
 
 It looks for the private vocabulary at --private-vocab, then at the
-SEOGI_PRIVATE_VOCAB environment variable, then at ~/seogi-private. When there
+SEOGI_PRIVATE_VOCAB environment variable, then at ~/seogi/private. When there
 is none it says so and passes: there is nothing to compare against.
 
 What it checks:
@@ -42,7 +42,7 @@ PERSON_CATEGORIES = {"직원", "고객", "staff", "customer", "person"}
 
 
 def find_private_vocab(given: Path | None) -> Path | None:
-    candidates = [given, os.environ.get("SEOGI_PRIVATE_VOCAB"), Path.home() / "seogi-private"]
+    candidates = [given, os.environ.get("SEOGI_PRIVATE_VOCAB"), Path.home() / "seogi" / "private"]
     for candidate in candidates:
         if not candidate:
             continue
