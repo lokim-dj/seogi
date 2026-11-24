@@ -24,6 +24,7 @@
     "build:cjk-font": "bun scripts/build-cjk-font.ts",
     "check:cjk-font": "bun scripts/build-cjk-font.ts --check",
     "check:public": "bun scripts/check-public-text.ts",
+    "test:public": "bun test scripts/check-public-text.test.ts",
     "check:version": "bun scripts/check-version.ts",
     "setup:hooks": "git config core.hooksPath .githooks"
   },

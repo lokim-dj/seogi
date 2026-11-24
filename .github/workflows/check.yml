@@ -27,6 +27,8 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Public text
         run: bun run check:public
+      - name: Public text check's own tests
+        run: bun run test:public
       - name: Version and release notes
         run: bun run check:version
       - name: Formatting (Prettier, cargo fmt)
