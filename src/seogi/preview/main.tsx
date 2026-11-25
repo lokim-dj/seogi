@@ -91,6 +91,7 @@ const config: Config = {
     button: false,
     button_at: null,
     key_moved: true,
+    model_standing_in: false,
   },
 };
 
@@ -583,6 +584,8 @@ mockIPC(
           (atLogin ? "on" : "off")
         );
       case "seogi_open_login_items":
+        return null;
+      case "seogi_download_dictation_model":
         return null;
       case "seogi_config":
         return config;

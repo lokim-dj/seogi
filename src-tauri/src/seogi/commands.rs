@@ -777,6 +777,14 @@ pub fn seogi_copy_last_dictation(app: AppHandle) -> Result<(), String> {
     dictation::copy_last(&app)
 }
 
+/// Downloads the default dictation model for a new install, from the
+/// first-run screen. Dictation moves to it once it is here.
+#[tauri::command]
+#[specta::specta]
+pub fn seogi_download_dictation_model(app: AppHandle) {
+    dictation::download_default_model(&app);
+}
+
 /// Forgets dictations from the recent list (by id), or every one with
 /// `None`. They are gone from this computer; returns how many went.
 #[tauri::command]

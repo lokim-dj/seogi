@@ -493,7 +493,7 @@ const en: Strings = {
     inboxNewHint: "It is not there yet. Pressing start makes it too.",
     speech: "Transcribing",
     speechHint:
-      "The speech model (1.6 GB) and the model that tells speakers apart are downloaded once.",
+      "The meeting speech model, the model that tells speakers apart and the dictation model are downloaded once (about 1.9 GB in all).",
     speechReady: "Ready",
     speechReadyHint: "It is on this computer",
     speechMissing: "To be downloaded",

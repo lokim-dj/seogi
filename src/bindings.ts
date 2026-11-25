@@ -1473,6 +1473,13 @@ async seogiCopyLastDictation() : Promise<Result<null, string>> {
 }
 },
 /**
+ * Downloads the default dictation model for a new install, from the
+ * first-run screen. Dictation moves to it once it is here.
+ */
+async seogiDownloadDictationModel() : Promise<void> {
+    await TAURI_INVOKE("seogi_download_dictation_model");
+},
+/**
  * Forgets dictations from the recent list (by id), or every one with
  * `None`. They are gone from this computer; returns how many went.
  */
@@ -2148,7 +2155,13 @@ button_at: Spot | null;
  * The shortcut has been moved off the first release's default
  * (Control+Option+Space) to the key dictation apps use. Done once.
  */
-key_moved: boolean }
+key_moved: boolean; 
+/**
+ * The meetings' speech model stands in for dictation until the default
+ * dictation model is downloaded, then dictation moves to it. Never set
+ * for a model the user picked.
+ */
+model_standing_in: boolean }
 /**
  * What the settings screen needs to know besides the choices.
  */

@@ -485,7 +485,7 @@ const ko = {
     inboxNewHint: "아직 없는 폴더입니다. 시작하기를 눌러도 만들어집니다.",
     speech: "받아쓰기",
     speechHint:
-      "받아쓰기 모델(1.6 GB)과 말한 사람을 나누는 모델을 한 번 내려받습니다.",
+      "회의 받아쓰기 모델, 말한 사람을 나누는 모델, 키보드 받아쓰기 모델을 한 번 내려받습니다(모두 약 1.9 GB).",
     speechReady: "준비됨",
     speechReadyHint: "이 컴퓨터에 있어요",
     speechMissing: "내려받아야 해요",

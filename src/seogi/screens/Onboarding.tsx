@@ -192,6 +192,8 @@ export default function Onboarding() {
     if (readiness && !readiness.diarizer_ready) {
       void commands.seogiDownloadDiarizer();
     }
+    // Dictation's own model too; it uses the meetings' model until then.
+    void commands.seogiDownloadDictationModel();
     await refreshSetup();
     setBusy(false);
   };

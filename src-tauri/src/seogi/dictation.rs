@@ -69,6 +69,10 @@ pub struct DictationConfig {
     /// The shortcut has been moved off the first release's default
     /// (Control+Option+Space) to the key dictation apps use. Done once.
     pub key_moved: bool,
+    /// The meetings' speech model stands in for dictation until the default
+    /// dictation model is downloaded, then dictation moves to it. Never set
+    /// for a model the user picked.
+    pub model_standing_in: bool,
 }
 
 impl Default for DictationConfig {
@@ -83,6 +87,7 @@ impl Default for DictationConfig {
             button: false,
             button_at: None,
             key_moved: false,
+            model_standing_in: false,
         }
     }
 }
@@ -300,6 +305,8 @@ pub fn write(app: &AppHandle, wanted: Dictation) -> Result<(), String> {
         button: wanted.button,
         button_at: config.dictation.button_at,
         key_moved: config.dictation.key_moved,
+        // A model the user picks is theirs from now on.
+        model_standing_in: config.dictation.model_standing_in && wanted.model == old_model,
     };
     if dictation.tidy_with != config.dictation.tidy_with {
         forget_troubles();
@@ -376,21 +383,93 @@ fn select_model(app: &AppHandle, model: &str) {
     info!("Dictation now uses {model}");
 }
 
+/// What dictation should do about its speech model.
+#[derive(Debug, PartialEq, Eq)]
+enum ModelChoice {
+    Keep,
+    Use { model: String, standing_in: bool },
+}
+
 /// A downloaded model for dictation when none is chosen yet: the default,
-/// or the meetings' own model.
+/// or the meetings' own model standing in until the default is here. A model
+/// that stood in gives way to the default once it is downloaded.
+fn model_choice(
+    selected: &str,
+    standing_in: bool,
+    meeting_model: &str,
+    here: impl Fn(&str) -> bool,
+) -> ModelChoice {
+    let use_model = |model: &str, standing_in: bool| ModelChoice::Use {
+        model: model.to_string(),
+        standing_in,
+    };
+    if standing_in && here(DEFAULT_DICTATION_MODEL) {
+        return use_model(DEFAULT_DICTATION_MODEL, false);
+    }
+    if !selected.is_empty() && here(selected) {
+        return ModelChoice::Keep;
+    }
+    if here(DEFAULT_DICTATION_MODEL) {
+        use_model(DEFAULT_DICTATION_MODEL, false)
+    } else if here(meeting_model) {
+        use_model(meeting_model, true)
+    } else {
+        ModelChoice::Keep
+    }
+}
+
 fn ensure_model(app: &AppHandle, meeting_model: &str) {
+    let Some(secretary) = Secretary::of(app) else {
+        return;
+    };
+    let mut dictation = secretary.config().dictation;
     let selected = settings::get_settings(app).selected_model;
     let models = app.state::<Arc<ModelManager>>();
     let here = |id: &str| models.get_model_info(id).is_some_and(|m| m.is_downloaded);
-    if !selected.is_empty() && here(&selected) {
+    let ModelChoice::Use { model, standing_in } =
+        model_choice(&selected, dictation.model_standing_in, meeting_model, here)
+    else {
+        return;
+    };
+    select_model(app, &model);
+    if dictation.model_standing_in != standing_in {
+        dictation.model_standing_in = standing_in;
+        if let Err(e) = secretary.set_dictation(dictation) {
+            warn!("Could not save the settings: {e:#}");
+        }
+    }
+}
+
+/// Downloads the default dictation model, asked for by the first-run screen
+/// together with the meetings' models (a new install; nobody else gets a
+/// download they did not ask for). Dictation keeps using the meetings' model
+/// meanwhile and moves to this one once it is here.
+pub fn download_default_model(app: &AppHandle) {
+    let Some(secretary) = Secretary::of(app) else {
+        return;
+    };
+    if !secretary.config().dictation.enabled {
         return;
     }
-    if let Some(model) = [DEFAULT_DICTATION_MODEL, meeting_model]
-        .into_iter()
-        .find(|id| here(id))
+    let models = app.state::<Arc<ModelManager>>().inner().clone();
+    if models
+        .get_model_info(DEFAULT_DICTATION_MODEL)
+        .is_some_and(|m| m.is_downloaded)
     {
-        select_model(app, model);
+        return;
     }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        match models.download_model(DEFAULT_DICTATION_MODEL).await {
+            Ok(()) => {
+                if let Some(secretary) = Secretary::of(&app) {
+                    let meeting_model = secretary.config().speech_model().to_string();
+                    ensure_model(&app, &meeting_model);
+                }
+            }
+            Err(e) => warn!("The dictation model could not be downloaded: {e:#}"),
+        }
+    });
 }
 
 // ----- turning it on and off -------------------------------------------------
@@ -1874,6 +1953,48 @@ mod tests {
         // A transcribed file is never taken, even when asked for by id.
         assert!(dictations_to_forget(&entries, Some(&[2])).is_empty());
         assert!(dictations_to_forget(&entries, Some(&[])).is_empty());
+    }
+
+    /// A new install: the meetings' model stands in while the default
+    /// downloads, and gives way once it is here. A model the user has is
+    /// kept.
+    #[test]
+    fn the_meeting_model_stands_in_until_the_default_is_here() {
+        let meeting = "whisper-turbo";
+        let only = |ids: &'static [&'static str]| move |id: &str| ids.contains(&id);
+        let use_model = |model: &str, standing_in: bool| ModelChoice::Use {
+            model: model.to_string(),
+            standing_in,
+        };
+        // Nothing yet, then only the meetings' model.
+        assert_eq!(
+            model_choice("", false, meeting, only(&[])),
+            ModelChoice::Keep
+        );
+        assert_eq!(
+            model_choice("", false, meeting, only(&["whisper-turbo"])),
+            use_model(meeting, true)
+        );
+        // The default arrives.
+        assert_eq!(
+            model_choice(
+                meeting,
+                true,
+                meeting,
+                only(&["whisper-turbo", DEFAULT_DICTATION_MODEL])
+            ),
+            use_model(DEFAULT_DICTATION_MODEL, false)
+        );
+        // The same models, but the user picked the meetings' model: kept.
+        assert_eq!(
+            model_choice(
+                meeting,
+                false,
+                meeting,
+                only(&["whisper-turbo", DEFAULT_DICTATION_MODEL])
+            ),
+            ModelChoice::Keep
+        );
     }
 
     #[test]
