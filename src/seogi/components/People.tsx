@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import type { Meeting } from "@/bindings";
 import { NS } from "../i18n";
 import { isUnnamed } from "./common";
+import { Marked } from "./Found";
 import { CloseIcon } from "./icons";
 import { setMeetingInfo } from "./MeetingContext";
 
@@ -120,11 +121,14 @@ export function PeopleLine({
   onChanged,
   open: startOpen = false,
   className = "",
+  mark = "",
 }: {
   meeting: Meeting;
   onChanged: () => Promise<void> | void;
   open?: boolean;
   className?: string;
+  /** Words a search went to, marked in the names. */
+  mark?: string;
 }) {
   const { t } = useTranslation(NS);
   const [open, setOpen] = useState(startOpen);
@@ -145,7 +149,11 @@ export function PeopleLine({
       >
         <span className="t3">{t("people.label")}</span>
         <span className={people.length > 0 ? "t2" : "t3"}>
-          {people.length > 0 ? people.join(", ") : t("people.none")}
+          {people.length > 0 ? (
+            <Marked text={people.join(", ")} words={mark} />
+          ) : (
+            t("people.none")
+          )}
         </span>
         <span className="lnk">{t("people.edit")}</span>
       </button>

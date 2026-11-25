@@ -9,6 +9,7 @@ import {
   events,
   type Config,
   type Event as CalendarEvent,
+  type FoundPlace,
   type Meeting,
   type MeetingSummary,
   type Readiness,
@@ -25,6 +26,15 @@ export type View =
   | { name: "home" }
   | { name: "minutes"; id: string }
   | { name: "settings" };
+
+/** Where a search sent the minutes: the line with the words, marked until
+ *  the person presses somewhere else, goes back or opens another meeting.
+ *  No place: the meeting as a whole, with the words marked in its title. */
+export interface Jump {
+  id: string;
+  words: string;
+  place: FoundPlace | null;
+}
 
 export interface ImportTally {
   added: number;
@@ -54,6 +64,7 @@ interface Seogi {
   droppedDocuments: { id: string; paths: string[] } | null;
   /** The meeting just moved to the trash, which can be brought back. */
   trashed: { title: string; at: number } | null;
+  jump: Jump | null;
 
   init: () => Promise<void>;
   refreshMeetings: () => Promise<void>;
@@ -62,7 +73,10 @@ interface Seogi {
   refreshRecording: () => Promise<void>;
   refreshDetail: () => Promise<void>;
   select: (id: string | null) => void;
-  open: (id: string) => void;
+  /** Opens a meeting's minutes; from a search, at the line it found. */
+  open: (id: string, found?: Omit<Jump, "id">) => void;
+  /** Takes the search's highlighter off the minutes. */
+  clearJump: () => void;
   go: (view: View) => void;
   goBack: () => void;
   goForward: () => void;
@@ -90,6 +104,7 @@ export const useSeogi = create<Seogi>((set, get) => ({
   forwardStack: [],
   droppedDocuments: null,
   trashed: null,
+  jump: null,
   downloads: {},
 
   init: async () => {
@@ -174,14 +189,22 @@ export const useSeogi = create<Seogi>((set, get) => ({
     void get().refreshDetail();
   },
 
-  open: (id) => {
+  open: (id, found) => {
     if (get().detail?.id !== id) set({ detail: null });
-    set({ selected: id, ...moved(get(), { name: "minutes", id }) });
+    set({
+      selected: id,
+      jump: found ? { id, ...found } : null,
+      ...moved(get(), { name: "minutes", id }),
+    });
     void get().refreshDetail();
   },
 
+  clearJump: () => {
+    if (get().jump) set({ jump: null });
+  },
+
   go: (view) => {
-    set(moved(get(), view));
+    set({ ...moved(get(), view), jump: null });
     arrived(view);
   },
 
@@ -189,7 +212,12 @@ export const useSeogi = create<Seogi>((set, get) => ({
     const { backStack, forwardStack, view, meetings } = get();
     const step = stepped(backStack, forwardStack, view, meetings);
     if (!step) return;
-    set({ view: step.to, backStack: step.from, forwardStack: step.onto });
+    set({
+      view: step.to,
+      backStack: step.from,
+      forwardStack: step.onto,
+      jump: null,
+    });
     arrived(step.to);
   },
 
@@ -197,7 +225,12 @@ export const useSeogi = create<Seogi>((set, get) => ({
     const { backStack, forwardStack, view, meetings } = get();
     const step = stepped(forwardStack, backStack, view, meetings);
     if (!step) return;
-    set({ view: step.to, forwardStack: step.from, backStack: step.onto });
+    set({
+      view: step.to,
+      forwardStack: step.from,
+      backStack: step.onto,
+      jump: null,
+    });
     arrived(step.to);
   },
 

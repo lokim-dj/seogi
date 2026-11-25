@@ -41,6 +41,11 @@
   --redfaint: oklch(0.63 0.2 29 / 0.1);
   --ringc: oklch(0.5 0.01 70);
   --sh: oklch(0.1 0.01 60 / 0.5);
+  /* The highlighter: only for the words a search went to, never for the
+     look of anything else. Dark ink on yellow reads on both papers. */
+  --hl: oklch(0.86 0.15 96);
+  --hl-ink: oklch(0.2 0.01 60);
+  --hl-soft: oklch(0.86 0.15 96 / 0.2);
 }
 
 @media (prefers-color-scheme: light) {
@@ -60,6 +65,9 @@
     --redfaint: oklch(0.56 0.2 28 / 0.08);
     --ringc: oklch(0.62 0.01 70);
     --sh: oklch(0.2 0.01 60 / 0.16);
+    --hl: oklch(0.92 0.15 100);
+    --hl-ink: oklch(0.22 0.01 60);
+    --hl-soft: oklch(0.92 0.15 100 / 0.55);
   }
 }
 
@@ -359,6 +367,75 @@
     font-style: normal;
     color: var(--rt);
     margin-left: 8px;
+  }
+
+  /* What a search found in a meeting, under its line: a few of the lines
+     the words are in, each one a way into the minutes at that line. */
+  .a-hits {
+    display: grid;
+    padding: 0 12px 8px 76px;
+    margin-top: -4px;
+  }
+  .a-hit {
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 10px;
+    align-items: baseline;
+    padding: 3px 8px;
+    margin-left: -8px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    text-align: left;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.5;
+    color: var(--t2);
+  }
+  .a-hit:hover:not(:disabled) {
+    background: var(--s1);
+    filter: none;
+  }
+  .a-hit .at {
+    color: var(--t3);
+    font-variant-numeric: tabular-nums;
+  }
+  .a-hit .tx {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .a-hits .more {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--t3);
+    padding: 2px 0 0 62px;
+  }
+  mark.hl-soft {
+    background: var(--hl-soft);
+    color: var(--t1);
+    border-radius: 2px;
+  }
+  /* The line a search went to: the words in highlighter yellow until the
+     person presses somewhere else. */
+  mark.hl {
+    background: var(--hl);
+    color: var(--hl-ink);
+    border-radius: 2px;
+    padding: 0 1px;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+    animation: hl-in 320ms ease-out;
+  }
+  @keyframes hl-in {
+    from {
+      background: transparent;
+      color: inherit;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    mark.hl {
+      animation: none;
+    }
   }
 
   /* The record key: a red dot in a ring. */

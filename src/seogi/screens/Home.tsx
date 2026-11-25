@@ -7,8 +7,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
 import { platform } from "@tauri-apps/plugin-os";
-import { commands, type MeetingSummary, type Upcoming } from "@/bindings";
+import {
+  commands,
+  type Found,
+  type MeetingSummary,
+  type Upcoming,
+} from "@/bindings";
 import { useLength, useNow } from "../components/common";
+import { around, Marked } from "../components/Found";
 import {
   CloseIcon,
   ImportIcon,
@@ -18,7 +24,7 @@ import {
 import UpdateNotice from "../components/UpdateNotice";
 import { ConfirmDelete, busy } from "../components/DeleteMeeting";
 import { NS } from "../i18n";
-import { daysAgo, fullDay, hm, keysShort, longDay } from "../lib/format";
+import { clock, daysAgo, fullDay, hm, keysShort, longDay } from "../lib/format";
 import { MICROPHONE_DENIED, useSeogi } from "../store";
 
 const RECORDING_KINDS = [
@@ -279,7 +285,11 @@ function MeetingList({
   const openMeeting = useSeogi((s) => s.open);
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
-  const [found, setFound] = useState<Set<string> | null>(null);
+  // What the backend found, for the words it was asked about.
+  const [found, setFound] = useState<{
+    words: string;
+    hits: Map<string, Found>;
+  } | null>(null);
   const field = useRef<HTMLInputElement | null>(null);
   const [menu, setMenu] = useState<{
     meeting: MeetingSummary;
@@ -306,7 +316,12 @@ function MeetingList({
     }
     const timer = window.setTimeout(() => {
       void commands.seogiSearch(words).then((result) => {
-        if (result.status === "ok") setFound(new Set(result.data));
+        if (result.status === "ok") {
+          setFound({
+            words,
+            hits: new Map(result.data.map((hit) => [hit.id, hit])),
+          });
+        }
       });
     }, 250);
     return () => window.clearTimeout(timer);
@@ -320,7 +335,7 @@ function MeetingList({
       return (
         meeting.title.toLowerCase().includes(words) ||
         meeting.summary.toLowerCase().includes(words) ||
-        (found?.has(meeting.id) ?? false)
+        (found?.hits.has(meeting.id) ?? false)
       );
     });
   }, [meetings, filter, finding, query, found]);
@@ -395,15 +410,42 @@ function MeetingList({
         days.map((day) => (
           <div key={day.key}>
             <h2 className="a-grp m-0">{dayHeading(day.at)}</h2>
-            {day.rows.map((meeting) => (
-              <Row
-                key={meeting.id}
-                meeting={meeting}
-                on={meeting.id === selected}
-                onOpen={() => openMeeting(meeting.id)}
-                onMenu={(x, y) => setMenu({ meeting, x, y })}
-              />
-            ))}
+            {day.rows.map((meeting) => {
+              const words = finding ? query.trim() : "";
+              const hit = words ? found?.hits.get(meeting.id) : undefined;
+              // The meeting's line goes to the first line the words are in;
+              // only the title, or not yet asked, to the top.
+              const first =
+                hit?.places.find((place) => place.kind !== "title") ??
+                hit?.places[0] ??
+                null;
+              return (
+                <div key={meeting.id}>
+                  <Row
+                    meeting={meeting}
+                    on={meeting.id === selected}
+                    onOpen={() =>
+                      openMeeting(
+                        meeting.id,
+                        words
+                          ? { words: found?.words ?? words, place: first }
+                          : undefined,
+                      )
+                    }
+                    onMenu={(x, y) => setMenu({ meeting, x, y })}
+                  />
+                  {hit && found ? (
+                    <Hits
+                      hit={hit}
+                      words={found.words}
+                      onOpen={(place) =>
+                        openMeeting(meeting.id, { words: found.words, place })
+                      }
+                    />
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         ))
       )}
@@ -490,6 +532,55 @@ function RowMenu({
           ) : null}
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Up to three lines of a found meeting with the words in them, each one a
+ *  way into the minutes at that line; how many more there are. */
+function Hits({
+  hit,
+  words,
+  onOpen,
+}: {
+  hit: Found;
+  words: string;
+  onOpen: (place: Found["places"][number]) => void;
+}) {
+  const { t } = useTranslation(NS);
+  const lines = hit.places.filter((place) => place.kind !== "title");
+  if (lines.length === 0) return null;
+  const shown = lines.slice(0, 3);
+  const titled = hit.places.some((place) => place.kind === "title") ? 1 : 0;
+  const more = hit.total - titled - shown.length;
+  return (
+    <div className="a-hits">
+      {shown.map((place) => (
+        <button
+          key={`${place.kind}-${place.section}-${place.index}`}
+          type="button"
+          className="a-hit"
+          onClick={() => onOpen(place)}
+        >
+          <span className="at">
+            {place.kind === "transcript" && place.ms !== null
+              ? clock(place.ms)
+              : place.kind === "people"
+                ? t("people.label")
+                : t("home.foundInMinutes")}
+          </span>
+          <span className="tx">
+            <Marked
+              text={around(place.text, words)}
+              words={words}
+              className="hl-soft"
+            />
+          </span>
+        </button>
+      ))}
+      {more > 0 ? (
+        <span className="more">{t("home.foundMore", { n: more })}</span>
+      ) : null}
     </div>
   );
 }

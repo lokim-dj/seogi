@@ -21,6 +21,8 @@ import type {
   Config,
   Dictation,
   DictationStatus,
+  Found,
+  FoundPlace,
   Meeting,
   MeetingSummary,
   Readiness,
@@ -396,6 +398,56 @@ const recordingMeeting: Meeting = {
   },
 };
 
+/** What the backend's search gives for the one meeting with minutes here,
+ *  in the same order (src-tauri/src/seogi/store.rs, `Meeting::found`). */
+function search(query: string): Found[] {
+  const words = query.trim().toLowerCase();
+  if (!words) return [];
+  const has = (text: string) => text.toLowerCase().includes(words);
+  const places: FoundPlace[] = [];
+  const add = (
+    kind: FoundPlace["kind"],
+    text: string,
+    section = "",
+    index = 0,
+    ms: number | null = null,
+  ) => places.push({ kind, text, section, index, ms });
+  if (has(done.title)) add("title", done.title);
+  const minutes = done.minutes?.[0];
+  if (minutes) {
+    const entries = (sections: typeof minutes.sections) => {
+      for (const section of sections) {
+        section.entries.forEach((entry, index) => {
+          if (has(entry.text) || has(entry.owner)) {
+            add("entry", entry.text, section.key, index);
+          }
+        });
+      }
+    };
+    entries(minutes.sections.filter((s) => s.kind === "actions"));
+    (minutes.story ?? []).forEach((part, index) => {
+      if (has(part.title) || has(part.text)) add("story", part.text, "", index);
+    });
+    if ((minutes.story ?? []).length === 0 && has(minutes.summary)) {
+      add("summary", minutes.summary);
+    }
+    const rest = minutes.sections.filter((s) => s.kind !== "actions");
+    entries([
+      ...rest.filter((s) => s.key !== "open"),
+      ...rest.filter((s) => s.key === "open"),
+    ]);
+  }
+  (done.transcript?.segments ?? []).forEach((segment, index) => {
+    if (has(segment.text)) {
+      add("transcript", segment.text, "", index, segment.start_ms);
+    }
+  });
+  const people = (done.people ?? []).join(", ");
+  if (has(people)) add("people", people);
+  if (places.length === 0) return [];
+  return [{ id: done.id, places: places.slice(0, 20), total: places.length }];
+}
+
 const templates = [
   meetingTemplate,
   consult,
@@ -628,8 +680,9 @@ mockIPC(
           };
         }
         return null;
-      case "seogi_microphones":
       case "seogi_search":
+        return search(String(args.query));
+      case "seogi_microphones":
         return [];
       case "seogi_has_key":
         return false;

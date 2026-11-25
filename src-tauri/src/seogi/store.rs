@@ -15,9 +15,10 @@ use log::warn;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use super::minutes::Minutes;
+use super::minutes::{Entry, Minutes, MinutesSection};
 use super::pipeline::Stats;
 use super::render::{self, Header};
+use super::templates::{SectionKind, OPEN_SECTION};
 use super::transcript::Transcript;
 
 /// The app's record of a meeting, inside its folder.
@@ -181,6 +182,50 @@ pub struct Meeting {
     pub total_ms: u64,
 }
 
+/// The most places a search gives for one meeting; `Found::total` counts
+/// them all.
+pub const FOUND_PLACES: usize = 20;
+
+/// What part of a meeting some words were found in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum FoundIn {
+    Title,
+    /// The one-line summary, where the minutes have no story.
+    Summary,
+    /// A part of the story; `index` says which.
+    Story,
+    /// A line of the minutes; `section` and `index` say which.
+    Entry,
+    /// A line of the transcript; `index` says which, `ms` when it was said.
+    Transcript,
+    /// The people at the meeting.
+    People,
+}
+
+/// One place a search found its words: the whole line they are in, and
+/// enough to find that line again on the screen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct FoundPlace {
+    pub kind: FoundIn,
+    pub text: String,
+    /// The minutes section's key, for an entry; empty otherwise.
+    pub section: String,
+    pub index: u32,
+    /// When it was said, for a transcript line.
+    pub ms: Option<u64>,
+}
+
+/// A meeting a search found, and where in it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct Found {
+    pub id: String,
+    /// In the order the minutes screen shows them; at most `FOUND_PLACES`.
+    pub places: Vec<FoundPlace>,
+    /// How many places there are in all.
+    pub total: u32,
+}
+
 /// What a list of meetings shows of one.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 pub struct MeetingSummary {
@@ -294,30 +339,99 @@ impl Meeting {
         }
     }
 
-    /// Everything about the meeting that a search looks through.
-    pub fn search_text(&self) -> String {
-        let mut text = self.title.clone();
-        for minutes in &self.minutes {
-            text.push('\n');
-            text.push_str(&minutes.summary);
-            for section in &minutes.sections {
-                for entry in &section.entries {
-                    text.push('\n');
-                    text.push_str(&entry.text);
-                    text.push(' ');
-                    text.push_str(&entry.owner);
+    /// Where `words` are in the meeting as its minutes screen shows it: the
+    /// title, the tasks, the story (or the one-line summary when there is
+    /// none), the other sections, the transcript lines, the people. `None`
+    /// when they are nowhere. Case does not matter.
+    pub fn found(&self, words: &str) -> Option<Found> {
+        let words = words.trim().to_lowercase();
+        if words.is_empty() {
+            return None;
+        }
+        let has = |text: &str| text.to_lowercase().contains(&words);
+        let mut places = Vec::new();
+        let mut add = |kind, text: &str, section: &str, index: usize, ms| {
+            places.push(FoundPlace {
+                kind,
+                text: text.to_string(),
+                section: section.to_string(),
+                index: index as u32,
+                ms,
+            });
+        };
+        if has(&self.title) {
+            add(FoundIn::Title, &self.title, "", 0, None);
+        }
+        if let Some(minutes) = self.minutes.first() {
+            let entries = |section: &MinutesSection, add: &mut dyn FnMut(&Entry, usize)| {
+                for (index, entry) in section.entries.iter().enumerate() {
+                    if has(&entry.text) || has(&entry.owner) {
+                        add(entry, index);
+                    }
                 }
+            };
+            let tasks = minutes
+                .sections
+                .iter()
+                .filter(|s| s.kind == SectionKind::Actions);
+            for section in tasks {
+                entries(section, &mut |entry, index| {
+                    add(FoundIn::Entry, &entry.text, &section.key, index, None)
+                });
+            }
+            for (index, part) in minutes.story.iter().enumerate() {
+                if has(&part.title) || has(&part.text) {
+                    add(FoundIn::Story, &part.text, "", index, None);
+                }
+            }
+            // The screen shows the summary only where there is no story.
+            if minutes.story.is_empty() && has(&minutes.summary) {
+                add(FoundIn::Summary, &minutes.summary, "", 0, None);
+            }
+            // The rest as the screen folds them, the unsettled last.
+            let rest = minutes
+                .sections
+                .iter()
+                .filter(|s| s.kind != SectionKind::Actions && s.key != OPEN_SECTION)
+                .chain(
+                    minutes
+                        .sections
+                        .iter()
+                        .filter(|s| s.kind != SectionKind::Actions && s.key == OPEN_SECTION),
+                );
+            for section in rest {
+                entries(section, &mut |entry, index| {
+                    add(FoundIn::Entry, &entry.text, &section.key, index, None)
+                });
             }
         }
         if let Some(transcript) = &self.transcript {
-            for segment in &transcript.segments {
-                text.push('\n');
-                text.push_str(&segment.text);
+            for (index, segment) in transcript.segments.iter().enumerate() {
+                if has(&segment.text) {
+                    add(
+                        FoundIn::Transcript,
+                        &segment.text,
+                        "",
+                        index,
+                        Some(segment.start_ms),
+                    );
+                }
             }
         }
-        text.push('\n');
-        text.push_str(&self.people.join(" "));
-        text.to_lowercase()
+        let people = self.people.join(", ");
+        if has(&people) {
+            add(FoundIn::People, &people, "", 0, None);
+        }
+        if places.is_empty() {
+            return None;
+        }
+        let total = places.len() as u32;
+        places.truncate(FOUND_PLACES);
+        Some(Found {
+            id: self.id.clone(),
+            places,
+            total,
+        })
     }
 
     /// When it was recorded, as the minutes show it: `2026-11-24 (화) 14:00`.
@@ -676,6 +790,92 @@ mod tests {
         }))
         .unwrap();
         assert!(old.terms.is_empty() && old.note.is_empty());
+    }
+
+    #[test]
+    fn a_search_says_which_lines_have_the_words_in_the_order_they_are_shown() {
+        use super::super::transcript::{Segment, Transcript};
+        let mut meeting = meeting("m1", 0);
+        meeting.minutes = vec![serde_json::from_value(serde_json::json!({
+            "template_id": "meeting", "template_name": "회의", "title": "",
+            "summary": "이사 일정을 정했다.",
+            "story": [{ "title": "일정", "text": "이사는 다음 달로 미뤘다.", "sources": [] }],
+            "sections": [
+                { "key": "open", "title": "남은 것", "kind": "items", "entries": [
+                    { "text": "이사 날짜 다시 확인", "owner": "", "due": "", "sources": [], "reasons": [] }
+                ] },
+                { "key": "decisions", "title": "결정", "kind": "items", "entries": [
+                    { "text": "바닥은 원목", "owner": "", "due": "", "sources": [], "reasons": [] },
+                    { "text": "이사 전에 청소", "owner": "", "due": "", "sources": [], "reasons": [] }
+                ] },
+                { "key": "tasks", "title": "할 일", "kind": "actions", "entries": [
+                    { "text": "견적 보내기", "owner": "이사팀", "due": "", "sources": [], "reasons": [] }
+                ] }
+            ],
+            "verified": 0, "to_check": 0, "dropped": 0, "written_by": ""
+        }))
+        .unwrap()];
+        meeting.transcript = Some(Transcript {
+            segments: vec![
+                Segment {
+                    start_ms: 1_000,
+                    text: "안녕하세요".into(),
+                    ..Default::default()
+                },
+                Segment {
+                    start_ms: 65_000,
+                    text: "이사는 언제 하세요?".into(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        });
+
+        let found = meeting.found(" 이사 ").unwrap();
+        assert_eq!(found.id, "m1");
+        let order: Vec<(FoundIn, &str, u32)> = found
+            .places
+            .iter()
+            .map(|p| (p.kind, p.section.as_str(), p.index))
+            .collect();
+        assert_eq!(
+            order,
+            vec![
+                (FoundIn::Entry, "tasks", 0),
+                (FoundIn::Story, "", 0),
+                (FoundIn::Entry, "decisions", 1),
+                (FoundIn::Entry, "open", 0),
+                (FoundIn::Transcript, "", 1),
+            ]
+        );
+        assert_eq!(found.places[4].ms, Some(65_000));
+        assert_eq!(found.places[4].text, "이사는 언제 하세요?");
+        assert_eq!(found.total, 5);
+
+        // Without a story the screen shows the summary, and so does a search.
+        meeting.minutes[0].story.clear();
+        let found = meeting.found("일정").unwrap();
+        assert_eq!(found.places[0].kind, FoundIn::Summary);
+
+        assert_eq!(
+            meeting.found("주간").unwrap().places[0].kind,
+            FoundIn::Title
+        );
+        assert!(meeting.found("없는 말").is_none());
+        assert!(meeting.found("  ").is_none());
+
+        // A long meeting gives the first places and counts the rest.
+        let transcript = meeting.transcript.as_mut().unwrap();
+        transcript.segments = (0..50)
+            .map(|i| Segment {
+                start_ms: i * 1000,
+                text: "또 그 말".into(),
+                ..Default::default()
+            })
+            .collect();
+        let found = meeting.found("그 말").unwrap();
+        assert_eq!(found.places.len(), FOUND_PLACES);
+        assert_eq!(found.total, 50);
     }
 
     #[test]
