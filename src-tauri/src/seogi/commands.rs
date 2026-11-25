@@ -777,6 +777,22 @@ pub fn seogi_copy_last_dictation(app: AppHandle) -> Result<(), String> {
     dictation::copy_last(&app)
 }
 
+/// Downloads the default dictation model for a new install, from the
+/// first-run screen. Dictation moves to it once it is here.
+#[tauri::command]
+#[specta::specta]
+pub fn seogi_download_dictation_model(app: AppHandle) {
+    dictation::download_default_model(&app);
+}
+
+/// Forgets dictations from the recent list (by id), or every one with
+/// `None`. They are gone from this computer; returns how many went.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_forget_dictations(app: AppHandle, ids: Option<Vec<i64>>) -> Result<u32, String> {
+    dictation::forget(&app, ids).await.map(|n| n as u32)
+}
+
 /// The floating key's menu, with its two lines in the user's language.
 #[tauri::command]
 #[specta::specta]
@@ -801,6 +817,38 @@ pub fn seogi_open_typing_permission() -> Result<(), String> {
     {
         Ok(())
     }
+}
+
+/// Whether the system will open Seogi at login, as the system has it (the
+/// setting may want it while System Settings has it switched off).
+#[tauri::command]
+#[specta::specta]
+pub fn seogi_login_item(app: AppHandle) -> crate::autostart::LoginItem {
+    crate::autostart::login_item(&app)
+}
+
+/// Opens the system's list of apps that open at login, where only the user
+/// can switch Seogi back on.
+#[tauri::command]
+#[specta::specta]
+pub fn seogi_open_login_items() {
+    crate::autostart::open_login_items();
+}
+
+/// Shows one notification the way Seogi shows its own. The first one is when
+/// macOS asks whether Seogi may show notifications, so the first-run screen
+/// sends it when the user asks, not in the middle of a meeting. The words
+/// come from the screen.
+#[tauri::command]
+#[specta::specta]
+pub fn seogi_try_notification(app: AppHandle, title: String, body: String) -> Result<(), String> {
+    use tauri_plugin_notification::NotificationExt;
+    app.notification()
+        .builder()
+        .title(title)
+        .body(body)
+        .show()
+        .map_err(|e| e.to_string())
 }
 
 /// Shows one of a meeting's files selected in Finder or Explorer: `minutes`

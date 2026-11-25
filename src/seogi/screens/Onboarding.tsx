@@ -4,9 +4,10 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
+import { platform } from "@tauri-apps/plugin-os";
 import { commands, type CalendarCheck } from "@/bindings";
 import { NS } from "../i18n";
-import { friendlyPath } from "../lib/format";
+import { friendlyPath, keysLabel, keysShort } from "../lib/format";
 import {
   KEY_OWNERS,
   LOCAL,
@@ -16,6 +17,7 @@ import {
   type LoginTool,
   type Mode,
 } from "../lib/summary";
+import Permissions from "../components/Permissions";
 import { useSeogi } from "../store";
 
 const MODES: Mode[] = ["local", "login", "key"];
@@ -49,10 +51,39 @@ export default function Onboarding() {
   const [made, setMade] = useState<string[]>([]);
   const [trouble, setTrouble] = useState("");
   const [busy, setBusy] = useState(false);
+  // Seogi opens at login and dictation is on unless turned off; both are
+  // said once, here, under what the computer has to allow.
+  const [atLogin, setAtLogin] = useState(false);
+  const [dictationKeys, setDictationKeys] = useState("");
+  const [keyTrouble, setKeyTrouble] = useState(false);
 
   useEffect(() => {
     void refreshSetup();
   }, [refreshSetup]);
+
+  useEffect(() => {
+    void commands.getAppSettings().then((result) => {
+      if (result.status === "ok")
+        setAtLogin(result.data.autostart_enabled ?? false);
+    });
+    void commands.seogiDictation().then((dictation) => {
+      if (!dictation.enabled || !dictation.shortcut) return;
+      const mac = platform() === "macos";
+      const keys = mac
+        ? keysShort(dictation.shortcut, true)
+        : keysLabel(dictation.shortcut, false);
+      setDictationKeys(keys.replace(/space/i, "Space"));
+    });
+    // Whether the key could be registered: dictation starts listening a
+    // moment after the app starts, so this looks once that has happened.
+    const timer = window.setTimeout(() => {
+      void commands.seogiDictationStatus().then((result) => {
+        if (result.status === "ok")
+          setKeyTrouble(!!result.data.shortcut_trouble);
+      });
+    }, 3000);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   // Whichever login is found is the one offered.
   useEffect(() => {
@@ -161,6 +192,8 @@ export default function Onboarding() {
     if (readiness && !readiness.diarizer_ready) {
       void commands.seogiDownloadDiarizer();
     }
+    // Dictation's own model too; it uses the meetings' model until then.
+    void commands.seogiDownloadDictationModel();
     await refreshSetup();
     setBusy(false);
   };
@@ -508,6 +541,8 @@ export default function Onboarding() {
             </table>
           </div>
 
+          <Permissions firstRun />
+
           {trouble ? (
             <p role="alert" className="rt mt-4 mb-0 text-[13.5px]">
               {t("failed", { reason: trouble })}
@@ -515,7 +550,21 @@ export default function Onboarding() {
           ) : null}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 mt-5">
             <span className="flex-[1_1_300px] text-[13px] t3">
-              {t("onboarding.mic")}
+              {atLogin ? (
+                <span className="block">{t("onboarding.atLogin")}</span>
+              ) : null}
+              {dictationKeys ? (
+                <span className="block">
+                  {t("onboarding.dictation", { keys: dictationKeys })}
+                  {keyTrouble ? (
+                    <span className="block rt">
+                      {t("onboarding.dictationKeyTrouble", {
+                        keys: dictationKeys,
+                      })}
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
             </span>
             <button
               type="button"

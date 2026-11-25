@@ -16,11 +16,10 @@ use tauri_plugin_autostart::ManagerExt;
 /// Apply the user's autostart preference using the best mechanism for the
 /// current platform.
 ///
-/// Errors are logged rather than returned: the preference is re-applied on
-/// every launch, so a transient failure self-heals and must not block
-/// startup. This mirrors the pre-existing behavior of ignoring
-/// enable()/disable() results.
-pub fn apply_autostart(app: &AppHandle, enabled: bool) {
+/// A failure is logged and returned. At launch the caller ignores it: the
+/// preference is re-applied on every launch, so a transient failure heals and
+/// must not block startup. The settings screen shows it.
+pub fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), String> {
     // A dev build is a bare executable in the build directory. Registering it
     // adds a login item named after the binary that points into `target/`, so
     // a dev build only ever clears its registration.
@@ -29,8 +28,7 @@ pub fn apply_autostart(app: &AppHandle, enabled: bool) {
     #[cfg(target_os = "macos")]
     if macos::login_item_api_available() {
         macos::remove_plugin_launch_agent(app);
-        macos::set_login_item(enabled);
-        return;
+        return macos::set_login_item(enabled);
     }
 
     let manager = app.autolaunch();
@@ -39,12 +37,53 @@ pub fn apply_autostart(app: &AppHandle, enabled: bool) {
     } else {
         manager.disable()
     };
-    if let Err(e) = result {
+    result.map_err(|e| {
         log::warn!(
             "Failed to apply autostart setting (enabled={}): {}",
             enabled,
             e
         );
+        e.to_string()
+    })
+}
+
+/// Whether the system will open the app at login, as the system says, not
+/// as the setting says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum LoginItem {
+    On,
+    Off,
+    /// Registered, but switched off in System Settings › Login Items (or
+    /// waiting for the user's approval there). Only the user can turn it on.
+    NeedsApproval,
+    /// The system could not be asked.
+    Unknown,
+}
+
+/// The login item as the system has it now.
+pub fn login_item(app: &AppHandle) -> LoginItem {
+    #[cfg(target_os = "macos")]
+    if macos::login_item_api_available() {
+        return macos::login_item();
+    }
+    match app.autolaunch().is_enabled() {
+        Ok(true) => LoginItem::On,
+        Ok(false) => LoginItem::Off,
+        Err(e) => {
+            log::warn!("Could not read the autostart setting: {e}");
+            LoginItem::Unknown
+        }
+    }
+}
+
+/// Opens the system's list of apps that open at login (macOS 13+; does
+/// nothing elsewhere).
+pub fn open_login_items() {
+    #[cfg(target_os = "macos")]
+    if macos::login_item_api_available() {
+        // SAFETY: a class method without arguments.
+        unsafe { objc2_service_management::SMAppService::openSystemSettingsLoginItems() };
     }
 }
 
@@ -67,30 +106,55 @@ mod macos {
     /// Register or unregister the app as a login item, skipping the call when
     /// the service is already in the requested state (unregistering a
     /// never-registered service returns an error on every launch otherwise).
-    pub fn set_login_item(enabled: bool) {
+    pub fn set_login_item(enabled: bool) -> Result<(), String> {
         let service = unsafe { SMAppService::mainAppService() };
         let status = unsafe { service.status() };
 
         if enabled {
             if status == SMAppServiceStatus::Enabled {
-                return;
+                return Ok(());
             }
             match unsafe { service.registerAndReturnError() } {
-                Ok(()) => log::info!("Registered login item via SMAppService"),
+                Ok(()) => {
+                    log::info!("Registered login item via SMAppService");
+                    Ok(())
+                }
                 // Fails in dev (no signed app bundle) and when the user has
                 // switched the item off in System Settings, which apps are
                 // not allowed to override.
-                Err(e) => log::warn!("Failed to register login item: {}", e),
+                Err(e) => {
+                    log::warn!("Failed to register login item: {}", e);
+                    Err(e.to_string())
+                }
             }
         } else {
             if status == SMAppServiceStatus::NotRegistered || status == SMAppServiceStatus::NotFound
             {
-                return;
+                return Ok(());
             }
             match unsafe { service.unregisterAndReturnError() } {
-                Ok(()) => log::info!("Unregistered login item via SMAppService"),
-                Err(e) => log::warn!("Failed to unregister login item: {}", e),
+                Ok(()) => {
+                    log::info!("Unregistered login item via SMAppService");
+                    Ok(())
+                }
+                Err(e) => {
+                    log::warn!("Failed to unregister login item: {}", e);
+                    Err(e.to_string())
+                }
             }
+        }
+    }
+
+    /// The login item as `SMAppService` reports it.
+    pub fn login_item() -> super::LoginItem {
+        let service = unsafe { SMAppService::mainAppService() };
+        let status = unsafe { service.status() };
+        if status == SMAppServiceStatus::Enabled {
+            super::LoginItem::On
+        } else if status == SMAppServiceStatus::RequiresApproval {
+            super::LoginItem::NeedsApproval
+        } else {
+            super::LoginItem::Off
         }
     }
 

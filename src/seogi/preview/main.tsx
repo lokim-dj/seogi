@@ -51,6 +51,9 @@ done.started_at_ms = today(10, 30);
 // Whether the preview may read the Mac's calendars: asked once, like the
 // system does.
 let macAccess = "not_determined";
+// The first-run screen starts with the microphone not yet allowed, so its
+// permission rows show their buttons.
+let micAllowed = screen !== "onboarding";
 
 const config: Config = {
   library_dir: "",
@@ -78,7 +81,7 @@ const config: Config = {
   muted_events: ["weekly"],
   minutes_beside_source: true,
   dictation: {
-    enabled: screen === "settings-dictation",
+    enabled: screen === "settings-dictation" || screen === "onboarding",
     tidy: screen === "settings-dictation",
     tidy_with: {
       kind: "ollama",
@@ -88,6 +91,7 @@ const config: Config = {
     button: false,
     button_at: null,
     key_moved: true,
+    model_standing_in: false,
   },
 };
 
@@ -106,8 +110,19 @@ const dictation: Dictation = {
   keep: 5,
 };
 
+// The recent dictations; "지우기" takes them out for the rest of the visit.
+let recentDictations = [
+  {
+    id: 2,
+    text: "내일 회의는 3시로 옮기고요, 자료는 다음 두 가지를 준비해 주세요.\n1. 매출표\n2. 일정표",
+    at_ms: now - 4 * minute,
+  },
+  { id: 1, text: "네, 오늘 안에 보내 드릴게요.", at_ms: now - 31 * minute },
+];
 const dictationStatus = (): DictationStatus => ({
-  permitted: screen !== "settings-dictation" || dictation.button,
+  permitted:
+    (screen !== "settings-dictation" || dictation.button) &&
+    screen !== "onboarding",
   active: dictation.enabled,
   handy_installed: true,
   handy_running: true,
@@ -170,13 +185,7 @@ const dictationStatus = (): DictationStatus => ({
     },
   ],
   ollama_running: true,
-  recent: [
-    {
-      text: "내일 회의는 3시로 옮기고요, 자료는 다음 두 가지를 준비해 주세요.\n1. 매출표\n2. 일정표",
-      at_ms: now - 4 * minute,
-    },
-    { text: "네, 오늘 안에 보내 드릴게요.", at_ms: now - 31 * minute },
-  ],
+  recent: [...recentDictations],
 });
 
 const readiness: Readiness = {
@@ -413,6 +422,7 @@ Object.assign(window, {
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 Object.assign(window, { __seogiCalls: calls });
 let isRecording = screen === "recording";
+let atLogin = true;
 const trashedRows: MeetingSummary[] = [];
 
 mockIPC(
@@ -428,6 +438,14 @@ mockIPC(
         return null;
       case "seogi_copy_last_dictation":
         return null;
+      case "seogi_forget_dictations": {
+        const ids = args.ids as number[] | null;
+        const before = recentDictations.length;
+        recentDictations = ids
+          ? recentDictations.filter((item) => !ids.includes(item.id))
+          : [];
+        return before - recentDictations.length;
+      }
       case "seogi_try_summary":
         return { ok: true, ms: 2100, model: "claude sonnet", trouble: "" };
       case "seogi_dictation":
@@ -555,7 +573,20 @@ mockIPC(
         return null;
       }
       case "get_app_settings":
-        return { app_language: "ko" };
+        return { app_language: "ko", autostart_enabled: atLogin };
+      case "change_autostart_setting":
+        atLogin = Boolean(args.enabled);
+        return null;
+      case "seogi_login_item":
+        // `?loginItem=needs_approval` shows it switched off in System Settings.
+        return (
+          new URLSearchParams(window.location.search).get("loginItem") ??
+          (atLogin ? "on" : "off")
+        );
+      case "seogi_open_login_items":
+        return null;
+      case "seogi_download_dictation_model":
+        return null;
       case "seogi_config":
         return config;
       case "seogi_templates":
@@ -612,7 +643,14 @@ mockIPC(
         };
       }
       case "plugin:macos-permissions|check_microphone_permission":
-        return true;
+        return micAllowed;
+      case "plugin:macos-permissions|check_accessibility_permission":
+        return dictationStatus().permitted;
+      case "plugin:macos-permissions|request_microphone_permission":
+        micAllowed = true;
+        return null;
+      case "seogi_try_notification":
+        return null;
       case "seogi_check_calendar": {
         const source = String(args.source ?? "").trim();
         const good = source.endsWith(".ics");

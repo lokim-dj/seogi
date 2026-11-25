@@ -1473,6 +1473,25 @@ async seogiCopyLastDictation() : Promise<Result<null, string>> {
 }
 },
 /**
+ * Downloads the default dictation model for a new install, from the
+ * first-run screen. Dictation moves to it once it is here.
+ */
+async seogiDownloadDictationModel() : Promise<void> {
+    await TAURI_INVOKE("seogi_download_dictation_model");
+},
+/**
+ * Forgets dictations from the recent list (by id), or every one with
+ * `None`. They are gone from this computer; returns how many went.
+ */
+async seogiForgetDictations(ids: number[] | null) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_forget_dictations", { ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * The floating key's menu, with its two lines in the user's language.
  */
 async seogiMicMenu(hide: string, settings: string) : Promise<Result<null, string>> {
@@ -1490,6 +1509,34 @@ async seogiMicMenu(hide: string, settings: string) : Promise<Result<null, string
 async seogiOpenTypingPermission() : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("seogi_open_typing_permission") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Whether the system will open Seogi at login, as the system has it (the
+ * setting may want it while System Settings has it switched off).
+ */
+async seogiLoginItem() : Promise<LoginItem> {
+    return await TAURI_INVOKE("seogi_login_item");
+},
+/**
+ * Opens the system's list of apps that open at login, where only the user
+ * can switch Seogi back on.
+ */
+async seogiOpenLoginItems() : Promise<void> {
+    await TAURI_INVOKE("seogi_open_login_items");
+},
+/**
+ * Shows one notification the way Seogi shows its own. The first one is when
+ * macOS asks whether Seogi may show notifications, so the first-run screen
+ * sends it when the user asks, not in the middle of a meeting. The words
+ * come from the screen.
+ */
+async seogiTryNotification(title: string, body: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_try_notification", { title, body }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2018,7 +2065,7 @@ muted_events: string[];
 minutes_beside_source: boolean; 
 /**
  * Dictation: a shortcut or the floating key, speech, and the words
- * typed where the cursor is. Off until the user turns it on.
+ * typed where the cursor is. On for a new install.
  */
 dictation: DictationConfig }
 /**
@@ -2084,7 +2131,8 @@ keep: number }
  */
 export type DictationConfig = { 
 /**
- * Dictation answers its shortcut and its key. Off until turned on.
+ * Dictation answers its shortcut and its key. On for a new install;
+ * a `seogi.json` that already says either way keeps what it says.
  */
 enabled: boolean; 
 /**
@@ -2107,7 +2155,13 @@ button_at: Spot | null;
  * The shortcut has been moved off the first release's default
  * (Control+Option+Space) to the key dictation apps use. Done once.
  */
-key_moved: boolean }
+key_moved: boolean; 
+/**
+ * The meetings' speech model stands in for dictation until the default
+ * dictation model is downloaded, then dictation moves to it. Never set
+ * for a model the user picked.
+ */
+model_standing_in: boolean }
 /**
  * What the settings screen needs to know besides the choices.
  */
@@ -2301,6 +2355,20 @@ export type LanguageStatus =
  */
 { kind: "auto_unavailable"; language: string; reason: AutoUnavailableReason }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
+/**
+ * Whether the system will open the app at login, as the system says, not
+ * as the setting says.
+ */
+export type LoginItem = "on" | "off" | 
+/**
+ * Registered, but switched off in System Settings › Login Items (or
+ * waiting for the user's approval there). Only the user can turn it on.
+ */
+"needs_approval" | 
+/**
+ * The system could not be asked.
+ */
+"unknown"
 /**
  * A calendar in the Calendar app.
  */
@@ -2749,7 +2817,11 @@ microphone: string }
 /**
  * A recent dictation, for the settings screen.
  */
-export type RecentDictation = { text: string; at_ms: number }
+export type RecentDictation = { 
+/**
+ * The dictation history's own id, for forgetting it.
+ */
+id: number; text: string; at_ms: number }
 /**
  * A recording started or ended.
  */

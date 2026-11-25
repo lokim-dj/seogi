@@ -32,12 +32,16 @@ use super::platform::hide_console;
 use crate::managers::history::HistoryManager;
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::TranscriptionManager;
-use crate::settings::{self, ClipboardHandling, PasteMethod, ShortcutActivation};
+use crate::settings::{self, AppSettings, ClipboardHandling, PasteMethod, ShortcutActivation};
 
-/// The speech model dictation uses unless the user picks another: the most
-/// accurate Korean model in the catalog, and the one Handy users have.
+/// The speech model dictation uses unless the user picks another (a model
+/// already chosen is kept). Fun-ASR Nano: with the language fixed to Korean
+/// it keeps English said among Korean better than Qwen3 ASR 1.7B, which can
+/// drop a whole English sentence, and it is about twice as fast. On Korean
+/// alone it is slightly less accurate (catalog.json, FLEURS ko: Qwen3 1.7B
+/// 4.6 % error, Fun-ASR Nano 5.2 %). The maintainer's choice.
 pub const DEFAULT_DICTATION_MODEL: &str =
-    "handy-computer/Qwen3-ASR-1.7B-gguf/Qwen3-ASR-1.7B-Q8_0.gguf";
+    "handy-computer/Fun-ASR-MLT-Nano-2512-gguf/Fun-ASR-MLT-Nano-2512-Q8_0.gguf";
 
 /// A place on the screen, in logical pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -51,7 +55,8 @@ pub struct Spot {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(default)]
 pub struct DictationConfig {
-    /// Dictation answers its shortcut and its key. Off until turned on.
+    /// Dictation answers its shortcut and its key. On for a new install;
+    /// a `seogi.json` that already says either way keeps what it says.
     pub enabled: bool,
     /// Tidy the words before they are typed.
     pub tidy: bool,
@@ -64,12 +69,16 @@ pub struct DictationConfig {
     /// The shortcut has been moved off the first release's default
     /// (Control+Option+Space) to the key dictation apps use. Done once.
     pub key_moved: bool,
+    /// The meetings' speech model stands in for dictation until the default
+    /// dictation model is downloaded, then dictation moves to it. Never set
+    /// for a model the user picked.
+    pub model_standing_in: bool,
 }
 
 impl Default for DictationConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             tidy: false,
             tidy_with: Provider::Ollama {
                 base_url: "http://localhost:11434".to_string(),
@@ -78,6 +87,7 @@ impl Default for DictationConfig {
             button: false,
             button_at: None,
             key_moved: false,
+            model_standing_in: false,
         }
     }
 }
@@ -175,6 +185,8 @@ pub struct TakenKeys {
 /// A recent dictation, for the settings screen.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct RecentDictation {
+    /// The dictation history's own id, for forgetting it.
+    pub id: i64,
     pub text: String,
     pub at_ms: i64,
 }
@@ -293,6 +305,8 @@ pub fn write(app: &AppHandle, wanted: Dictation) -> Result<(), String> {
         button: wanted.button,
         button_at: config.dictation.button_at,
         key_moved: config.dictation.key_moved,
+        // A model the user picks is theirs from now on.
+        model_standing_in: config.dictation.model_standing_in && wanted.model == old_model,
     };
     if dictation.tidy_with != config.dictation.tidy_with {
         forget_troubles();
@@ -369,21 +383,93 @@ fn select_model(app: &AppHandle, model: &str) {
     info!("Dictation now uses {model}");
 }
 
+/// What dictation should do about its speech model.
+#[derive(Debug, PartialEq, Eq)]
+enum ModelChoice {
+    Keep,
+    Use { model: String, standing_in: bool },
+}
+
 /// A downloaded model for dictation when none is chosen yet: the default,
-/// or the meetings' own model.
+/// or the meetings' own model standing in until the default is here. A model
+/// that stood in gives way to the default once it is downloaded.
+fn model_choice(
+    selected: &str,
+    standing_in: bool,
+    meeting_model: &str,
+    here: impl Fn(&str) -> bool,
+) -> ModelChoice {
+    let use_model = |model: &str, standing_in: bool| ModelChoice::Use {
+        model: model.to_string(),
+        standing_in,
+    };
+    if standing_in && here(DEFAULT_DICTATION_MODEL) {
+        return use_model(DEFAULT_DICTATION_MODEL, false);
+    }
+    if !selected.is_empty() && here(selected) {
+        return ModelChoice::Keep;
+    }
+    if here(DEFAULT_DICTATION_MODEL) {
+        use_model(DEFAULT_DICTATION_MODEL, false)
+    } else if here(meeting_model) {
+        use_model(meeting_model, true)
+    } else {
+        ModelChoice::Keep
+    }
+}
+
 fn ensure_model(app: &AppHandle, meeting_model: &str) {
+    let Some(secretary) = Secretary::of(app) else {
+        return;
+    };
+    let mut dictation = secretary.config().dictation;
     let selected = settings::get_settings(app).selected_model;
     let models = app.state::<Arc<ModelManager>>();
     let here = |id: &str| models.get_model_info(id).is_some_and(|m| m.is_downloaded);
-    if !selected.is_empty() && here(&selected) {
+    let ModelChoice::Use { model, standing_in } =
+        model_choice(&selected, dictation.model_standing_in, meeting_model, here)
+    else {
+        return;
+    };
+    select_model(app, &model);
+    if dictation.model_standing_in != standing_in {
+        dictation.model_standing_in = standing_in;
+        if let Err(e) = secretary.set_dictation(dictation) {
+            warn!("Could not save the settings: {e:#}");
+        }
+    }
+}
+
+/// Downloads the default dictation model, asked for by the first-run screen
+/// together with the meetings' models (a new install; nobody else gets a
+/// download they did not ask for). Dictation keeps using the meetings' model
+/// meanwhile and moves to this one once it is here.
+pub fn download_default_model(app: &AppHandle) {
+    let Some(secretary) = Secretary::of(app) else {
+        return;
+    };
+    if !secretary.config().dictation.enabled {
         return;
     }
-    if let Some(model) = [DEFAULT_DICTATION_MODEL, meeting_model]
-        .into_iter()
-        .find(|id| here(id))
+    let models = app.state::<Arc<ModelManager>>().inner().clone();
+    if models
+        .get_model_info(DEFAULT_DICTATION_MODEL)
+        .is_some_and(|m| m.is_downloaded)
     {
-        select_model(app, model);
+        return;
     }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        match models.download_model(DEFAULT_DICTATION_MODEL).await {
+            Ok(()) => {
+                if let Some(secretary) = Secretary::of(&app) {
+                    let meeting_model = secretary.config().speech_model().to_string();
+                    ensure_model(&app, &meeting_model);
+                }
+            }
+            Err(e) => warn!("The dictation model could not be downloaded: {e:#}"),
+        }
+    });
 }
 
 // ----- turning it on and off -------------------------------------------------
@@ -395,6 +481,7 @@ pub fn apply(app: &AppHandle) {
         return;
     };
     let config = secretary.config();
+    follow_language(app, &config.language);
     let dictation = &config.dictation;
     if dictation.enabled {
         ensure_model(app, config.speech_model());
@@ -407,6 +494,56 @@ pub fn apply(app: &AppHandle) {
         stop_listening(app);
     }
     super::mic_button::set_shown(app, dictation.enabled && dictation.button);
+}
+
+/// Dictation speaks Seogi's language (`seogi.json`, Korean unless changed),
+/// not the engine's "auto": left to guess, a model can hear a drawn-out
+/// Korean "아아아" as Chinese and type 啊啊啊. Words said in English inside
+/// Korean still come out in English (checked on mixed clips; see the pull
+/// request that made this change).
+fn follow_language(app: &AppHandle, language: &str) {
+    let mut s = settings::get_settings(app);
+    if speak_language(&mut s, language) {
+        info!("Dictation now listens for {language}");
+        settings::write_settings(app, s);
+    }
+}
+
+/// Sets the engine's language to `language`; true when it changed.
+fn speak_language(s: &mut AppSettings, language: &str) -> bool {
+    let language = language.trim();
+    if language.is_empty() || s.selected_language == language {
+        return false;
+    }
+    s.selected_language = language.to_string();
+    true
+}
+
+/// Whether dictated words came out in a script the user's language does not
+/// use: for Korean, Chinese characters or kana with no Hangul at all. Such
+/// words were not what was said, so nothing is typed rather than something
+/// made up. English stays: Korean speakers say English words.
+pub fn wrong_script(app: &AppHandle, text: &str) -> bool {
+    Secretary::of(app).is_some_and(|s| other_script_only(text, &s.config().language))
+}
+
+fn other_script_only(text: &str, language: &str) -> bool {
+    if !language.starts_with("ko") {
+        return false;
+    }
+    let (mut hangul, mut other) = (0, 0);
+    for c in text.chars() {
+        match c as u32 {
+            0xAC00..=0xD7A3 | 0x1100..=0x11FF | 0x3130..=0x318F => hangul += 1,
+            0x3040..=0x30FF
+            | 0x31F0..=0x31FF
+            | 0x3400..=0x4DBF
+            | 0x4E00..=0x9FFF
+            | 0xF900..=0xFAFF => other += 1,
+            _ => {}
+        }
+    }
+    hangul == 0 && other > 0
 }
 
 /// Called once the app has started.
@@ -686,7 +823,8 @@ pub fn status(app: &AppHandle) -> DictationStatus {
 /// Models for dictation, by what the catalog measured for Korean
 /// (`catalog.json`: error rate, and speed as times faster than real time on
 /// an accelerated machine). Shown are those good enough to type with, and
-/// any other already downloaded.
+/// any other already downloaded. The recommended one is the default
+/// ([`DEFAULT_DICTATION_MODEL`], where the reasons are).
 const SPEECH_MODELS: &[(&str, &str, Speed, bool, bool)] = &[
     // (id contains, label, speed, accurate, recommended)
     ("Qwen3-ASR-1.7B", "Qwen3 ASR 1.7B", Speed::Fair, true, false),
@@ -773,6 +911,7 @@ fn recent(app: &AppHandle) -> Vec<RecentDictation> {
                         .filter(|t| !t.trim().is_empty())
                         .unwrap_or(entry.transcription_text);
                     (!text.trim().is_empty()).then(|| RecentDictation {
+                        id: entry.id,
                         text,
                         at_ms: entry.timestamp * 1000,
                     })
@@ -781,6 +920,48 @@ fn recent(app: &AppHandle) -> Vec<RecentDictation> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Forgets dictations on this computer: their words and their audio go from
+/// the dictation history, so they do not come back. `None` forgets every
+/// dictation. Returns how many went. Only dictations: files transcribed in
+/// the dictation history are left alone.
+pub async fn forget(app: &AppHandle, ids: Option<Vec<i64>>) -> Result<usize, String> {
+    let history = app
+        .try_state::<Arc<HistoryManager>>()
+        .ok_or("the dictation history is not ready")?;
+    let entries = history
+        .get_history_entries(None, None)
+        .await
+        .map_err(|e| format!("{e:#}"))?
+        .entries;
+    let gone = dictations_to_forget(&entries, ids.as_deref());
+    for id in &gone {
+        history
+            .delete_entry(*id)
+            .await
+            .map_err(|e| format!("{e:#}"))?;
+    }
+    // The words kept for "복사" after a failed paste go with them.
+    if ids.is_none() || !gone.is_empty() {
+        if let Ok(mut last) = LAST_WORDS.lock() {
+            last.clear();
+        }
+    }
+    Ok(gone.len())
+}
+
+/// The dictations among `entries` to forget: those in `ids`, or all.
+fn dictations_to_forget(
+    entries: &[crate::managers::history::HistoryEntry],
+    ids: Option<&[i64]>,
+) -> Vec<i64> {
+    entries
+        .iter()
+        .filter(|entry| entry.source_name.is_none())
+        .filter(|entry| ids.is_none_or(|ids| ids.contains(&entry.id)))
+        .map(|entry| entry.id)
+        .collect()
 }
 
 // ----- keys ------------------------------------------------------------------
@@ -1672,6 +1853,147 @@ mod tests {
         assert_eq!(
             key_to_move_to("ctrl+option+space", "option+space", &handy),
             Ok(Some("option+space".to_string()))
+        );
+    }
+
+    /// Dictation is on by default, so its default key must not be one of
+    /// Seogi's own default keys on either system.
+    #[test]
+    fn the_default_dictation_key_is_free_of_seogis_own_keys() {
+        let config = super::super::config::Config::default();
+        assert!(config.dictation.enabled);
+        let taken: Vec<TakenKeys> = taken_keys(&config)
+            .into_iter()
+            .filter(|taken| taken.by != "handy")
+            .collect();
+        let this_system = settings::get_default_settings()
+            .bindings
+            .get("transcribe")
+            .map(|b| b.current_binding.clone())
+            .unwrap_or_default();
+        for key in [this_system.as_str(), "option+space", "alt+space"] {
+            assert_eq!(shortcut_refused_by("", key, &taken), None, "{key}");
+        }
+    }
+
+    /// The engine's "auto" let a model guess the language; Seogi's language
+    /// is passed instead, and then the model is told Korean.
+    #[test]
+    fn dictation_speaks_seogis_language() {
+        use crate::language_detection::policy::{self, ModelLanguages, Plan};
+        let mut s = settings::get_default_settings();
+        s.spoken_languages = vec!["ko".into(), "en".into()];
+        assert_eq!(s.selected_language, "auto");
+        assert!(speak_language(&mut s, "ko"));
+        assert_eq!(s.selected_language, "ko");
+        assert!(!speak_language(&mut s, "ko"));
+        assert!(!speak_language(&mut s, ""));
+        assert_eq!(s.selected_language, "ko");
+
+        let languages: Vec<String> = ["zh", "en", "ja", "ko"].map(String::from).to_vec();
+        let model = ModelLanguages {
+            languages: &languages,
+            detects: false,
+            streaming: false,
+        };
+        let plan = policy::plan(
+            &s.selected_language,
+            &s.spoken_languages,
+            &model,
+            s.language_detection,
+            &[],
+        );
+        assert!(matches!(plan, Plan::Fixed { ref language, .. } if language == "ko"));
+    }
+
+    #[test]
+    fn words_in_another_script_are_not_typed_for_korean() {
+        assert!(other_script_only("啊啊啊啊啊啊", "ko"));
+        assert!(other_script_only("あああ。", "ko"));
+        assert!(!other_script_only("아아아아아아", "ko"));
+        // English is typed as said; so is a Chinese character among Hangul.
+        assert!(!other_script_only("Okay, sounds good.", "ko"));
+        assert!(!other_script_only("회의 資料 정리", "ko"));
+        assert!(!other_script_only("", "ko"));
+        // Only Korean is checked.
+        assert!(!other_script_only("啊啊啊", "zh"));
+    }
+
+    /// The list's recommended model is the one dictation starts on.
+    #[test]
+    fn the_recommended_model_is_the_default() {
+        let recommended: Vec<&str> = SPEECH_MODELS
+            .iter()
+            .filter(|(.., recommended)| *recommended)
+            .map(|(fragment, ..)| *fragment)
+            .collect();
+        assert_eq!(recommended.len(), 1);
+        assert!(DEFAULT_DICTATION_MODEL.contains(recommended[0]));
+    }
+
+    #[test]
+    fn only_dictations_are_forgotten() {
+        let entry = |id: i64, file: Option<&str>| crate::managers::history::HistoryEntry {
+            id,
+            file_name: format!("{id}.wav"),
+            timestamp: id,
+            saved: false,
+            title: String::new(),
+            transcription_text: "말한 것".into(),
+            post_processed_text: None,
+            post_process_prompt: None,
+            post_process_requested: false,
+            source_name: file.map(str::to_string),
+            language: None,
+            language_source: None,
+        };
+        let entries = vec![entry(3, None), entry(2, Some("회의.m4a")), entry(1, None)];
+        assert_eq!(dictations_to_forget(&entries, None), vec![3, 1]);
+        assert_eq!(dictations_to_forget(&entries, Some(&[1])), vec![1]);
+        // A transcribed file is never taken, even when asked for by id.
+        assert!(dictations_to_forget(&entries, Some(&[2])).is_empty());
+        assert!(dictations_to_forget(&entries, Some(&[])).is_empty());
+    }
+
+    /// A new install: the meetings' model stands in while the default
+    /// downloads, and gives way once it is here. A model the user has is
+    /// kept.
+    #[test]
+    fn the_meeting_model_stands_in_until_the_default_is_here() {
+        let meeting = "whisper-turbo";
+        let only = |ids: &'static [&'static str]| move |id: &str| ids.contains(&id);
+        let use_model = |model: &str, standing_in: bool| ModelChoice::Use {
+            model: model.to_string(),
+            standing_in,
+        };
+        // Nothing yet, then only the meetings' model.
+        assert_eq!(
+            model_choice("", false, meeting, only(&[])),
+            ModelChoice::Keep
+        );
+        assert_eq!(
+            model_choice("", false, meeting, only(&["whisper-turbo"])),
+            use_model(meeting, true)
+        );
+        // The default arrives.
+        assert_eq!(
+            model_choice(
+                meeting,
+                true,
+                meeting,
+                only(&["whisper-turbo", DEFAULT_DICTATION_MODEL])
+            ),
+            use_model(DEFAULT_DICTATION_MODEL, false)
+        );
+        // The same models, but the user picked the meetings' model: kept.
+        assert_eq!(
+            model_choice(
+                meeting,
+                false,
+                meeting,
+                only(&["whisper-turbo", DEFAULT_DICTATION_MODEL])
+            ),
+            ModelChoice::Keep
         );
     }
 

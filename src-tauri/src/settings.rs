@@ -602,8 +602,11 @@ fn default_start_hidden() -> bool {
     false
 }
 
+/// On for a new install: Seogi has to be running for the meeting reminder
+/// and dictation, so it opens at login unless the user turns it off. A
+/// store that already holds a value keeps it (see the tests).
 fn default_autostart_enabled() -> bool {
-    false
+    true
 }
 
 fn default_update_checks_enabled() -> bool {
@@ -1565,6 +1568,21 @@ mod tests {
         assert!(settings.filler_word_removal_enabled);
         // Bindings default to empty; the load path merges the real defaults in.
         assert!(settings.bindings.is_empty());
+    }
+
+    /// A new install opens at login; a store that already says either way
+    /// keeps what it says.
+    #[test]
+    fn autostart_is_on_for_a_new_store_and_kept_from_a_stored_one() {
+        assert!(get_default_settings().autostart_enabled);
+        let fresh: AppSettings = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(fresh.autostart_enabled);
+
+        for stored in [false, true] {
+            let settings: AppSettings =
+                serde_json::from_value(serde_json::json!({ "autostart_enabled": stored })).unwrap();
+            assert_eq!(settings.autostart_enabled, stored);
+        }
     }
 
     /// Frozen snapshot of a real v0.9.0-era settings store, as written to

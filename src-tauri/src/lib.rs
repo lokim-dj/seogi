@@ -431,7 +431,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // A development run pointed at its own data folder (see AGENTS.md) is a
     // trial: it leaves the computer's login items alone altogether.
     if !(cfg!(debug_assertions) && std::env::var_os("SEOGI_DATA_DIR").is_some()) {
-        autostart::apply_autostart(app_handle, settings.autostart_enabled);
+        // Logged inside; a failure must not stop the start, and the next
+        // start tries again.
+        let _ = autostart::apply_autostart(app_handle, settings.autostart_enabled);
     }
 
     // Create the recording overlay window (hidden by default)
@@ -898,8 +900,13 @@ pub fn run(cli_args: CliArgs) {
             seogi::commands::seogi_dictation_status,
             seogi::commands::seogi_dictation_toggle,
             seogi::commands::seogi_copy_last_dictation,
+            seogi::commands::seogi_forget_dictations,
+            seogi::commands::seogi_download_dictation_model,
             seogi::commands::seogi_mic_menu,
             seogi::commands::seogi_open_typing_permission,
+            seogi::commands::seogi_login_item,
+            seogi::commands::seogi_open_login_items,
+            seogi::commands::seogi_try_notification,
             seogi::commands::seogi_reveal,
             seogi::commands::seogi_open_trash,
             seogi::commands::seogi_try_summary,

@@ -90,7 +90,7 @@ pub struct Config {
     /// files, so it is where the minutes are looked for on the phone.
     pub minutes_beside_source: bool,
     /// Dictation: a shortcut or the floating key, speech, and the words
-    /// typed where the cursor is. Off until the user turns it on.
+    /// typed where the cursor is. On for a new install.
     pub dictation: DictationConfig,
 }
 
@@ -282,6 +282,23 @@ mod tests {
         // A broken file gives the defaults instead of stopping the app.
         std::fs::write(dir.path().join(FILE_NAME), "{ not json").unwrap();
         assert_eq!(Config::load(dir.path()), Config::default());
+    }
+
+    /// Dictation is on for a new install; a file that already says either
+    /// way keeps what it says.
+    #[test]
+    fn dictation_is_on_by_default_and_kept_from_a_saved_file() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(Config::load(dir.path()).dictation.enabled);
+
+        std::fs::write(dir.path().join(FILE_NAME), r#"{"language": "ko"}"#).unwrap();
+        assert!(Config::load(dir.path()).dictation.enabled);
+
+        for saved in [false, true] {
+            let text = format!(r#"{{"dictation": {{"enabled": {saved}}}}}"#);
+            std::fs::write(dir.path().join(FILE_NAME), text).unwrap();
+            assert_eq!(Config::load(dir.path()).dictation.enabled, saved);
+        }
     }
 
     #[test]

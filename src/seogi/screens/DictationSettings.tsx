@@ -66,6 +66,8 @@ export default function DictationSettings({
   const downloads = useSeogi((s) => s.downloads);
   const [dictation, setDictation] = useState<Dictation | null>(null);
   const [status, setStatus] = useState<DictationStatus | null>(null);
+  // "모두 지우기" asks once more, in its place.
+  const [askingAll, setAskingAll] = useState(false);
   const mac = platform() === "macos";
 
   const look = useCallback(async () => {
@@ -111,6 +113,23 @@ export default function DictationSettings({
       return;
     }
     onNote(t("settings.saved"));
+    void look();
+  };
+
+  // Gone from the list at once, and from the dictation history for good.
+  const forget = async (ids: number[] | null) => {
+    setAskingAll(false);
+    setStatus({
+      ...status,
+      recent: ids ? status.recent.filter((item) => !ids.includes(item.id)) : [],
+    });
+    const result = await commands.seogiForgetDictations(ids);
+    onNote(
+      result.status === "error"
+        ? t("failed", { reason: result.error })
+        : t("dictation.forgotten"),
+    );
+    // Read again either way: a failure halfway shows what is really left.
     void look();
   };
 
@@ -481,13 +500,41 @@ export default function DictationSettings({
                 {t("dictation.keepHint", { n: dictation.keep })}
               </div>
             </div>
-            <div className="v" />
+            <div className="v">
+              {status.recent.length > 0 && askingAll ? (
+                <>
+                  <span>{t("dictation.forgetAllAsk")}</span>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => void forget(null)}
+                  >
+                    {t("dictation.forget")}
+                  </button>
+                  <button
+                    type="button"
+                    className="lnk"
+                    onClick={() => setAskingAll(false)}
+                  >
+                    {t("dictation.forgetCancel")}
+                  </button>
+                </>
+              ) : status.recent.length > 0 ? (
+                <button
+                  type="button"
+                  className="lnk"
+                  onClick={() => setAskingAll(true)}
+                >
+                  {t("dictation.forgetAll")}
+                </button>
+              ) : null}
+            </div>
             <div className="full grid gap-1.5 text-[13.5px]">
               {status.recent.length === 0 ? (
                 <p className="m-0 t3">{t("dictation.keepNone")}</p>
               ) : (
                 status.recent.map((item) => (
-                  <div key={item.at_ms} className="flex items-start gap-3">
+                  <div key={item.id} className="flex items-start gap-3">
                     <span className="t3 shrink-0 tabular-nums">
                       {new Date(item.at_ms).toLocaleTimeString([], {
                         hour: "2-digit",
@@ -507,6 +554,13 @@ export default function DictationSettings({
                       }
                     >
                       {t("dictation.copy")}
+                    </button>
+                    <button
+                      type="button"
+                      className="lnk"
+                      onClick={() => void forget([item.id])}
+                    >
+                      {t("dictation.forget")}
                     </button>
                   </div>
                 ))

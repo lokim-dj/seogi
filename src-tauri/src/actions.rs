@@ -866,10 +866,21 @@ impl ShortcutAction for TranscribeAction {
                                 return;
                             };
 
+                            // Seogi: words in a script the user's language
+                            // does not use (啊啊啊 for a Korean "아아아") were
+                            // not what was said; nothing is typed.
+                            let other_language =
+                                crate::seogi::dictation::wrong_script(&ah, &processed.final_text);
+                            if other_language {
+                                log::info!("Dictation came out in another script; not typing it");
+                                processed.final_text.clear();
+                                processed.post_processed_text = None;
+                            }
+
                             // Seogi's tidying. Whatever happens to it, the
                             // words go in: tidied, or as heard with a note.
                             let mut tidy_note: Option<&'static str> = None;
-                            if seogi_tidy {
+                            if seogi_tidy && !processed.final_text.is_empty() {
                                 use crate::seogi::dictation::Tidied;
                                 let Some(tidied) = complete_unless_cancelled(
                                     crate::seogi::dictation::tidy(&ah, &processed.final_text),
@@ -933,6 +944,11 @@ impl ShortcutAction for TranscribeAction {
 
                             if final_text.is_empty() {
                                 finish_without_text(&ah, input_silent, sample_count, stop_time);
+                                // Said briefly; the words heard stay in the
+                                // recent dictations.
+                                if other_language {
+                                    utils::show_overlay_note(&ah, "otherLanguage");
+                                }
                             } else {
                                 let ah_clone = ah.clone();
                                 let paste_time = Instant::now();

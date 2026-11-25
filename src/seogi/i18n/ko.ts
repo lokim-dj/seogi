@@ -485,14 +485,18 @@ const ko = {
     inboxNewHint: "아직 없는 폴더입니다. 시작하기를 눌러도 만들어집니다.",
     speech: "받아쓰기",
     speechHint:
-      "받아쓰기 모델(1.6 GB)과 말한 사람을 나누는 모델을 한 번 내려받습니다.",
+      "회의 받아쓰기 모델, 말한 사람을 나누는 모델, 키보드 받아쓰기 모델을 한 번 내려받습니다(모두 약 1.9 GB).",
     speechReady: "준비됨",
     speechReadyHint: "이 컴퓨터에 있어요",
     speechMissing: "내려받아야 해요",
     speechMissingHint: "시작하기를 누르면 받습니다",
     speechLoading: "내려받는 중 {{percent}}%",
     speechLoadingHint: "받는 동안에도 녹음은 할 수 있어요",
-    mic: "마이크를 써도 되는지는 처음 녹음할 때 한 번만 묻습니다.",
+    atLogin: "컴퓨터를 켜면 서기도 함께 켜져요. 설정에서 끌 수 있어요.",
+    dictation:
+      "어느 앱에서든 {{keys}} 키를 누르고 말하면 글자가 들어가요. 설정에서 끌 수 있어요.",
+    dictationKeyTrouble:
+      "{{keys}} 키를 다른 프로그램이 쓰고 있어 등록하지 못했어요. 설정 › 받아쓰기에서 다른 키를 고를 수 있어요.",
     later: "나중에 정하기",
     start: "서기 시작하기",
   },
@@ -502,6 +506,14 @@ const ko = {
     speechModelHint:
       "녹음을 글로 받아쓰는 모델이에요. 이 컴퓨터 안에서 돌아요.",
     moreSettings: "더 보기",
+    start: "시작",
+    atLogin: "컴퓨터를 켜면 서기 켜기",
+    atLoginFailed:
+      "로그인 항목을 바꾸지 못했어요. 스위치는 지금 시스템 상태예요.",
+    atLoginOffInSystem:
+      "시스템 설정 › 일반 › 로그인 항목에서 서기가 꺼져 있어요. 거기서 켜야 해요.",
+    atLoginHint:
+      "로그인하면 서기가 함께 켜져서 회의 알림과 받아쓰기를 바로 쓸 수 있어요.",
     remindHint: "일정이 시작할 때 화면 위에 작게 알려요.",
     calendarCount: "주소 {{n}}개 연결됨",
     macOkShort: "맥 캘린더 연결됨",
@@ -627,6 +639,40 @@ const ko = {
     saved: "저장했습니다.",
     about: "서기 {{version}}",
   },
+  permissions: {
+    title: "서기가 쓰는 권한",
+    lead: "서기가 일하려면 컴퓨터의 허락이 몇 가지 필요해요. 지금 다 하지 않아도 시작할 수 있고, 설정에서 언제든 다시 볼 수 있어요.",
+    needed: "꼭 필요",
+    optional: "선택",
+    allowed: "허락됨",
+    notYet: "아직 허락 안 함",
+    off: "꺼져 있음",
+    allow: "허락하기",
+    openSettings: "시스템 설정 열기",
+    openWindows: "설정 열기",
+    microphone: "마이크",
+    microphoneFor: "회의를 녹음하고 받아쓰기를 할 때 써요.",
+    typing: "손쉬운 사용",
+    typingFor:
+      "받아쓴 글을 커서 자리에 넣어요. 시스템 설정 › 개인정보 보호 및 보안 › 손쉬운 사용에서 '서기'를 켜면 여기가 저절로 바뀌어요.",
+    calendar: "캘린더",
+    calendarFor:
+      "맥 '캘린더' 앱의 일정 이름으로 회의 제목을 붙여요. 캘린더는 고치지 않아요.",
+    calendarBlocked:
+      "시스템 설정 › 개인정보 보호 및 보안 › 캘린더에서 '서기'를 켤 수 있어요.",
+    calendarPick: "쓸 캘린더는 설정 › 보관과 일정에서 골라요.",
+    notify: "알림",
+    notifyFor: "회의록이 다 되면 알려 드려요.",
+    notifyTry: "알림 보내 보기",
+    askFailed: "지금은 되지 않았어요. 잠시 뒤 다시 눌러 주세요.",
+    notifySent:
+      "알림을 보냈어요. 보이지 않으면 시스템 설정 › 알림에서 '서기'를 켜 주세요.",
+    notifyTitle: "서기",
+    notifyBody: "회의록이 다 되면 이렇게 알려 드려요.",
+    documents: "문서 폴더",
+    documentsFor:
+      "회의는 문서 › 서기 폴더에 보관해요. 맥이 '문서' 폴더에 접근해도 되는지 물으면 '허용'을 눌러 주세요.",
+  },
   dictation: {
     title: "받아쓰기",
     lead: "단축키를 누르고 말하면, 지금 커서가 있는 곳에 글자가 들어가요. 회의함에는 남지 않아요.",
@@ -710,6 +756,11 @@ const ko = {
     keepNone: "아직 받아쓴 글이 없어요.",
     copy: "복사",
     copied: "복사했습니다.",
+    forget: "지우기",
+    forgetAll: "모두 지우기",
+    forgetAllAsk: "받아쓴 글을 모두 지울까요?",
+    forgetCancel: "그만두기",
+    forgotten: "지웠습니다.",
     errors: {
       shortcut_taken: "그 키는 {{by}}이라 쓸 수 없어요.",
       shortcut_empty: "단축키를 골라 주세요.",
@@ -737,6 +788,7 @@ const ko = {
         meeting: "회의 녹음 중이라 받아쓰기를 쉬어요",
         nowhere: "넣을 곳이 없어요",
         pasteFailed: "글자를 넣지 못했어요",
+        otherLanguage: "다른 나라 말로 들려서 넣지 않았어요",
       },
     },
   },
