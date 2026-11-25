@@ -32,7 +32,7 @@ macOS에서 CMake 오류가 나면 `CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tau
 
 ### macOS: 다시 빌드한 뒤 손쉬운 사용 권한이 켜져 있는데도 단축키가 안 먹을 때
 
-로컬 빌드는 임시 서명(`signingIdentity: "-"`)이라, 다시 빌드하면 macOS가 다른 앱으로 봅니다. 시스템 설정 › 개인정보 보호 및 보안 › 손쉬운 사용에서 서기 항목을 지웠다가 다시 추가하거나, 아래처럼 서기의 기록만 초기화합니다.
+로컬 빌드는 임시 서명(`signingIdentity: "-"`)이라, 다시 빌드하면 macOS가 다른 앱으로 봅니다. (내려받는 판은 GitHub 에서 자체 서명 인증서로 서명되어 판이 바뀌어도 같은 앱으로 보입니다. 인증서는 주인의 비공개 폴더와 저장소 Secrets 에만 있고, 비밀값이 없는 빌드(포크 등)는 임시 서명으로 돌아갑니다. 자세한 것은 [docs/RELEASING.md](docs/RELEASING.md).) 시스템 설정 › 개인정보 보호 및 보안 › 손쉬운 사용에서 서기 항목을 지웠다가 다시 추가하거나, 아래처럼 서기의 기록만 초기화합니다.
 
 ```bash
 tccutil reset Accessibility io.github.lokimdj.seogi

@@ -164,6 +164,10 @@ const ko = {
     typeHint:
       "이름을 쓰고 Enter 를 누르면 하나씩 들어가요. 이름은 이 컴퓨터에만 남고 다른 사람에게 보이지 않아요.",
   },
+  permissionLost: {
+    text: "받아쓰기를 쓰려면 손쉬운 사용에서 서기를 다시 허락해 주세요",
+    open: "시스템 설정 열기",
+  },
   update: {
     available: "새 버전 {{version}}이 있어요",
     install: "설치",

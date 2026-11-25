@@ -931,6 +931,7 @@
   },
   "errors": {
     "loadDirectory": "Error en carregar el directori: {{error}}",
+    "typingPermissionLostTitle": "Allow Seogi again in Accessibility to use dictation",
     "micPermissionDeniedTitle": "Accés al micròfon denegat",
     "micPermissionDenied": {
       "generic": "El sistema operatiu ha denegat l'accés al micròfon. Concediu el permís del micròfon a la configuració del sistema.",

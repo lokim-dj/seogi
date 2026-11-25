@@ -53,6 +53,9 @@ pub enum NoticeCode {
     PostProcessFailed,
     FileTranscriptionFailed,
     FilePostProcessFailed,
+    /// Dictation is on but macOS no longer lets Seogi type (Accessibility),
+    /// as after an update whose signature macOS did not recognize.
+    TypingPermissionLost,
 }
 
 impl NoticeCode {
@@ -67,7 +70,8 @@ impl NoticeCode {
             | Self::RecordingFailed
             | Self::ModelLoadFailed
             | Self::NoModelSelected
-            | Self::FileTranscriptionFailed => NoticeLevel::Error,
+            | Self::FileTranscriptionFailed
+            | Self::TypingPermissionLost => NoticeLevel::Error,
             Self::PostProcessFailed | Self::FilePostProcessFailed => NoticeLevel::Warning,
         }
     }
@@ -87,6 +91,7 @@ impl NoticeCode {
             Self::PostProcessFailed => &strings.post_process_failed_title,
             Self::FileTranscriptionFailed => &strings.file_transcription_failed_title,
             Self::FilePostProcessFailed => &strings.file_post_process_failed_title,
+            Self::TypingPermissionLost => &strings.typing_permission_lost_title,
         }
     }
 }

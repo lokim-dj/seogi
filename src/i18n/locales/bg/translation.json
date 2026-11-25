@@ -931,6 +931,7 @@
   },
   "errors": {
     "loadDirectory": "Грешка при зареждане на папката: {{error}}",
+    "typingPermissionLostTitle": "Allow Seogi again in Accessibility to use dictation",
     "micPermissionDeniedTitle": "Няма достъп до микрофона",
     "micPermissionDenied": {
       "generic": "Операционната система отказа достъп до микрофона. Моля, дайте разрешение за микрофон в системните настройки.",

@@ -331,6 +331,13 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 show_main_window(app);
             }
             "notice" => {
+                // Lost typing permission is fixed in System Settings, so the
+                // line goes straight there (the window says the same).
+                if notices::tray_headline(app)
+                    .is_some_and(|n| n.code == notices::NoticeCode::TypingPermissionLost)
+                {
+                    let _ = seogi::commands::seogi_open_typing_permission();
+                }
                 show_main_window(app);
             }
             "check_updates" => {

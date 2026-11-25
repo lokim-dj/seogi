@@ -794,6 +794,20 @@ mockIPC(
           addresses: config.calendar_urls.map(() => read),
         };
       }
+      case "get_active_notices":
+        // `?permission-lost` shows the band for a lost typing permission.
+        return new URLSearchParams(window.location.search).has(
+          "permission-lost",
+        )
+          ? [
+              {
+                code: "TypingPermissionLost",
+                level: "error",
+                source: "dictation",
+                detail: null,
+              },
+            ]
+          : [];
       case "plugin:updater|check":
         // `?update` shows a new version on offer.
         return new URLSearchParams(window.location.search).has("update")

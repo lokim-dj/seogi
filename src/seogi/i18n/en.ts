@@ -169,6 +169,10 @@ const en: Strings = {
     typeHint:
       "Type a name and press Enter to add it. Names stay on this computer and no one else sees them.",
   },
+  permissionLost: {
+    text: "To use dictation, allow Seogi again in Accessibility",
+    open: "Open System Settings",
+  },
   update: {
     available: "Version {{version}} is out",
     install: "Install",
