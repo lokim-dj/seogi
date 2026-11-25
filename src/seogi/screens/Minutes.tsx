@@ -38,7 +38,9 @@ import { ConfirmDelete, busy } from "../components/DeleteMeeting";
 import { NS } from "../i18n";
 import { clock, fullDay, hm, hms, isoDay, shortModel } from "../lib/format";
 import { joinPath, usePlayer, type Player } from "../lib/player";
+import { speakerTones } from "../lib/speakers";
 import { taskLine, titleNeeded } from "../lib/tasks";
+import { Mark } from "../components/Mark";
 import { useSeogi, type Jump } from "../store";
 
 const bare = (text: string) => text.replace(/[\s.,!?'"「」…·]/g, "");
@@ -1424,6 +1426,18 @@ function Transcript({
     () => paragraphs(transcript?.segments ?? []),
     [transcript],
   );
+  // Each speaker's tone, by number: a new name keeps it.
+  const tones = useMemo(
+    () =>
+      speakerTones(
+        [
+          ...(transcript?.speakers ?? []).map((speaker) => speaker.id),
+          ...lines.map((line) => line.speaker),
+        ],
+        lines.map((line) => line.speaker),
+      ),
+    [transcript, lines],
+  );
   const nowIndex = lines.findIndex(
     (line, index) =>
       player.timeMs >= line.startMs &&
@@ -1466,6 +1480,9 @@ function Transcript({
         );
         const raw = nameOf(line.speaker);
         const band = on || marked;
+        // The same speaker going on after a pause: the mark is left out,
+        // the name kept quiet (pressing it still names this line).
+        const goingOn = index > 0 && lines[index - 1].speaker === line.speaker;
         return (
           <div
             key={line.startMs}
@@ -1486,6 +1503,19 @@ function Transcript({
                 active={on}
                 icon={false}
               />
+              <span
+                className="inline-flex shrink-0 w-3.5 -mr-1"
+                style={{ color: `var(--sp${tones.get(line.speaker) ?? 1})` }}
+              >
+                {goingOn ? null : (
+                  <Mark
+                    size={14}
+                    tight
+                    color="currentColor"
+                    className="block"
+                  />
+                )}
+              </span>
               <button
                 type="button"
                 aria-expanded={naming === line.startMs}
@@ -1493,7 +1523,9 @@ function Transcript({
                 onClick={() =>
                   setNaming(naming === line.startMs ? null : line.startMs)
                 }
-                className="p-0 border-0 bg-transparent text-[13.5px] font-medium underline decoration-dotted decoration-[var(--t3)] underline-offset-4 cursor-pointer"
+                className={`p-0 border-0 bg-transparent text-[13.5px] font-medium underline decoration-dotted decoration-[var(--t3)] underline-offset-4 cursor-pointer ${
+                  goingOn ? "t3" : ""
+                }`}
               >
                 {speakerName(raw)}
               </button>

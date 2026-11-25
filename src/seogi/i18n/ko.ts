@@ -176,6 +176,8 @@ const ko = {
     tomorrow: "내일",
     shortcutAnywhere: "{{keys}}, 다른 앱에서도",
     inMinutes: "{{n}}분 뒤",
+    inHours: "{{h}}시간 뒤",
+    inHoursMinutes: "{{h}}시간 {{m}}분 뒤",
     recordEvent: "눌러서 이 일정으로 녹음",
     noTasksShort: "회의록 완료 · 할 일 없음",
     checkShort: "확인 {{n}}",

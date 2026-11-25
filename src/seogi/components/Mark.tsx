@@ -13,16 +13,19 @@ export function Mark({
   size = 16,
   color = "#f1eee9",
   className = "",
+  tight = false,
 }: {
   state?: MarkState;
   size?: number;
   /** The stroke's colour; the dot is always the seal red. */
   color?: string;
   className?: string;
+  /** Fill the box with the oval alone, no room around it (small sizes). */
+  tight?: boolean;
 }) {
   return (
     <svg
-      viewBox="0 0 100 100"
+      viewBox={tight ? "17 17.7 63 63" : "0 0 100 100"}
       width={size}
       height={size}
       aria-hidden="true"
