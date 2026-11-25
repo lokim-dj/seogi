@@ -4,9 +4,10 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
+import { platform } from "@tauri-apps/plugin-os";
 import { commands, type CalendarCheck } from "@/bindings";
 import { NS } from "../i18n";
-import { friendlyPath } from "../lib/format";
+import { friendlyPath, keysLabel, keysShort } from "../lib/format";
 import {
   KEY_OWNERS,
   LOCAL,
@@ -49,8 +50,11 @@ export default function Onboarding() {
   const [made, setMade] = useState<string[]>([]);
   const [trouble, setTrouble] = useState("");
   const [busy, setBusy] = useState(false);
-  // Seogi opens at login unless turned off; said once, here.
+  // Seogi opens at login and dictation is on unless turned off; both are
+  // said once, here. On a Mac, typing waits for the user's permission.
   const [atLogin, setAtLogin] = useState(false);
+  const [dictationKeys, setDictationKeys] = useState("");
+  const [typingAllowed, setTypingAllowed] = useState(true);
 
   useEffect(() => {
     void refreshSetup();
@@ -60,6 +64,17 @@ export default function Onboarding() {
     void commands.getAppSettings().then((result) => {
       if (result.status === "ok")
         setAtLogin(result.data.autostart_enabled ?? false);
+    });
+    void commands.seogiDictation().then((dictation) => {
+      if (!dictation.enabled || !dictation.shortcut) return;
+      const mac = platform() === "macos";
+      const keys = mac
+        ? keysShort(dictation.shortcut, true)
+        : keysLabel(dictation.shortcut, false);
+      setDictationKeys(keys.replace(/space/i, "Space"));
+    });
+    void commands.seogiDictationStatus().then((result) => {
+      if (result.status === "ok") setTypingAllowed(result.data.permitted);
     });
   }, []);
 
@@ -527,6 +542,12 @@ export default function Onboarding() {
               {t("onboarding.mic")}
               {atLogin ? (
                 <span className="block">{t("onboarding.atLogin")}</span>
+              ) : null}
+              {dictationKeys ? (
+                <span className="block">
+                  {t("onboarding.dictation", { keys: dictationKeys })}
+                  {typingAllowed ? "" : ` ${t("onboarding.dictationAllow")}`}
+                </span>
               ) : null}
             </span>
             <button

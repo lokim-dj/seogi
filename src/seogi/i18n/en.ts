@@ -503,6 +503,9 @@ const en: Strings = {
     mic: "Permission to use the microphone is asked once, at the first recording.",
     atLogin:
       "Seogi also opens when you log in. You can turn this off in Settings.",
+    dictation:
+      "Press {{keys}} in any app and speak, and the words go in where you type. You can turn this off in Settings.",
+    dictationAllow: "To type the words, allow it once in Settings › Dictation.",
     later: "Decide later",
     start: "Start Seogi",
   },

@@ -51,7 +51,8 @@ pub struct Spot {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(default)]
 pub struct DictationConfig {
-    /// Dictation answers its shortcut and its key. Off until turned on.
+    /// Dictation answers its shortcut and its key. On for a new install;
+    /// a `seogi.json` that already says either way keeps what it says.
     pub enabled: bool,
     /// Tidy the words before they are typed.
     pub tidy: bool,
@@ -69,7 +70,7 @@ pub struct DictationConfig {
 impl Default for DictationConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             tidy: false,
             tidy_with: Provider::Ollama {
                 base_url: "http://localhost:11434".to_string(),
@@ -1673,6 +1674,26 @@ mod tests {
             key_to_move_to("ctrl+option+space", "option+space", &handy),
             Ok(Some("option+space".to_string()))
         );
+    }
+
+    /// Dictation is on by default, so its default key must not be one of
+    /// Seogi's own default keys on either system.
+    #[test]
+    fn the_default_dictation_key_is_free_of_seogis_own_keys() {
+        let config = super::super::config::Config::default();
+        assert!(config.dictation.enabled);
+        let taken: Vec<TakenKeys> = taken_keys(&config)
+            .into_iter()
+            .filter(|taken| taken.by != "handy")
+            .collect();
+        let this_system = settings::get_default_settings()
+            .bindings
+            .get("transcribe")
+            .map(|b| b.current_binding.clone())
+            .unwrap_or_default();
+        for key in [this_system.as_str(), "option+space", "alt+space"] {
+            assert_eq!(shortcut_refused_by("", key, &taken), None, "{key}");
+        }
     }
 
     #[test]

@@ -78,7 +78,7 @@ const config: Config = {
   muted_events: ["weekly"],
   minutes_beside_source: true,
   dictation: {
-    enabled: screen === "settings-dictation",
+    enabled: screen === "settings-dictation" || screen === "onboarding",
     tidy: screen === "settings-dictation",
     tidy_with: {
       kind: "ollama",
