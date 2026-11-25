@@ -8,6 +8,10 @@
 //            mic-idle | mic-listening | mic-working |
 //            indicator-listening | indicator-tidying | indicator-note |
 //            indicator-nowhere
+//   &claude=missing|signed_out|signed_in&codex=… sets where the two
+//   subscription tools stand (settings, onboarding).
+//   &summary=key starts on '내 API 키' (Anthropic); &key=anthropic has its
+//   key saved.
 
 import React from "react";
 import ReactDOM from "react-dom/client";
@@ -27,7 +31,10 @@ import type {
   MeetingSummary,
   Readiness,
   RecordingState,
+  SignIn,
+  SignIns,
   Template,
+  Tool,
   Upcoming,
 } from "@/bindings";
 import call from "../../../src-tauri/src/seogi/templates/call.json";
@@ -70,7 +77,10 @@ const config: Config = {
   language: "ko",
   diarize: true,
   speech_model: "",
-  summary: { kind: "claude_cli", model: "claude-sonnet-5-5" },
+  summary:
+    new URLSearchParams(window.location.search).get("summary") === "key"
+      ? { kind: "anthropic", model: "claude-opus-5-5", key: "anthropic" }
+      : { kind: "claude_cli", model: "claude-sonnet-5-5" },
   vocabulary_path: "",
   input_device: "",
   calendar_urls: ["https://calendar.example/secret.ics"],
@@ -476,6 +486,24 @@ Object.assign(window, {
   },
 });
 
+// Where the two subscription tools stand: `&claude=missing&codex=signed_in`
+// picks a state for each. A sign-in or an installation finishes a few
+// seconds after it is started, as it would in the browser.
+const query = new URLSearchParams(window.location.search);
+const signInState = (name: string, fallback: SignIn): SignIn => {
+  const value = query.get(name);
+  return value === "missing" || value === "signed_out" || value === "signed_in"
+    ? value
+    : fallback;
+};
+// The keys "saved" in the preview's keychain; `&key=anthropic` starts with
+// one.
+const savedKeys = new Set(query.getAll("key"));
+const signIns: SignIns = {
+  claude: signInState("claude", "signed_in"),
+  codex: signInState("codex", "signed_out"),
+};
+
 // What the screens asked of the backend, for scripts/seogi-flows.mjs to read.
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 Object.assign(window, { __seogiCalls: calls });
@@ -503,6 +531,18 @@ mockIPC(
           ? recentDictations.filter((item) => !ids.includes(item.id))
           : [];
         return before - recentDictations.length;
+      }
+      case "seogi_sign_ins":
+        return { ...signIns };
+      case "seogi_sign_in": {
+        const tool = args.tool as Tool;
+        window.setTimeout(() => (signIns[tool] = "signed_in"), 4000);
+        return null;
+      }
+      case "seogi_open_install_page": {
+        const tool = args.tool as Tool;
+        window.setTimeout(() => (signIns[tool] = "signed_out"), 4000);
+        return null;
       }
       case "seogi_try_summary":
         return { ok: true, ms: 2100, model: "claude sonnet", trouble: "" };
@@ -691,7 +731,20 @@ mockIPC(
       case "seogi_microphones":
         return [];
       case "seogi_has_key":
-        return false;
+        return savedKeys.has(String(args.name));
+      case "seogi_set_key":
+        savedKeys.add(String(args.name));
+        return null;
+      case "seogi_remove_key":
+        savedKeys.delete(String(args.name));
+        return null;
+      case "seogi_key_models":
+        return [
+          "claude-sonnet-5-5",
+          "claude-opus-5-5",
+          "claude-haiku-5-5",
+          "claude-fable-5-2",
+        ];
       case "seogi_ask": {
         const source = done.minutes?.[0]?.sections[0]?.entries[0]?.sources[0];
         return {
