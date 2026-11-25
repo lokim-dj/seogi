@@ -804,12 +804,12 @@ mockIPC(
                 code: "CalendarPermissionLost",
                 level: "error",
                 source: "calendar",
-                detail: null,
+                detail: "not_determined",
               },
               {
                 code: "TypingPermissionLost",
                 level: "error",
-                source: "dictation",
+                source: "typing",
                 detail: null,
               },
             ]

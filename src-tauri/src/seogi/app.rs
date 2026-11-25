@@ -1851,7 +1851,7 @@ impl Secretary {
         *lock(&self.calendars) = self.cached_calendars();
         let mut read_at: Option<Instant> = None;
         let mut reminded: std::collections::HashSet<(String, i64)> = Default::default();
-        let mut told_denied = false;
+        let mut told: Option<&'static str> = None;
         loop {
             let due = read_at.is_none_or(|at| at.elapsed() >= REFRESH_EVERY);
             // macOS can take the Calendar app's permission away (an update
@@ -1864,22 +1864,30 @@ impl Secretary {
                 self.read_calendars();
                 read_at = Some(Instant::now());
             }
-            let denied = self.calendar_denied();
-            if denied != told_denied {
-                use crate::notices::{self, Notice, NoticeCode, NoticeSource};
-                if denied {
-                    notices::raise_without_overlay(
-                        &self.app,
-                        Notice::new(NoticeCode::CalendarPermissionLost, NoticeSource::Calendar),
-                    );
+            // Right after a new signature macOS may not list Seogi at all
+            // (not_determined): then it is asked, not sent to System Settings.
+            let refused = self.calendar_denied().then(|| {
+                if super::mac_calendar::access() == "not_determined" {
+                    "not_determined"
                 } else {
-                    notices::clear_matching(
+                    "denied"
+                }
+            });
+            if refused != told {
+                use crate::notices::{self, Notice, NoticeCode, NoticeSource};
+                match refused {
+                    Some(access) => notices::raise_without_overlay(
+                        &self.app,
+                        Notice::new(NoticeCode::CalendarPermissionLost, NoticeSource::Calendar)
+                            .with_detail(access.to_string()),
+                    ),
+                    None => notices::clear_matching(
                         &self.app,
                         NoticeSource::Calendar,
                         Some(NoticeCode::CalendarPermissionLost),
-                    );
+                    ),
                 }
-                told_denied = denied;
+                told = refused;
             }
             self.remind(&mut reminded);
             std::thread::sleep(Duration::from_secs(20));

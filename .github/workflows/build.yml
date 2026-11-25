@@ -160,8 +160,16 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # "Release" when called from the release workflow (see concurrency).
+          CALLED_BY: ${{ github.workflow }}
         run: |
           if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_CERTIFICATE_PASSWORD" ] || [ -z "$APPLE_SIGNING_IDENTITY" ]; then
+            # A release signed ad-hoc would make every Mac ask for its
+            # permissions again, so a release stops here instead.
+            if [ "$CALLED_BY" = "Release" ]; then
+              echo "::error::A release must be signed: APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD and APPLE_SIGNING_IDENTITY are all needed"
+              exit 1
+            fi
             echo "No signing certificate in this run's secrets; the app is signed ad-hoc."
             exit 0
           fi

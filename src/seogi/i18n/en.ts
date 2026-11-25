@@ -174,6 +174,7 @@ const en: Strings = {
     calendar:
       "To read your events, allow Seogi again in Calendars. Until then no event reminders come.",
     open: "Open System Settings",
+    ask: "Allow",
   },
   update: {
     available: "Version {{version}} is out",

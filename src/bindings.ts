@@ -2788,7 +2788,7 @@ export type NoticeLevel =
  * overlay: a file job finishes while the user is doing something else, and
  * `Model` is a switch the user made in Settings or the tray.
  */
-export type NoticeSource = "dictation" | "file" | "model" | "calendar"
+export type NoticeSource = "dictation" | "file" | "model" | "calendar" | "typing"
 export type NoticesChanged = { 
 /**
  * Every active notice, newest first.

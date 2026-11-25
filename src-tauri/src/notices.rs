@@ -38,6 +38,9 @@ pub enum NoticeSource {
     Model,
     /// Reading the calendars, every few minutes in the background.
     Calendar,
+    /// Whether the system lets dictation type. Its own slot, so a take's
+    /// notice neither replaces nor clears it.
+    Typing,
 }
 
 /// The frontend maps each code to its text in `src/lib/notices.ts`.
@@ -59,7 +62,9 @@ pub enum NoticeCode {
     /// as after an update whose signature macOS did not recognize.
     TypingPermissionLost,
     /// Calendars from macOS's Calendar app were chosen, but macOS no longer
-    /// lets Seogi read them, for the same reason.
+    /// lets Seogi read them, for the same reason. The detail is the access
+    /// as `mac_calendar::access` says it: `not_determined` (macOS no longer
+    /// knows Seogi, so it is asked again) or `denied`.
     CalendarPermissionLost,
 }
 

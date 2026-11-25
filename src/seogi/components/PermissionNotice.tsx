@@ -5,43 +5,50 @@
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { commands, events, type Notice, type NoticeCode } from "@/bindings";
+import { commands, events, type Notice } from "@/bindings";
 import { NS } from "../i18n";
 
-const LOST = {
-  CalendarPermissionLost: {
-    text: "permissionLost.calendar",
-    open: () => commands.seogiOpenCalendarPermission(),
-  },
-  TypingPermissionLost: {
-    text: "permissionLost.typing",
-    open: () => commands.seogiOpenTypingPermission(),
-  },
-} as const;
+type Lost = "CalendarPermissionLost" | "TypingPermissionLost";
 
-type Lost = keyof typeof LOST;
+const TEXT: Record<Lost, "permissionLost.calendar" | "permissionLost.typing"> =
+  {
+    CalendarPermissionLost: "permissionLost.calendar",
+    TypingPermissionLost: "permissionLost.typing",
+  };
 
-const isLost = (code: NoticeCode): code is Lost => code in LOST;
+const isLost = (notice: Notice): notice is Notice & { code: Lost } =>
+  notice.code in TEXT;
 
-const lost = (notices: Notice[]): Lost[] =>
-  notices.map((notice) => notice.code).filter(isLost);
+// A calendar access macOS no longer knows about (right after a new
+// signature Seogi may not be in its list) is asked for again; one it refused
+// is turned back on in System Settings.
+const asks = (notice: Notice) =>
+  notice.code === "CalendarPermissionLost" &&
+  notice.detail === "not_determined";
+
+const fix = (notice: Notice) => {
+  if (asks(notice)) return commands.seogiMacCalendarRequest();
+  if (notice.code === "CalendarPermissionLost")
+    return commands.seogiOpenCalendarPermission();
+  return commands.seogiOpenTypingPermission();
+};
 
 export default function PermissionNotice() {
   const { t } = useTranslation(NS);
-  const [shown, setShown] = useState<Lost[]>([]);
+  const [shown, setShown] = useState<(Notice & { code: Lost })[]>([]);
 
   useEffect(() => {
     let stop = false;
     commands
       .getActiveNotices()
       .then((notices) => {
-        if (!stop) setShown(lost(notices));
+        if (!stop) setShown(notices.filter(isLost));
       })
       .catch(() => {
         // Asked again with the next change.
       });
     const unlisten = events.noticesChanged.listen((event) =>
-      setShown(lost(event.payload.notices)),
+      setShown(event.payload.notices.filter(isLost)),
     );
     return () => {
       stop = true;
@@ -51,19 +58,19 @@ export default function PermissionNotice() {
 
   return (
     <>
-      {shown.map((code) => (
+      {shown.map((notice) => (
         <div
-          key={code}
+          key={notice.code}
           role="alert"
           className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2 px-3 py-2 rounded-[9px] bg-s1 text-[13.5px]"
         >
-          <span className="rt min-w-0 flex-1">{t(LOST[code].text)}</span>
+          <span className="rt min-w-0 flex-1">{t(TEXT[notice.code])}</span>
           <button
             type="button"
-            onClick={() => void LOST[code].open()}
+            onClick={() => void fix(notice)}
             className="btn solid !h-[26px] ml-auto"
           >
-            {t("permissionLost.open")}
+            {asks(notice) ? t("permissionLost.ask") : t("permissionLost.open")}
           </button>
         </div>
       ))}

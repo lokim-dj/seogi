@@ -622,14 +622,14 @@ fn watch_permission(app: &AppHandle) {
                 stop_listening(app);
                 notices::raise_without_overlay(
                     app,
-                    Notice::new(NoticeCode::TypingPermissionLost, NoticeSource::Dictation),
+                    Notice::new(NoticeCode::TypingPermissionLost, NoticeSource::Typing),
                 );
                 told = true;
             }
             PermissionStep::Regained => {
                 notices::clear_matching(
                     app,
-                    NoticeSource::Dictation,
+                    NoticeSource::Typing,
                     Some(NoticeCode::TypingPermissionLost),
                 );
                 told = false;
