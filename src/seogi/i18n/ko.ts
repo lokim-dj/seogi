@@ -83,6 +83,10 @@ const ko = {
         "사진은 '내 구독 로그인'(Claude·ChatGPT)으로 정리할 때만 읽습니다. 내 컴퓨터 모델로는 건너뜁니다.",
     },
   },
+  talkShare: {
+    label: "누가 얼마나 말했나",
+    hover: "{{name}} · {{length}} 말함",
+  },
   names: {
     renameSpeakers: "말한 사람 이름 바꾸기",
     tapToRename: "이름을 누르면 말한 사람 이름을 바꿀 수 있어요.",
@@ -90,7 +94,8 @@ const ko = {
     peopleFirst: "먼저 이 회의에 있던 사람 이름을 적어 주세요.",
     unnamed: "말한 사람 {{n}}명에 이름이 없어요 ·",
     start: "이름 붙이기",
-    allSeen: "이름을 붙일 사람을 다 봤어요.",
+    hearThree:
+      "들어 보고 누구인지 골라 주세요. 한 사람을 정하면 다음 사람으로 넘어갑니다.",
     cardLabel: "말한 사람에게 이름 붙이기",
     cardShare: "말한 비율 {{share}}% · 남은 사람 {{left}}명",
     quiet: "거의 말하지 않은 사람 (기타)",
@@ -372,7 +377,6 @@ const ko = {
       "듣고 있는 대목을 따라갑니다. 시각을 누르면 거기부터 들려요.",
     nowHere: "지금 듣는 곳",
     markedHere: "중요 표시",
-    nameIt: "이름 붙이기",
     save: "저장",
     corrected: "용어집으로 고친 말",
     took: "정리하는 데 {{length}} 걸렸습니다.",
