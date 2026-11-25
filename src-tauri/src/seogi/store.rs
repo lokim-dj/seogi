@@ -113,7 +113,7 @@ pub struct Meeting {
     /// Why it is not done, as a short code the screen has words for:
     /// `cannot_decode`, `speech_model`, `speech_model_missing`,
     /// `summary_model`, `summary_model_refused`, `summary_limit`,
-    /// `no_speech`, `too_short`.
+    /// `summary_unavailable`, `no_speech`, `too_short`.
     #[serde(default)]
     pub error: String,
     /// The error as the failing part reported it, for the log and for help.

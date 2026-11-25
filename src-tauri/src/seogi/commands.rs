@@ -472,8 +472,19 @@ pub async fn seogi_audio_snippet(
 /// `gemini`) in the operating system's keychain.
 #[tauri::command]
 #[specta::specta]
-pub async fn seogi_set_key(name: String, value: String) -> Result<(), String> {
-    off_screen(move || super::secrets::set(&name, &value).map_err(text)).await
+pub async fn seogi_set_key(
+    secretary: State<'_, Arc<Secretary>>,
+    name: String,
+    value: String,
+) -> Result<(), String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || {
+        super::secrets::set(&name, &value).map_err(text)?;
+        // Minutes waiting for a way to be written may have one now.
+        secretary.minutes_may_go();
+        Ok(())
+    })
+    .await
 }
 
 /// Whether a key is saved under `name`. The key itself is never handed to
@@ -642,6 +653,10 @@ pub struct Readiness {
     /// The chosen model was refused, so the tool's own choice writes the
     /// minutes until another is picked.
     pub summary_model_refused: bool,
+    /// When the chosen way cannot be used now, the one that writes the
+    /// minutes instead; `None` when the chosen one can, or when nothing can
+    /// (then `summary_ready` is false).
+    pub summary_fallback: Option<Provider>,
     /// The models offered for each signed-in tool, the recommended one
     /// first.
     pub claude_models: Vec<llm::ModelChoice>,
@@ -697,6 +712,15 @@ pub async fn seogi_readiness(
             }
         };
 
+        let summary_fallback = if summary_ready {
+            None
+        } else {
+            llm::Ways::look(&config.summary, &|name| super::secrets::has(name))
+                .to_try(&config.summary)
+                .into_iter()
+                .find(|provider| *provider != config.summary)
+        };
+
         let vocabulary_path = config.vocabulary(secretary.data_dir());
         let vocabulary_terms = Vocabulary::load(&vocabulary_path).map_or(0, |vocabulary| {
             (vocabulary.core.len() + vocabulary.entries.len()) as u32
@@ -720,6 +744,7 @@ pub async fn seogi_readiness(
             summary: config.summary.label(),
             summary_ready,
             summary_model_refused: llm::model_refused(&config.summary),
+            summary_fallback,
             claude_models: llm::claude_models(),
             codex_models: llm::codex_models(),
             vocabulary_path: vocabulary_path.display().to_string(),
@@ -748,8 +773,17 @@ pub async fn seogi_key_models(provider: Provider) -> Result<Vec<String>, String>
 /// seconds while a sign-in is open.
 #[tauri::command]
 #[specta::specta]
-pub async fn seogi_sign_ins() -> Result<SignIns, String> {
-    off_screen(|| Ok(sign_in::statuses())).await
+pub async fn seogi_sign_ins(secretary: State<'_, Arc<Secretary>>) -> Result<SignIns, String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || {
+        let now = sign_in::statuses();
+        // A sign-in may be the way minutes waiting to be written needed.
+        if now.claude == SignIn::SignedIn || now.codex == SignIn::SignedIn {
+            secretary.minutes_may_go();
+        }
+        Ok(now)
+    })
+    .await
 }
 
 /// Opens `tool`'s own sign-in in a terminal window; the browser opens from

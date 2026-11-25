@@ -215,6 +215,7 @@ const readiness: Readiness = {
   summary: "claude sonnet",
   summary_ready: true,
   summary_model_refused: false,
+  summary_fallback: null,
   claude_models: [
     { id: "claude-opus-5-5", label: "Opus 5.5" },
     { id: "claude-sonnet-5-5", label: "Sonnet 5.5" },
@@ -504,6 +505,25 @@ const signIns: SignIns = {
   codex: signInState("codex", "signed_out"),
 };
 
+// With '내 API 키' chosen and no key saved, the backend names the way that
+// writes instead: the signed-in Claude, ChatGPT, or none.
+const readinessNow = (): Readiness => {
+  const keyMissing =
+    new URLSearchParams(window.location.search).get("summary") === "key" &&
+    !savedKeys.has("anthropic");
+  if (!keyMissing) return readiness;
+  return {
+    ...readiness,
+    summary_ready: false,
+    summary_fallback:
+      signIns.claude === "signed_in"
+        ? { kind: "claude_cli", model: "" }
+        : signIns.codex === "signed_in"
+          ? { kind: "codex_cli", model: "" }
+          : null,
+  };
+};
+
 // What the screens asked of the backend, for scripts/seogi-flows.mjs to read.
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 Object.assign(window, { __seogiCalls: calls });
@@ -690,7 +710,7 @@ mockIPC(
       case "seogi_templates":
         return templates;
       case "seogi_readiness":
-        return readiness;
+        return readinessNow();
       case "seogi_meetings":
         return isRecording
           ? [

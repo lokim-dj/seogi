@@ -275,6 +275,8 @@ const en: Strings = {
       "The chosen AI model cannot be used with this account. Pick another in Settings.",
     summary_limit:
       "The AI plan's usage limit was reached. Minutes are written once it resets.",
+    summary_unavailable:
+      "Nothing can write the minutes. Sign in or add a key and they are written at once.",
     no_speech: "No speech was found.",
     too_short: "The recording is too short.",
   },
@@ -608,6 +610,16 @@ const en: Strings = {
     ready: "Can be used",
     notReady: "Cannot be used yet",
     needsKey: "A key is needed",
+    fallbackNoKey: "With no key, minutes are written with {{way}}",
+    fallbackNotReady:
+      "This cannot be used now, so minutes are written with {{way}}",
+    noWay: "Nothing can write minutes — sign in or add a key",
+    way: {
+      claude: "the signed-in Claude",
+      codex: "the signed-in ChatGPT",
+      key: "the {{owner}} key",
+      local: "a model on this computer",
+    },
     removeKey: "Remove key",
     saveKey: "Save key",
     speech: "Recording",

@@ -208,6 +208,177 @@ pub fn hit_limit(error: &str) -> bool {
     .any(|sign| error.contains(sign))
 }
 
+/// Whether an error says this way cannot write minutes now at all, so the
+/// next way should: no key, no tool, not signed in, a key or sign-in that is
+/// refused, or a plan or key that has run out.
+pub fn cannot_use(error: &str) -> bool {
+    if hit_limit(error) {
+        return true;
+    }
+    let error = error.to_lowercase();
+    [
+        "no api key is saved",
+        "is not installed",
+        "not logged in",
+        "please log in",
+        "/login",
+        "invalid api key",
+        "invalid x-api-key",
+        "incorrect api key",
+        "api key not valid",
+        "authentication",
+        "unauthorized",
+        "credit balance",
+        "insufficient_quota",
+    ]
+    .iter()
+    .any(|sign| error.contains(sign))
+}
+
+/// The keys the settings offer, by the name each is kept under, with the
+/// model first offered for it (as `src/seogi/lib/summary.ts` has them).
+const KEY_NAMES: [&str; 3] = ["anthropic", "openai", "gemini"];
+
+fn key_way(name: &str) -> Option<Provider> {
+    let compatible = |base_url: &str, model: &str| Provider::OpenAiCompatible {
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        key: name.to_string(),
+    };
+    match name {
+        "anthropic" => Some(Provider::Anthropic {
+            model: "claude-opus-5-5".to_string(),
+            key: name.to_string(),
+        }),
+        "openai" => Some(compatible("https://api.openai.com/v1", "gpt-6.2-astra")),
+        "gemini" => Some(compatible(
+            "https://generativelanguage.googleapis.com/v1beta/openai",
+            "gemini-4-carbon",
+        )),
+        _ => None,
+    }
+}
+
+/// What this computer has to write minutes with right now.
+#[derive(Debug, Clone, Default)]
+pub struct Ways {
+    /// Claude Code is installed and signed in.
+    pub claude: bool,
+    /// Codex is installed and signed in.
+    pub codex: bool,
+    /// The names of the keys saved in the keychain.
+    pub keys: Vec<String>,
+    /// The models Ollama has, the largest first; empty when it is not
+    /// running.
+    pub ollama: Vec<String>,
+}
+
+impl Ways {
+    /// Looks at this computer: the two sign-ins, the keychain and Ollama.
+    /// Blocks for as long as the slowest tool takes to answer.
+    pub fn look(chosen: &Provider, has_key: &dyn Fn(&str) -> bool) -> Self {
+        use super::sign_in::SignIn;
+        let signed_in = super::sign_in::statuses();
+        let mut keys: Vec<String> = KEY_NAMES
+            .iter()
+            .filter(|name| has_key(name))
+            .map(|name| name.to_string())
+            .collect();
+        if let Provider::Anthropic { key, .. } | Provider::OpenAiCompatible { key, .. } = chosen {
+            if !key.is_empty() && !keys.contains(key) && has_key(key) {
+                keys.push(key.clone());
+            }
+        }
+        let ollama_url = match chosen {
+            Provider::Ollama { base_url, .. } => base_url.clone(),
+            _ => "http://localhost:11434".to_string(),
+        };
+        Self {
+            claude: signed_in.claude == SignIn::SignedIn,
+            codex: signed_in.codex == SignIn::SignedIn,
+            keys,
+            ollama: ollama_models(&ollama_url),
+        }
+    }
+
+    /// Whether `provider` can be used as things stand. Whether its key or
+    /// plan still works shows only when it is used.
+    pub fn can_use(&self, provider: &Provider) -> bool {
+        match provider {
+            Provider::ClaudeCli { .. } => self.claude,
+            Provider::CodexCli { .. } => self.codex,
+            Provider::Anthropic { key, .. } => self.keys.contains(key),
+            Provider::OpenAiCompatible { key, .. } => key.is_empty() || self.keys.contains(key),
+            Provider::Ollama { model, .. } => self
+                .ollama
+                .iter()
+                .any(|name| name == model || name.strip_suffix(":latest") == Some(model.as_str())),
+        }
+    }
+
+    /// The ways to write minutes with, in the order they are tried: the one
+    /// chosen, the other signed-in plan, another saved key, then a model on
+    /// this computer. Only the ones that can be used now; empty when none
+    /// can. The setting itself is never changed.
+    ///
+    /// A way that keeps the text on this computer is never left for one
+    /// that sends it away: the user chose to keep it here.
+    pub fn to_try(&self, chosen: &Provider) -> Vec<Provider> {
+        let mut list = Vec::new();
+        if self.can_use(chosen) {
+            list.push(chosen.clone());
+        }
+        if chosen.is_local() {
+            return list;
+        }
+        let claude = Provider::ClaudeCli {
+            model: String::new(),
+        };
+        let codex = Provider::CodexCli {
+            model: String::new(),
+        };
+        let openai_first = matches!(chosen, Provider::CodexCli { .. })
+            || matches!(chosen, Provider::OpenAiCompatible { key, .. } if key == "openai");
+        let plans = if openai_first {
+            [codex, claude]
+        } else {
+            [claude, codex]
+        };
+        for plan in plans {
+            if std::mem::discriminant(&plan) != std::mem::discriminant(chosen)
+                && self.can_use(&plan)
+            {
+                list.push(plan);
+            }
+        }
+        let chosen_key = match chosen {
+            Provider::Anthropic { key, .. } | Provider::OpenAiCompatible { key, .. } => {
+                key.as_str()
+            }
+            _ => "",
+        };
+        for name in KEY_NAMES {
+            if name != chosen_key && self.keys.iter().any(|key| key == name) {
+                list.extend(key_way(name));
+            }
+        }
+        if !matches!(chosen, Provider::Ollama { .. }) {
+            if let Some(largest) = self.ollama.first() {
+                let local = Provider::default_ollama();
+                list.push(if self.can_use(&local) {
+                    local
+                } else {
+                    Provider::Ollama {
+                        base_url: "http://localhost:11434".to_string(),
+                        model: largest.clone(),
+                    }
+                });
+            }
+        }
+        list
+    }
+}
+
 /// The code a failed minutes run is shown with: why, in the user's words.
 pub fn trouble_code(error: &str) -> &'static str {
     if refuses_model(error) {
@@ -1141,5 +1312,95 @@ mod tests {
             key: "openai".into()
         }
         .is_local());
+    }
+
+    fn ways(claude: bool, codex: bool, keys: &[&str], ollama: &[&str]) -> Ways {
+        Ways {
+            claude,
+            codex,
+            keys: keys.iter().map(|key| key.to_string()).collect(),
+            ollama: ollama.iter().map(|model| model.to_string()).collect(),
+        }
+    }
+
+    fn anthropic_key() -> Provider {
+        Provider::Anthropic {
+            model: "claude-opus-5-5".into(),
+            key: "anthropic".into(),
+        }
+    }
+
+    #[test]
+    fn a_key_that_is_not_saved_gives_way_to_a_signed_in_plan() {
+        let chosen = anthropic_key();
+        let saved = chosen.clone();
+        let list = ways(true, true, &[], &[]).to_try(&chosen);
+        assert_eq!(
+            list,
+            [
+                Provider::ClaudeCli {
+                    model: String::new()
+                },
+                Provider::CodexCli {
+                    model: String::new()
+                },
+            ]
+        );
+        // The setting itself stays what the user chose.
+        assert_eq!(chosen, saved);
+    }
+
+    #[test]
+    fn the_chosen_way_comes_first_then_plans_keys_and_this_computer() {
+        let chosen = Provider::CodexCli {
+            model: "gpt-6.2-astra".into(),
+        };
+        let list = ways(true, true, &["gemini"], &["qwen3:32b", "gemma3:12b"]).to_try(&chosen);
+        let labels: Vec<String> = list.iter().map(Provider::label).collect();
+        assert_eq!(
+            labels,
+            [
+                "codex gpt-6.2-astra",
+                "claude",
+                "gemini-4-carbon",
+                "ollama gemma3:12b"
+            ]
+        );
+        // Signed out of Codex: Claude writes, and Codex is not tried.
+        let list = ways(true, false, &[], &[]).to_try(&chosen);
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].label(), "claude");
+    }
+
+    #[test]
+    fn with_nothing_to_write_with_nothing_is_tried() {
+        assert!(ways(false, false, &[], &[])
+            .to_try(&anthropic_key())
+            .is_empty());
+    }
+
+    #[test]
+    fn a_model_on_this_computer_is_never_left_for_one_elsewhere() {
+        let chosen = Provider::default_ollama();
+        assert!(ways(true, true, &["anthropic"], &[])
+            .to_try(&chosen)
+            .is_empty());
+        assert_eq!(
+            ways(true, true, &[], &["gemma3:12b"]).to_try(&chosen),
+            [chosen]
+        );
+    }
+
+    #[test]
+    fn errors_that_mean_the_way_cannot_be_used_are_told_apart() {
+        assert!(cannot_use("no API key is saved for anthropic"));
+        assert!(cannot_use("Claude Code: Not logged in · Please run /login"));
+        assert!(cannot_use("Codex is not installed"));
+        assert!(cannot_use("You've hit your usage limit"));
+        assert!(cannot_use("401 Unauthorized: invalid x-api-key"));
+        assert!(!cannot_use("no JSON object in the answer"));
+        assert!(!cannot_use(
+            "Ollama is not running at http://localhost:11434"
+        ));
     }
 }

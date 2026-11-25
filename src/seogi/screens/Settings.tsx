@@ -263,6 +263,7 @@ export default function Settings() {
     setKey("");
     setHasKey(true);
     setKeySaves((n) => n + 1);
+    void refreshSetup();
     setNote(t("settings.saved"));
   };
 
@@ -396,6 +397,30 @@ export default function Settings() {
   // whatever the last reading said.
   const needsKey = mode === "key" && !hasKey;
   const summaryReady = !needsKey && !!readiness?.summary_ready;
+  // When the chosen way cannot write, the one that will instead.
+  const fallback = readiness?.summary_fallback ?? null;
+  const fallbackWay = !fallback
+    ? ""
+    : fallback.kind === "claude_cli"
+      ? t("settings.way.claude")
+      : fallback.kind === "codex_cli"
+        ? t("settings.way.codex")
+        : fallback.kind === "ollama"
+          ? t("settings.way.local")
+          : t("settings.way.key", {
+              owner:
+                KEY_OWNERS.find((item) => item.id === keyOwnerOf(fallback))
+                  ?.label ?? "",
+            });
+  const fallbackNote = summaryReady
+    ? null
+    : fallback
+      ? t(needsKey ? "settings.fallbackNoKey" : "settings.fallbackNotReady", {
+          way: fallbackWay,
+        })
+      : mode !== "local" && readiness
+        ? t("settings.noWay")
+        : null;
 
   const speechPercent = readiness
     ? Math.round(downloads[readiness.speech_model] ?? -1)
@@ -591,9 +616,10 @@ export default function Settings() {
                           type="button"
                           className="lnk"
                           onClick={() =>
-                            void commands
-                              .seogiRemoveKey(owner)
-                              .then(() => setHasKey(false))
+                            void commands.seogiRemoveKey(owner).then(() => {
+                              setHasKey(false);
+                              void refreshSetup();
+                            })
                           }
                         >
                           {t("settings.removeKey")}
@@ -656,6 +682,11 @@ export default function Settings() {
                           model: inUse?.label ?? config.summary.model,
                         })}
                       </span>
+                      {fallbackNote ? (
+                        <span className={`block ${fallback ? "t2" : "rt"}`}>
+                          {fallbackNote}
+                        </span>
+                      ) : null}
                       {tried && tried !== "asking" ? (
                         <span className={`block ${tried.ok ? "t2" : "rt"}`}>
                           {tried.ok

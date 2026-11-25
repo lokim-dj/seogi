@@ -270,6 +270,8 @@ const ko = {
       "고른 AI 모델을 이 계정에서 쓸 수 없습니다. 설정에서 모델을 다시 골라 주세요.",
     summary_limit:
       "AI 구독의 사용 한도에 걸렸습니다. 한도가 풀리면 알아서 다시 씁니다.",
+    summary_unavailable:
+      "회의록을 정리할 방법이 없습니다. 로그인하거나 키를 넣으면 바로 씁니다.",
     no_speech: "말소리를 찾지 못했습니다.",
     too_short: "너무 짧은 녹음입니다.",
   },
@@ -599,6 +601,15 @@ const ko = {
     ready: "쓸 수 있음",
     notReady: "아직 쓸 수 없음",
     needsKey: "키가 필요해요",
+    fallbackNoKey: "키가 없어서 회의록은 {{way}}로 정리해요",
+    fallbackNotReady: "지금은 쓸 수 없어서 회의록은 {{way}}로 정리해요",
+    noWay: "정리할 방법이 없어요 — 로그인하거나 키를 넣어 주세요",
+    way: {
+      claude: "로그인된 Claude",
+      codex: "로그인된 ChatGPT",
+      key: "{{owner}} 키",
+      local: "내 컴퓨터 모델",
+    },
     removeKey: "키 지우기",
     saveKey: "키 저장",
     speech: "녹음",
