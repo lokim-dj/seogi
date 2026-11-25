@@ -766,13 +766,14 @@ fn spaced(
         let unit_alone = unit_len == unit_letters.len();
         if unit_alone && open(unit_word + 1) {
             let next = letters(chars, &words[unit_word + 1]);
-            if UNITS
+            let bare_unit = UNITS
                 .iter()
-                .any(|u| u.word.chars().eq(next.iter().copied()))
-            {
+                .any(|u| u.word.chars().eq(next.iter().copied()));
+            // Unless it is the next number of a date or time ("2027년 일 월").
+            if bare_unit && !continues(chars, words, unit_word, unit) {
                 continue;
             }
-            if matches!(unit.word, "대" | "점") && is_number_word(next) {
+            if matches!(unit.word, "대" | "점") && is_number_word(without_particle(next)) {
                 continue;
             }
         }
@@ -791,6 +792,34 @@ fn spaced(
         });
     }
     None
+}
+
+/// `word` without a particle at its end ("오십으로" → "오십").
+fn without_particle(word: &[char]) -> &[char] {
+    let text: String = word.iter().collect();
+    let longest = PARTICLES
+        .iter()
+        .filter(|p| text.len() > p.len() && text.ends_with(*p))
+        .map(|p| p.chars().count())
+        .max()
+        .unwrap_or(0);
+    &word[..word.len() - longest]
+}
+
+/// The two words after a unit's word are a number and the unit that comes
+/// next in a date or time ("년 일 월", "시 삼십 분").
+fn continues(chars: &[char], words: &[Word], unit_word: usize, unit: &Unit) -> bool {
+    let Some((_, next_units)) = CHAINS.iter().find(|(u, _)| *u == unit.word) else {
+        return false;
+    };
+    if unit_word + 2 >= words.len() || words[unit_word].closed || words[unit_word + 1].closed {
+        return false;
+    }
+    let number = letters(chars, &words[unit_word + 1]);
+    number.iter().all(|&c| is_sino(c))
+        && sino_value(number).is_some()
+        && unit_then_end(letters(chars, &words[unit_word + 2]))
+            .is_some_and(|(u, _)| next_units.contains(&u.word))
 }
 
 /// "이십초", "삼천오백원이에요", "다섯시": two syllables or more, then the
@@ -881,7 +910,8 @@ struct Around {
     time_of_day: bool,
     /// "반" after an hour or hours ("한 시 반").
     half: bool,
-    /// Minutes after an hour ("한 시 삼십 분").
+    /// Minutes after an hour ("한 시 삼십 분"), or the day after a month
+    /// ("삼 월 이십 일").
     minutes: bool,
     /// "동안", "뒤", "전" after a length of time ("오 분 뒤").
     duration: bool,
@@ -917,16 +947,22 @@ impl Around {
             (unit_alone && unit_word + 1 < words.len() && !words[unit_word].closed)
                 .then(|| letters(chars, &words[unit_word + 1]).iter().collect());
         let next_is = |list: &[&str]| next.as_deref().is_some_and(|n| list.contains(&n));
-        // Minutes after: a Sino number word, then 분 starting the next word.
-        let minutes = unit.word == "시"
-            && next.as_deref().is_some_and(|n| {
+        // The next number after: minutes after an hour ("한 시 삼십 분"),
+        // the day after a month ("삼 월 이십 일").
+        let pair = match unit.word {
+            "시" => Some(("분", 59)),
+            "월" => Some(("일", 31)),
+            _ => None,
+        };
+        let minutes = pair.is_some_and(|(then, max)| {
+            next.as_deref().is_some_and(|n| {
                 let n: Vec<char> = n.chars().collect();
-                n.iter().all(|&c| is_sino(c)) && sino_value(&n).is_some_and(|v| v < 60)
-            })
-            && unit_word + 2 < words.len()
-            && !words[unit_word + 1].closed
-            && unit_then_end(letters(chars, &words[unit_word + 2]))
-                .is_some_and(|(u, _)| u.word == "분");
+                n.iter().all(|&c| is_sino(c)) && sino_value(&n).is_some_and(|v| v <= max)
+            }) && unit_word + 2 < words.len()
+                && !words[unit_word + 1].closed
+                && unit_then_end(letters(chars, &words[unit_word + 2]))
+                    .is_some_and(|(u, _)| u.word == then)
+        });
         Around {
             chain,
             time_of_day: unit.word == "시" && TIMES_OF_DAY.contains(&prev_word.as_str()),
@@ -955,13 +991,20 @@ fn allowed(number: &Spoken, unit: &Unit, around: &Around) -> bool {
         },
         '네' => unit.word == "시" && hour,
         // 이 is "this" before almost anything ("이 페이지", "이 시간").
-        '이' => around.chain || matches!(unit.word, "퍼센트" | "개월" | "인분"),
+        '이' => {
+            around.chain
+                || matches!(unit.word, "퍼센트" | "개월" | "인분")
+                || (unit.word == "월" && around.minutes)
+        }
         _ => {
             let safe = match number.kind {
                 Kind::Sino => unit.lone_sino.contains(lone),
                 Kind::Native => unit.lone_native.contains(lone),
             };
-            safe || around.chain || (unit.word == "시" && hour) || around.duration
+            safe || around.chain
+                || (unit.word == "시" && hour)
+                || (unit.word == "월" && around.minutes)
+                || around.duration
         }
     }
 }
@@ -1087,6 +1130,11 @@ mod tests {
         ("다섯 번 넘게", "5번 넘게"),
         ("두 배로 늘었어요", "2배로 늘었어요"),
         ("삼 학년이에요", "3학년이에요"),
+        ("이천이십칠 년 일 월 십 일", "2027년 1월 10일"),
+        ("삼 월 이십 일 예정", "3월 20일 예정"),
+        ("이 월 십사 일", "2월 14일"),
+        ("오 월 오 일", "5월 5일"),
+        ("이천이십육 년 삼 월에", "2026년 3월에"),
     ];
 
     /// Made-up sentences that must stay as they are.
@@ -1146,6 +1194,11 @@ mod tests {
         "가로 삼십 세로 사십",
         "오십도 안 남았어요",
         "오십 대 오십",
+        "오십 대 오십으로 나눠요",
+        "이십 대 십구로 이겼어요",
+        "이 월",
+        "이 월에 봐요",
+        "삼 월",
         "아이폰 십오 프로",
         "총 세대 수는",
         "세대 간 갈등",
