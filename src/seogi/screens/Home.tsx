@@ -7,8 +7,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
 import { platform } from "@tauri-apps/plugin-os";
-import { commands, type MeetingSummary, type Upcoming } from "@/bindings";
+import {
+  commands,
+  type Found,
+  type MeetingSummary,
+  type Upcoming,
+} from "@/bindings";
 import { useLength, useNow } from "../components/common";
+import { Marked } from "../components/Found";
+import { around, has } from "../lib/found";
 import {
   CloseIcon,
   ImportIcon,
@@ -18,7 +25,7 @@ import {
 import UpdateNotice from "../components/UpdateNotice";
 import { ConfirmDelete, busy } from "../components/DeleteMeeting";
 import { NS } from "../i18n";
-import { daysAgo, fullDay, hm, keysShort, longDay } from "../lib/format";
+import { clock, daysAgo, fullDay, hm, keysShort, longDay } from "../lib/format";
 import { MICROPHONE_DENIED, useSeogi } from "../store";
 
 const RECORDING_KINDS = [
@@ -50,7 +57,8 @@ export default function Home() {
   const { t } = useTranslation(NS);
   const go = useSeogi((s) => s.go);
   const importPaths = useSeogi((s) => s.importPaths);
-  const [finding, setFinding] = useState(false);
+  const finding = useSeogi((s) => s.finding.open);
+  const setFinding = useSeogi((s) => s.setFinding);
   const [note, setNote] = useState("");
   // Something that did not work is shown so that it cannot be missed.
   const [bad, setBad] = useState(false);
@@ -67,11 +75,11 @@ export default function Home() {
       const key = event.key.toLowerCase();
       if ((event.metaKey || event.ctrlKey) && (key === "k" || key === "f")) {
         event.preventDefault();
-        setFinding(true);
+        setFinding({ open: true });
       }
-      if (event.key === "Escape") setFinding(false);
+      if (event.key === "Escape") setFinding({ open: false });
     };
-    const onFind = () => setFinding(true);
+    const onFind = () => setFinding({ open: true });
     window.addEventListener("keydown", onKey);
     window.addEventListener(FIND_EVENT, onFind);
     return () => {
@@ -117,7 +125,7 @@ export default function Home() {
             className="ib"
             aria-pressed={finding}
             aria-label={t("band.find")}
-            onClick={() => setFinding((on) => !on)}
+            onClick={() => setFinding({ open: !finding })}
           >
             <SearchIcon />
             <span className="t3">{mac ? "⌘K" : "Ctrl+K"}</span>
@@ -154,7 +162,10 @@ export default function Home() {
             {note}
           </p>
         ) : null}
-        <MeetingList finding={finding} onCloseFind={() => setFinding(false)} />
+        <MeetingList
+          finding={finding}
+          onCloseFind={() => setFinding({ open: false })}
+        />
       </main>
     </div>
   );
@@ -278,8 +289,9 @@ function MeetingList({
   const selected = useSeogi((s) => s.selected);
   const openMeeting = useSeogi((s) => s.open);
   const [filter, setFilter] = useState<Filter>("all");
-  const [query, setQuery] = useState("");
-  const [found, setFound] = useState<Set<string> | null>(null);
+  const query = useSeogi((s) => s.finding.query);
+  const found = useSeogi((s) => s.finding.found);
+  const setFinding = useSeogi((s) => s.setFinding);
   const field = useRef<HTMLInputElement | null>(null);
   const [menu, setMenu] = useState<{
     meeting: MeetingSummary;
@@ -290,10 +302,7 @@ function MeetingList({
 
   useEffect(() => {
     if (finding) field.current?.focus();
-    else {
-      setQuery("");
-      setFilter("all");
-    }
+    else setFilter("all");
   }, [finding]);
 
   // Titles and summaries are looked through here; transcripts by the
@@ -301,26 +310,38 @@ function MeetingList({
   useEffect(() => {
     const words = query.trim();
     if (!finding || words === "") {
-      setFound(null);
+      setFinding({ found: null });
       return;
     }
+    // An answer that comes after the words changed is for old words.
+    let current = true;
     const timer = window.setTimeout(() => {
       void commands.seogiSearch(words).then((result) => {
-        if (result.status === "ok") setFound(new Set(result.data));
+        if (current && result.status === "ok") {
+          setFinding({
+            found: {
+              words,
+              hits: Object.fromEntries(result.data.map((hit) => [hit.id, hit])),
+            },
+          });
+        }
       });
     }, 250);
-    return () => window.clearTimeout(timer);
-  }, [finding, query]);
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+    };
+  }, [finding, query, setFinding]);
 
   const shown = useMemo(() => {
-    const words = query.trim().toLowerCase();
+    const words = query.trim();
     return meetings.filter((meeting) => {
       if (filter !== "all" && meeting.template_id !== filter) return false;
       if (!finding || words === "") return true;
       return (
-        meeting.title.toLowerCase().includes(words) ||
-        meeting.summary.toLowerCase().includes(words) ||
-        (found?.has(meeting.id) ?? false)
+        has(meeting.title, words) ||
+        has(meeting.summary, words) ||
+        found?.hits[meeting.id] !== undefined
       );
     });
   }, [meetings, filter, finding, query, found]);
@@ -355,7 +376,7 @@ function MeetingList({
               ref={field}
               type="search"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => setFinding({ query: event.target.value })}
               placeholder={t("band.findPlaceholder")}
               aria-label={t("band.find")}
               className="ul flex-1"
@@ -395,15 +416,42 @@ function MeetingList({
         days.map((day) => (
           <div key={day.key}>
             <h2 className="a-grp m-0">{dayHeading(day.at)}</h2>
-            {day.rows.map((meeting) => (
-              <Row
-                key={meeting.id}
-                meeting={meeting}
-                on={meeting.id === selected}
-                onOpen={() => openMeeting(meeting.id)}
-                onMenu={(x, y) => setMenu({ meeting, x, y })}
-              />
-            ))}
+            {day.rows.map((meeting) => {
+              const words = finding ? query.trim() : "";
+              const hit = words ? found?.hits[meeting.id] : undefined;
+              // The meeting's line goes to the first line the words are in;
+              // only the title, or not yet asked, to the top.
+              const first =
+                hit?.places.find((place) => place.kind !== "title") ??
+                hit?.places[0] ??
+                null;
+              return (
+                <div key={meeting.id}>
+                  <Row
+                    meeting={meeting}
+                    on={meeting.id === selected}
+                    onOpen={() =>
+                      openMeeting(
+                        meeting.id,
+                        words
+                          ? { words: found?.words ?? words, place: first }
+                          : undefined,
+                      )
+                    }
+                    onMenu={(x, y) => setMenu({ meeting, x, y })}
+                  />
+                  {hit && found ? (
+                    <Hits
+                      hit={hit}
+                      words={found.words}
+                      onOpen={(place) =>
+                        openMeeting(meeting.id, { words: found.words, place })
+                      }
+                    />
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         ))
       )}
@@ -490,6 +538,55 @@ function RowMenu({
           ) : null}
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Up to three lines of a found meeting with the words in them, each one a
+ *  way into the minutes at that line; how many more there are. */
+function Hits({
+  hit,
+  words,
+  onOpen,
+}: {
+  hit: Found;
+  words: string;
+  onOpen: (place: Found["places"][number]) => void;
+}) {
+  const { t } = useTranslation(NS);
+  const lines = hit.places.filter((place) => place.kind !== "title");
+  if (lines.length === 0) return null;
+  const shown = lines.slice(0, 3);
+  const titled = hit.places.some((place) => place.kind === "title") ? 1 : 0;
+  const more = hit.total - titled - shown.length;
+  return (
+    <div className="a-hits">
+      {shown.map((place) => (
+        <button
+          key={`${place.kind}-${place.section}-${place.index}`}
+          type="button"
+          className="a-hit"
+          onClick={() => onOpen(place)}
+        >
+          <span className="at">
+            {place.kind === "transcript" && place.ms !== null
+              ? clock(place.ms)
+              : place.kind === "people"
+                ? t("people.label")
+                : t("home.foundInMinutes")}
+          </span>
+          <span className="tx">
+            <Marked
+              text={around(place.text, words)}
+              words={words}
+              className="hl-soft"
+            />
+          </span>
+        </button>
+      ))}
+      {more > 0 ? (
+        <span className="more">{t("home.foundMore", { n: more })}</span>
+      ) : null}
     </div>
   );
 }

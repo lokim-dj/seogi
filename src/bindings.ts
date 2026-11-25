@@ -1085,10 +1085,10 @@ async seogiMeeting(id: string) : Promise<Result<Meeting, string>> {
 }
 },
 /**
- * The ids of the meetings that have `query` in their title, minutes or
- * transcript.
+ * The meetings that have `query` in their title, minutes, transcript or
+ * people, each with the lines it is in.
  */
-async seogiSearch(query: string) : Promise<Result<string[], string>> {
+async seogiSearch(query: string) : Promise<Result<Found[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("seogi_search", { query }) };
 } catch (e) {
@@ -2248,6 +2248,55 @@ missed_questions: Point[];
  * Moments the customer hesitated, and what was answered.
  */
 hesitations: Point[]; next_time: Point[] }
+/**
+ * A meeting a search found, and where in it.
+ */
+export type Found = { id: string; 
+/**
+ * In the order the minutes screen shows them; at most `FOUND_PLACES`.
+ */
+places: FoundPlace[]; 
+/**
+ * How many places there are in all.
+ */
+total: number }
+/**
+ * What part of a meeting some words were found in.
+ */
+export type FoundIn = "title" | 
+/**
+ * The one-line summary, where the minutes have no story.
+ */
+"summary" | 
+/**
+ * A part of the story; `index` says which.
+ */
+"story" | 
+/**
+ * A line of the minutes; `section` and `index` say which.
+ */
+"entry" | 
+/**
+ * A line of the transcript; `index` says which, `ms` when it was said.
+ */
+"transcript" | 
+/**
+ * The people at the meeting.
+ */
+"people"
+/**
+ * One place a search found its words: the whole line they are in, and
+ * enough to find that line again on the screen.
+ */
+export type FoundPlace = { kind: FoundIn; text: string; 
+/**
+ * The minutes section's key, for an entry; empty otherwise.
+ */
+section: string; index: number; 
+/**
+ * When it was said, for a transcript line.
+ */
+ms: number | null }
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean; 
 /**

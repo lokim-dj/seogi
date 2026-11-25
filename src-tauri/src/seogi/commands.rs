@@ -19,7 +19,7 @@ use super::llm::{self, Provider};
 use super::mac_calendar::{self, MacCalendar};
 use super::mic_button;
 use super::recorder::{self, Microphone};
-use super::store::{Meeting, MeetingSummary, Origin, MINUTES_NAME};
+use super::store::{Found, Meeting, MeetingSummary, Origin, MINUTES_NAME};
 use super::templates::{self, Template};
 use super::vocab::Vocabulary;
 use super::{audio_in, watch};
@@ -45,14 +45,14 @@ pub fn seogi_meetings(secretary: State<'_, Arc<Secretary>>) -> Vec<MeetingSummar
     secretary.meetings()
 }
 
-/// The ids of the meetings that have `query` in their title, minutes or
-/// transcript.
+/// The meetings that have `query` in their title, minutes, transcript or
+/// people, each with the lines it is in.
 #[tauri::command]
 #[specta::specta]
 pub async fn seogi_search(
     secretary: State<'_, Arc<Secretary>>,
     query: String,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<Found>, String> {
     let secretary = secretary.inner().clone();
     off_screen(move || Ok(secretary.search(&query))).await
 }

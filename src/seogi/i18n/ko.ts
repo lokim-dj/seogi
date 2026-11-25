@@ -193,6 +193,8 @@ const ko = {
     emptyHow:
       "위의 녹음 시작을 누르거나, 녹음 파일을 이 창에 끌어다 놓으세요. 나머지는 알아서 합니다.",
     nothingFound: "찾는 말이 들어간 회의가 없습니다.",
+    foundInMinutes: "회의록",
+    foundMore: "외 {{n}}곳",
     dropHere: "여기에 놓으면 가져옵니다",
     imported: "{{n}}개를 가져왔습니다.",
     importedSome: "{{n}}개를 가져왔고, {{dup}}개는 이미 있는 녹음입니다.",

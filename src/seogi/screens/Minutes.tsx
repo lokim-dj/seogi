@@ -21,6 +21,8 @@ import {
   useSpeakerName,
 } from "../components/common";
 import DocumentWords from "../components/DocumentWords";
+import { Marked } from "../components/Found";
+import { has } from "../lib/found";
 import Feedback from "../components/Feedback";
 import {
   BackIcon,
@@ -36,7 +38,7 @@ import { ConfirmDelete, busy } from "../components/DeleteMeeting";
 import { NS } from "../i18n";
 import { clock, fullDay, hm, hms, isoDay, shortModel } from "../lib/format";
 import { joinPath, usePlayer, type Player } from "../lib/player";
-import { useSeogi } from "../store";
+import { useSeogi, type Jump } from "../store";
 
 const bare = (text: string) => text.replace(/[\s.,!?'"「」…·]/g, "");
 
@@ -46,6 +48,7 @@ export default function Minutes({ id }: { id: string }) {
   const summary = useSeogi((s) => s.meetings.find((m) => m.id === id));
   const templates = useSeogi((s) => s.templates);
   const go = useSeogi((s) => s.go);
+  const jump = useSeogi((s) => s.jump);
   const meeting = detail?.id === id ? detail : null;
   const [copied, setCopied] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -136,6 +139,7 @@ export default function Minutes({ id }: { id: string }) {
             meeting={meeting}
             folder={summary?.folder ?? ""}
             player={player}
+            jump={jump?.id === id ? jump : null}
           />
         ) : null}
       </main>
@@ -374,18 +378,130 @@ function showTranscriptNames() {
   }
 }
 
+/** The line of the minutes a search went to, as the sheet lays it out. */
+type Spot =
+  | { at: "title" | "summary" | "people" }
+  | { at: "story"; index: number }
+  | { at: "entry"; section: string; index: number }
+  | { at: "transcript"; ms: number };
+
+function spotOf(jump: Jump | null, meeting: Meeting): Spot | null {
+  if (!jump) return null;
+  const place = jump.place;
+  if (!place) return has(meeting.title, jump.words) ? { at: "title" } : null;
+  const story = meeting.minutes?.[0]?.story ?? [];
+  switch (place.kind) {
+    case "title":
+    case "people":
+      return { at: place.kind };
+    case "summary":
+      // Shown only where there is no story; else the story's top.
+      return story.length === 0
+        ? { at: "summary" }
+        : { at: "story", index: -1 };
+    case "story":
+      return { at: "story", index: place.index };
+    case "entry":
+      return { at: "entry", section: place.section, index: place.index };
+    case "transcript":
+      return place.ms === null ? null : { at: "transcript", ms: place.ms };
+  }
+}
+
+/** Opens the folds around the line a search went to and brings it to the
+ *  middle of the window; the next press anywhere else takes the mark off. */
+/** How far in from a scrolling box's edge its scroll bar may be pressed:
+ *  a bar that takes room, or one drawn over the content (macOS). */
+const SCROLL_BAR = 16;
+
+/** Whether a press is on a scroll bar. A bar that takes room is outside
+ *  the box's content, so the press lands on the box itself past its
+ *  inner width; one drawn over the content gets the press on whatever is
+ *  under it, so any box that scrolls is asked whether the press is near
+ *  its edge. */
+function onScrollBar(event: PointerEvent): boolean {
+  const target = event.target instanceof Element ? event.target : null;
+  for (let box = target; box; box = box.parentElement) {
+    const style = window.getComputedStyle(box);
+    const down =
+      box.scrollHeight > box.clientHeight &&
+      /auto|scroll/.test(style.overflowY);
+    const across =
+      box.scrollWidth > box.clientWidth && /auto|scroll/.test(style.overflowX);
+    if (!down && !across) continue;
+    const edge = box.getBoundingClientRect();
+    if (down && edge.right - event.clientX <= SCROLL_BAR) return true;
+    if (across && edge.bottom - event.clientY <= SCROLL_BAR) return true;
+  }
+  return false;
+}
+
+function useGoToSpot(
+  sheet: React.RefObject<HTMLElement | null>,
+  jump: Jump | null,
+) {
+  const clearJump = useSeogi((s) => s.clearJump);
+  useEffect(() => {
+    if (!jump) return;
+    let second = 0;
+    const first = window.requestAnimationFrame(() => {
+      const line = sheet.current?.querySelector<HTMLElement>("[data-found]");
+      if (!line) return;
+      for (
+        let fold = line.closest("details");
+        fold;
+        fold = fold.parentElement?.closest("details") ?? null
+      ) {
+        fold.open = true;
+      }
+      const still = window.matchMedia("(prefers-reduced-motion: reduce)");
+      // The words themselves, not the top of a long paragraph they are in.
+      const words = line.querySelector<HTMLElement>("mark.hl") ?? line;
+      second = window.requestAnimationFrame(() =>
+        words.scrollIntoView({
+          block: "center",
+          behavior: still.matches ? "auto" : "smooth",
+        }),
+      );
+    });
+    const away = (event: PointerEvent) => {
+      // Dragging a scroll bar is scrolling, which keeps the mark.
+      if (onScrollBar(event)) return;
+      const line = sheet.current?.querySelector("[data-found]");
+      if (line && event.target instanceof Node && line.contains(event.target)) {
+        return;
+      }
+      clearJump();
+    };
+    document.addEventListener("pointerdown", away, true);
+    return () => {
+      window.cancelAnimationFrame(first);
+      window.cancelAnimationFrame(second);
+      document.removeEventListener("pointerdown", away, true);
+    };
+  }, [sheet, jump, clearJump]);
+}
+
 function Sheet({
   meeting,
   folder,
   player,
+  jump,
 }: {
   meeting: Meeting;
   folder: string;
   player: Player;
+  jump: Jump | null;
 }) {
   const { t, i18n } = useTranslation(NS);
   const length = useLength();
   const refreshDetail = useSeogi((s) => s.refreshDetail);
+  const sheet = useRef<HTMLElement | null>(null);
+  useGoToSpot(sheet, jump);
+  const spot = spotOf(jump, meeting);
+  const words = jump?.words ?? "";
+  const foundEntry = (section: string) =>
+    spot?.at === "entry" && spot.section === section ? spot.index : null;
   const minutes = meeting.minutes?.[0];
   const working = meeting.status === "working";
   const listen = (ms: number) => player.seek(ms - 500);
@@ -417,20 +533,29 @@ function Sheet({
   };
 
   return (
-    <article>
+    <article ref={sheet}>
       <div className="mb-1 text-[13px] t3">{t("minutes.thisIsMinutes")}</div>
-      <h1 className="a-h1">{meeting.title || t("untitled")}</h1>
+      <h1 className="a-h1" data-found={spot?.at === "title" ? "" : undefined}>
+        {spot?.at === "title" ? (
+          <Marked text={meeting.title} words={words} />
+        ) : (
+          meeting.title || t("untitled")
+        )}
+      </h1>
       <div className="a-meta">
         <span>{`${fullDay(start, i18n.language)} ${hm(start)}`}</span>
         {meeting.duration_ms > 0 ? (
           <span>{length(meeting.duration_ms)}</span>
         ) : null}
       </div>
-      <PeopleLine
-        meeting={meeting}
-        onChanged={refreshDetail}
-        className="mt-2"
-      />
+      <div data-found={spot?.at === "people" ? "" : undefined}>
+        <PeopleLine
+          meeting={meeting}
+          onChanged={refreshDetail}
+          className="mt-2"
+          mark={spot?.at === "people" ? words : ""}
+        />
+      </div>
       {meeting.transcript ? (
         <button
           type="button"
@@ -462,6 +587,8 @@ function Sheet({
                   key={section.key}
                   section={section}
                   showTitle={actionSections.length > 1}
+                  found={foundEntry(section.key)}
+                  words={words}
                   onListen={listen}
                   onDone={(index, done) =>
                     void setDone(section.key, index, done)
@@ -478,31 +605,64 @@ function Sheet({
 
           {story.length > 0 || minutes.summary ? (
             <section className="a-sec" aria-labelledby="story-h">
-              <h2 id="story-h">{t("minutes.story")}</h2>
+              <h2
+                id="story-h"
+                data-found={
+                  spot?.at === "story" && spot.index < 0 ? "" : undefined
+                }
+              >
+                {t("minutes.story")}
+              </h2>
               {story.length > 0 ? (
-                story.map((part, index) => (
-                  <div key={`${part.title}-${index}`} className="mb-4">
-                    {part.title ? (
-                      <h3 className="m-0 mb-0.5 text-[13.5px] font-medium t3">
-                        {part.title}
-                      </h3>
-                    ) : null}
-                    <p className="story">{part.text}</p>
-                    {part.sources.length > 0 ? (
-                      <div className="flex flex-wrap gap-1 mt-1.5">
-                        {part.sources.map((source) => (
-                          <TimeKey
-                            key={source.ms}
-                            ms={source.ms}
-                            onListen={listen}
-                          />
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                ))
+                story.map((part, index) => {
+                  const here = spot?.at === "story" && spot.index === index;
+                  return (
+                    <div
+                      key={`${part.title}-${index}`}
+                      className="mb-4"
+                      data-found={here ? "" : undefined}
+                    >
+                      {part.title ? (
+                        <h3 className="m-0 mb-0.5 text-[13.5px] font-medium t3">
+                          {here ? (
+                            <Marked text={part.title} words={words} />
+                          ) : (
+                            part.title
+                          )}
+                        </h3>
+                      ) : null}
+                      <p className="story">
+                        {here ? (
+                          <Marked text={part.text} words={words} />
+                        ) : (
+                          part.text
+                        )}
+                      </p>
+                      {part.sources.length > 0 ? (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {part.sources.map((source) => (
+                            <TimeKey
+                              key={source.ms}
+                              ms={source.ms}
+                              onListen={listen}
+                            />
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })
               ) : (
-                <p className="story">{minutes.summary}</p>
+                <p
+                  className="story"
+                  data-found={spot?.at === "summary" ? "" : undefined}
+                >
+                  {spot?.at === "summary" ? (
+                    <Marked text={minutes.summary} words={words} />
+                  ) : (
+                    minutes.summary
+                  )}
+                </p>
               )}
             </section>
           ) : (
@@ -555,7 +715,12 @@ function Sheet({
             title={section.title}
             count={section.entries.length}
           >
-            <RuledList entries={section.entries} onListen={listen} />
+            <RuledList
+              entries={section.entries}
+              found={foundEntry(section.key)}
+              words={words}
+              onListen={listen}
+            />
           </Fold>
         ))}
         {minutes?.feedback ? (
@@ -576,7 +741,12 @@ function Sheet({
         {meeting.transcript ? (
           <Fold title={t("minutes.transcript")} id="transcript-fold">
             <p className="mt-0 mb-2 text-[13px] t3">{t("names.tapToRename")}</p>
-            <Transcript meeting={meeting} player={player} />
+            <Transcript
+              meeting={meeting}
+              player={player}
+              found={spot?.at === "transcript" ? spot.ms : null}
+              words={words}
+            />
           </Fold>
         ) : null}
         {meeting.transcript ? (
@@ -655,11 +825,16 @@ function Sheet({
 function TaskGroup({
   section,
   showTitle,
+  found,
+  words,
   onListen,
   onDone,
 }: {
   section: MinutesSection;
   showTitle: boolean;
+  /** The task a search went to, by its place in the section. */
+  found: number | null;
+  words: string;
   onListen: (ms: number) => void;
   onDone: (index: number, done: boolean) => void;
 }) {
@@ -678,10 +853,12 @@ function TaskGroup({
           entry.owner && !isUnnamed(entry.owner)
             ? speakerName(entry.owner)
             : "";
+        const here = found === index;
         return (
           <div
             key={`${section.key}-${index}`}
             className={`task ${entry.faint ? "opacity-70" : ""}`}
+            data-found={here ? "" : undefined}
           >
             <input
               type="checkbox"
@@ -695,9 +872,21 @@ function TaskGroup({
               title={quoteOf(entry) ? `「${quoteOf(entry)}」` : undefined}
             >
               <span className={`who ${owner ? "" : "rt"}`}>
-                {owner || t("ownerUnknown")}
+                {here && owner ? (
+                  <Marked text={owner} words={words} />
+                ) : (
+                  owner || t("ownerUnknown")
+                )}
               </span>
-              {entry.text}
+              {here ? (
+                <Marked
+                  text={entry.text}
+                  words={words}
+                  wholeIfAbsent={!has(owner, words)}
+                />
+              ) : (
+                entry.text
+              )}
               {(entry.reasons ?? []).length > 0 ? (
                 <em>{t("minutes.checkMark")}</em>
               ) : null}
@@ -721,9 +910,14 @@ function quoteOf(entry: Entry): string {
 
 function RuledList({
   entries,
+  found,
+  words,
   onListen,
 }: {
   entries: Entry[];
+  /** The line a search went to, by its place in the list. */
+  found: number | null;
+  words: string;
   onListen: (ms: number) => void;
 }) {
   const { t } = useTranslation(NS);
@@ -732,15 +926,21 @@ function RuledList({
       {entries.map((entry, index) => {
         const quote = quoteOf(entry);
         const source = entry.sources[0];
+        const here = found === index;
         return (
           <li
             key={index}
+            data-found={here ? "" : undefined}
             className={`grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-2 border-t border-line first:border-t-0 ${
               entry.faint ? "opacity-70" : ""
             }`}
           >
             <span>
-              {entry.text}
+              {here ? (
+                <Marked text={entry.text} words={words} wholeIfAbsent />
+              ) : (
+                entry.text
+              )}
               {(entry.reasons ?? []).length > 0 ? (
                 <em className="not-italic rt text-[13px] ml-2">
                   {t("minutes.checkMark")}
@@ -1184,7 +1384,18 @@ function SpeakerNamer({
   );
 }
 
-function Transcript({ meeting, player }: { meeting: Meeting; player: Player }) {
+function Transcript({
+  meeting,
+  player,
+  found,
+  words,
+}: {
+  meeting: Meeting;
+  player: Player;
+  /** When the line a search went to starts. */
+  found: number | null;
+  words: string;
+}) {
   const { t } = useTranslation(NS);
   const speakerName = useSpeakerName();
   const refreshDetail = useSeogi((s) => s.refreshDetail);
@@ -1204,6 +1415,14 @@ function Transcript({ meeting, player }: { meeting: Meeting; player: Player }) {
       player.timeMs < (lines[index + 1]?.startMs ?? Number.MAX_SAFE_INTEGER),
   );
   const following = player.playing || player.timeMs > 0;
+  // Lines said together are shown as one: the one the found line is in.
+  const foundIndex =
+    found === null
+      ? -1
+      : lines.reduce(
+          (last, line, index) => (line.startMs <= found ? index : last),
+          -1,
+        );
 
   useEffect(() => {
     if (player.playing) {
@@ -1236,6 +1455,7 @@ function Transcript({ meeting, player }: { meeting: Meeting; player: Player }) {
           <div
             key={line.startMs}
             ref={on ? current : undefined}
+            data-found={index === foundIndex ? "" : undefined}
             className={`py-2 px-2 -mx-2 rounded-[8px] ${
               band
                 ? marked
@@ -1299,7 +1519,11 @@ function Transcript({ meeting, player }: { meeting: Meeting; player: Player }) {
                 on ? "font-medium" : ""
               } ${line.unsure ? "underline decoration-dotted decoration-[var(--t3)] underline-offset-4" : ""}`}
             >
-              {line.text}
+              {index === foundIndex ? (
+                <Marked text={line.text} words={words} />
+              ) : (
+                line.text
+              )}
             </p>
           </div>
         );

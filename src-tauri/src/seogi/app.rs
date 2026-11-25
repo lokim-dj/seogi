@@ -28,7 +28,7 @@ use super::minutes;
 use super::pipeline::{self, Monitor, Request, Stage};
 use super::power::KeepAwake;
 use super::recorder;
-use super::store::{self, EventRef, Library, Meeting, MeetingSummary, Origin, Status};
+use super::store::{self, EventRef, Found, Library, Meeting, MeetingSummary, Origin, Status};
 use super::templates;
 use super::transcript::NameScope;
 use super::vocab::Vocabulary;
@@ -657,21 +657,17 @@ impl Secretary {
     }
 
     /// The meetings whose title, minutes or transcript have `query` in them.
-    pub fn search(&self, query: &str) -> Vec<String> {
-        let query = query.trim().to_lowercase();
-        if query.is_empty() {
+    pub fn search(&self, query: &str) -> Vec<Found> {
+        if query.trim().is_empty() {
             return Vec::new();
         }
-        let folders: Vec<(String, PathBuf)> = lock(&self.slots)
-            .iter()
-            .map(|(id, slot)| (id.clone(), slot.folder.clone()))
+        let folders: Vec<PathBuf> = lock(&self.slots)
+            .values()
+            .map(|slot| slot.folder.clone())
             .collect();
         folders
             .into_iter()
-            .filter(|(_, folder)| {
-                Library::read(folder).is_ok_and(|meeting| meeting.search_text().contains(&query))
-            })
-            .map(|(id, _)| id)
+            .filter_map(|folder| Library::read(&folder).ok()?.found(query))
             .collect()
     }
 

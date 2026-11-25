@@ -198,6 +198,8 @@ const en: Strings = {
     emptyHow:
       "Press Record above, or drop a recording on this window. The rest happens on its own.",
     nothingFound: "No meeting has those words.",
+    foundInMinutes: "Minutes",
+    foundMore: "{{n}} more",
     dropHere: "Drop to bring it in",
     imported: "Brought in {{n}}.",
     importedSome: "Brought in {{n}}; {{dup}} were already here.",
