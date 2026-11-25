@@ -1,0 +1,64 @@
+name: Check
+
+# Runs on every pull request and on main: the quick checks on Linux ("text"),
+# the Rust tests on macOS ("rust"). Both must be green before a pull request
+# is merged (see AGENTS.md, How work lands). The name check against the
+# maintainer's private lists cannot run here; the pre-push hook runs it.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  text:
+    name: text
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Public text
+        run: bun run check:public
+      - name: Public text check's own tests
+        run: bun run test:public
+      - name: Version and release notes
+        run: bun run check:version
+      - name: Formatting (Prettier, cargo fmt)
+        run: bun run format:check
+      - name: Lint
+        run: bun run lint
+      - name: Types
+        run: bunx tsc --noEmit
+      - name: Translations
+        run: bun run check:translations
+      - name: Model catalog copy
+        run: bun run check:catalog
+
+  rust:
+    name: rust
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          key: check-macos
+          cache-bin: false
+      - run: bun install --frozen-lockfile
+      # The app embeds the built frontend (frontendDist), so it must exist
+      # before the crate compiles.
+      - name: Build the frontend
+        run: bun run build
+      - name: Rust tests
+        run: cargo test --lib
+        working-directory: src-tauri

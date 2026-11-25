@@ -1,0 +1,52 @@
+#!/bin/sh
+# Runs before every push. Set it up once per clone: bun run setup:hooks
+#
+# The private lists (names, words; see scripts/check-public-text.ts) exist only
+# on the maintainer's computer, so this is the one place they can stop a name
+# before it becomes public. It checks what is being pushed, not the folder:
+# every file in each pushed commit, every line those commits add (also one a
+# later commit removed again), and their messages. Formatting and lint run on
+# the working tree as a quick extra; CI runs them on the pushed commits.
+# Nothing runs on commit: small commits stay quick.
+set -eu
+# A push from an editor or a GUI may come with a bare PATH.
+export PATH="/opt/homebrew/opt/rustup/bin:/opt/homebrew/bin:/usr/local/bin:$HOME/.bun/bin:$HOME/.cargo/bin:$PATH"
+cd "$(git rev-parse --show-toplevel)"
+
+private_dir="${SEOGI_PRIVATE_DIR:-$HOME/seogi/private}"
+if [ ! -d "$private_dir/public-check" ]; then
+  red=$(printf '\033[1;31m')
+  plain=$(printf '\033[0m')
+  {
+    echo "${red}"
+    echo "  ############################################################"
+    echo "  #  No private lists at $private_dir/public-check"
+    echo "  #  Names are NOT being checked on this push."
+    echo "  #  Only the shapes (emails, phones, tokens, keys) are."
+    echo "  #  Set SEOGI_PRIVATE_DIR if the lists live somewhere else."
+    echo "  ############################################################"
+    echo "${plain}"
+  } >&2
+fi
+
+zero=0000000000000000000000000000000000000000
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue # deleting a branch
+  if [ "$remote_sha" != "$zero" ] && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+    base="$remote_sha"
+  else
+    # A new branch: from where it left main, or its whole history.
+    base=$(git merge-base "$local_sha" refs/remotes/origin/main 2>/dev/null || echo -)
+  fi
+  echo "checking $local_ref -> $remote_ref" >&2
+  bun scripts/check-public-text.ts --push "$base" "$local_sha"
+done
+
+python3 eval/synthetic/check_names.py
+bun run check:version
+if [ -d node_modules ]; then
+  bun run format:check
+  bun run lint
+else
+  echo "no node_modules here (a fresh worktree?): formatting and lint left to CI" >&2
+fi

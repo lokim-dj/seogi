@@ -17,8 +17,10 @@ on:
       - "vite.config.ts"
       - ".github/workflows/**"
 
+# Called from Release, github.workflow is "Release", so a push to main while a
+# release is building starts its own group instead of cancelling the release.
 concurrency:
-  group: build-${{ github.ref }}
+  group: build-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
