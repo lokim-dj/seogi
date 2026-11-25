@@ -46,6 +46,13 @@
   --hl: oklch(0.86 0.15 96);
   --hl-ink: oklch(0.2 0.01 60);
   --hl-soft: oklch(0.86 0.15 96 / 0.2);
+  /* Who is speaking: four quiet tones (clay, slate, olive, sand) for a
+     speaker's name and mark only, never for what they said. Never red,
+     which is for recording and for what needs a look. */
+  --sp1: oklch(0.74 0.06 45);
+  --sp2: oklch(0.74 0.045 245);
+  --sp3: oklch(0.76 0.06 115);
+  --sp4: oklch(0.8 0.05 85);
 }
 
 @media (prefers-color-scheme: light) {
@@ -68,6 +75,10 @@
     --hl: oklch(0.92 0.15 100);
     --hl-ink: oklch(0.22 0.01 60);
     --hl-soft: oklch(0.92 0.15 100 / 0.55);
+    --sp1: oklch(0.5 0.07 45);
+    --sp2: oklch(0.48 0.05 245);
+    --sp3: oklch(0.5 0.07 115);
+    --sp4: oklch(0.53 0.06 80);
   }
 }
 

@@ -181,6 +181,8 @@ const en: Strings = {
     tomorrow: "Tomorrow",
     shortcutAnywhere: "{{keys}}, from any app",
     inMinutes: "in {{n}} min",
+    inHours: "in {{h}} h",
+    inHoursMinutes: "in {{h}} h {{m}} min",
     recordEvent: "Press to record this event",
     noTasksShort: "Minutes ready · nothing to do",
     checkShort: "{{n}} to check",

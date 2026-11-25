@@ -252,7 +252,14 @@ function RecordLine({ onNote }: { onNote: (note: string) => void }) {
           <span className="t3">
             {minutes <= 0
               ? t("band.going")
-              : t("home.inMinutes", { n: minutes })}
+              : minutes < 60
+                ? t("home.inMinutes", { n: minutes })
+                : minutes % 60 === 0
+                  ? t("home.inHours", { h: minutes / 60 })
+                  : t("home.inHoursMinutes", {
+                      h: Math.floor(minutes / 60),
+                      m: minutes % 60,
+                    })}
           </span>
           <span>{`${hm(next.event.start_ms)} ${next.event.title}`}</span>
         </button>
