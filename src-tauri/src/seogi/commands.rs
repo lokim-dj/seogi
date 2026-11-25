@@ -811,6 +811,22 @@ pub fn seogi_open_typing_permission() -> Result<(), String> {
     }
 }
 
+/// Whether the system will open Seogi at login, as the system has it (the
+/// setting may want it while System Settings has it switched off).
+#[tauri::command]
+#[specta::specta]
+pub fn seogi_login_item(app: AppHandle) -> crate::autostart::LoginItem {
+    crate::autostart::login_item(&app)
+}
+
+/// Opens the system's list of apps that open at login, where only the user
+/// can switch Seogi back on.
+#[tauri::command]
+#[specta::specta]
+pub fn seogi_open_login_items() {
+    crate::autostart::open_login_items();
+}
+
 /// Shows one notification the way Seogi shows its own. The first one is when
 /// macOS asks whether Seogi may show notifications, so the first-run screen
 /// sends it when the user asks, not in the middle of a meeting. The words

@@ -504,6 +504,8 @@ const en: Strings = {
       "Seogi also opens when you log in. You can turn this off in Settings.",
     dictation:
       "Press {{keys}} in any app and speak, and the words go in where you type. You can turn this off in Settings.",
+    dictationKeyTrouble:
+      "{{keys}} is taken by another program, so it could not be set. You can choose another key in Settings › Dictation.",
     later: "Decide later",
     start: "Start Seogi",
   },
@@ -514,6 +516,10 @@ const en: Strings = {
     moreSettings: "More",
     start: "Startup",
     atLogin: "Open Seogi when the computer starts",
+    atLoginFailed:
+      "The login item could not be changed. The switch shows what the system has now.",
+    atLoginOffInSystem:
+      "Seogi is switched off in System Settings › General › Login Items. Turn it on there.",
     atLoginHint:
       "Seogi opens when you log in, so meeting reminders and dictation are ready right away.",
     remindHint: "A small notice at the top of the screen when an event starts.",
@@ -645,12 +651,12 @@ const en: Strings = {
     about: "Seogi {{version}}",
   },
   permissions: {
-    title: "Permissions",
+    title: "What Seogi is allowed to use",
     lead: "Seogi needs a few permissions from the computer to do its work. You can start without all of them and come back to them in Settings at any time.",
     needed: "Needed",
     optional: "Optional",
     allowed: "Allowed",
-    notYet: "Not yet",
+    notYet: "Not allowed yet",
     off: "Off",
     allow: "Allow",
     openSettings: "Open System Settings",
@@ -766,6 +772,8 @@ const en: Strings = {
     copied: "Copied.",
     forget: "Delete",
     forgetAll: "Delete all",
+    forgetAllAsk: "Delete everything dictated?",
+    forgetCancel: "Cancel",
     forgotten: "Deleted.",
     errors: {
       shortcut_taken: "That key is {{by}}.",
@@ -794,6 +802,7 @@ const en: Strings = {
         meeting: "A meeting is being recorded; dictation waits",
         nowhere: "Nowhere to type",
         pasteFailed: "The words could not be typed",
+        otherLanguage: "It sounded like another language, so nothing was typed",
       },
     },
   },

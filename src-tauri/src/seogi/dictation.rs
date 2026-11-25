@@ -34,10 +34,14 @@ use crate::managers::model::ModelManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::settings::{self, AppSettings, ClipboardHandling, PasteMethod, ShortcutActivation};
 
-/// The speech model dictation uses unless the user picks another: the most
-/// accurate Korean model in the catalog, and the one Handy users have.
+/// The speech model dictation uses unless the user picks another (a model
+/// already chosen is kept). Fun-ASR Nano: with the language fixed to Korean
+/// it keeps English said among Korean better than Qwen3 ASR 1.7B, which can
+/// drop a whole English sentence, and it is about twice as fast. On Korean
+/// alone it is slightly less accurate (catalog.json, FLEURS ko: Qwen3 1.7B
+/// 4.6 % error, Fun-ASR Nano 5.2 %). The maintainer's choice.
 pub const DEFAULT_DICTATION_MODEL: &str =
-    "handy-computer/Qwen3-ASR-1.7B-gguf/Qwen3-ASR-1.7B-Q8_0.gguf";
+    "handy-computer/Fun-ASR-MLT-Nano-2512-gguf/Fun-ASR-MLT-Nano-2512-Q8_0.gguf";
 
 /// A place on the screen, in logical pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -741,13 +745,11 @@ pub fn status(app: &AppHandle) -> DictationStatus {
 /// (`catalog.json`: error rate, and speed as times faster than real time on
 /// an accelerated machine). Shown are those good enough to type with, and
 /// any other already downloaded. The recommended one is the default
-/// ([`DEFAULT_DICTATION_MODEL`]): the lowest Korean error (4.6 % against
-/// Fun-ASR Nano's 5.2 %), already downloaded for meetings, and quick enough
-/// on Apple Silicon (a 5-second take in about half a second).
+/// ([`DEFAULT_DICTATION_MODEL`], where the reasons are).
 const SPEECH_MODELS: &[(&str, &str, Speed, bool, bool)] = &[
     // (id contains, label, speed, accurate, recommended)
-    ("Qwen3-ASR-1.7B", "Qwen3 ASR 1.7B", Speed::Fair, true, true),
-    ("Fun-ASR-MLT-Nano", "Fun-ASR Nano", Speed::Fast, true, false),
+    ("Qwen3-ASR-1.7B", "Qwen3 ASR 1.7B", Speed::Fair, true, false),
+    ("Fun-ASR-MLT-Nano", "Fun-ASR Nano", Speed::Fast, true, true),
     (
         "Qwen3-ASR-0.6B",
         "Qwen3 ASR 0.6B",

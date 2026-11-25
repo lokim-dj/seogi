@@ -55,6 +55,7 @@ export default function Onboarding() {
   // said once, here, under what the computer has to allow.
   const [atLogin, setAtLogin] = useState(false);
   const [dictationKeys, setDictationKeys] = useState("");
+  const [keyTrouble, setKeyTrouble] = useState(false);
 
   useEffect(() => {
     void refreshSetup();
@@ -73,6 +74,15 @@ export default function Onboarding() {
         : keysLabel(dictation.shortcut, false);
       setDictationKeys(keys.replace(/space/i, "Space"));
     });
+    // Whether the key could be registered: dictation starts listening a
+    // moment after the app starts, so this looks once that has happened.
+    const timer = window.setTimeout(() => {
+      void commands.seogiDictationStatus().then((result) => {
+        if (result.status === "ok")
+          setKeyTrouble(!!result.data.shortcut_trouble);
+      });
+    }, 3000);
+    return () => window.clearTimeout(timer);
   }, []);
 
   // Whichever login is found is the one offered.
@@ -544,6 +554,13 @@ export default function Onboarding() {
               {dictationKeys ? (
                 <span className="block">
                   {t("onboarding.dictation", { keys: dictationKeys })}
+                  {keyTrouble ? (
+                    <span className="block rt">
+                      {t("onboarding.dictationKeyTrouble", {
+                        keys: dictationKeys,
+                      })}
+                    </span>
+                  ) : null}
                 </span>
               ) : null}
             </span>

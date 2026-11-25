@@ -831,8 +831,8 @@ pub fn change_autostart_setting(app: AppHandle, enabled: bool) -> Result<(), Str
     settings.autostart_enabled = enabled;
     settings::write_settings(&app, settings);
 
-    // Apply the autostart setting immediately
-    crate::autostart::apply_autostart(&app, enabled);
+    // Apply the autostart setting immediately; a refusal reaches the screen.
+    crate::autostart::apply_autostart(&app, enabled)?;
 
     // Notify frontend
     let _ = app.emit(

@@ -11,6 +11,7 @@ import {
   type CalendarCheck,
   type CalendarStatus,
   type Config,
+  type LoginItem,
   type MacCalendar,
   type Microphone,
   type SummaryTry,
@@ -63,8 +64,11 @@ export default function Settings() {
   const [macCalendars, setMacCalendars] = useState<MacCalendar[]>([]);
   const [asking, setAsking] = useState(false);
   const [microphones, setMicrophones] = useState<Microphone[]>([]);
-  // Whether Seogi opens when the user logs in; null until read.
+  // Whether Seogi opens when the user logs in: what the setting wants, and
+  // what the system has (it may be switched off in System Settings). Null
+  // until read.
   const [atLogin, setAtLogin] = useState<boolean | null>(null);
+  const [loginItem, setLoginItem] = useState<LoginItem | null>(null);
   // What the last "시험해 보기" gave: null while not tried, "…" while asking.
   const [tried, setTried] = useState<SummaryTry | "asking" | null>(null);
   const mac = platform() === "macos";
@@ -83,7 +87,18 @@ export default function Settings() {
       if (result.status === "ok")
         setAtLogin(result.data.autostart_enabled ?? false);
     });
+    void commands.seogiLoginItem().then(setLoginItem);
   }, []);
+
+  // Switched off in System Settings: look again while the user is there.
+  useEffect(() => {
+    if (loginItem !== "needs_approval") return;
+    const timer = window.setInterval(
+      () => void commands.seogiLoginItem().then(setLoginItem),
+      2000,
+    );
+    return () => window.clearInterval(timer);
+  }, [loginItem]);
 
   // How each saved calendar answered. The calendars are read in the
   // background after a change, so this looks again for a little while.
@@ -172,15 +187,15 @@ export default function Settings() {
   // Saved and applied to the system's login items at once, so a login item
   // added by hand is not taken away again at the next start.
   const chooseAtLogin = async (enabled: boolean) => {
-    const before = atLogin;
     setAtLogin(enabled);
     const result = await commands.changeAutostartSetting(enabled);
-    if (result.status === "error") {
-      setAtLogin(before);
-      setNote(t("failed", { reason: result.error }));
-      return;
-    }
-    setNote(t("settings.saved"));
+    // The switch shows what the system has now, whichever way it went.
+    setLoginItem(await commands.seogiLoginItem());
+    setNote(
+      result.status === "error"
+        ? t("settings.atLoginFailed")
+        : t("settings.saved"),
+    );
   };
 
   const pick = async (directory: boolean) => {
@@ -874,14 +889,34 @@ export default function Settings() {
             <div className="srow">
               <div>
                 <div className="l">{t("settings.atLogin")}</div>
-                <div className="h">{t("settings.atLoginHint")}</div>
+                <div className="h">
+                  {t("settings.atLoginHint")}
+                  {loginItem === "needs_approval" ? (
+                    <span className="block rt">
+                      {t("settings.atLoginOffInSystem")}
+                    </span>
+                  ) : null}
+                </div>
               </div>
               <div className="v">
+                {loginItem === "needs_approval" ? (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => void commands.seogiOpenLoginItems()}
+                  >
+                    {t("permissions.openSettings")}
+                  </button>
+                ) : null}
                 <input
                   type="checkbox"
                   role="switch"
                   className="tg"
-                  checked={atLogin}
+                  checked={
+                    loginItem === null || loginItem === "unknown"
+                      ? atLogin
+                      : loginItem === "on"
+                  }
                   aria-label={t("settings.atLogin")}
                   onChange={(event) => void chooseAtLogin(event.target.checked)}
                 />

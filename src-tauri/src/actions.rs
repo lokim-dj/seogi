@@ -869,7 +869,9 @@ impl ShortcutAction for TranscribeAction {
                             // Seogi: words in a script the user's language
                             // does not use (啊啊啊 for a Korean "아아아") were
                             // not what was said; nothing is typed.
-                            if crate::seogi::dictation::wrong_script(&ah, &processed.final_text) {
+                            let other_language =
+                                crate::seogi::dictation::wrong_script(&ah, &processed.final_text);
+                            if other_language {
                                 log::info!("Dictation came out in another script; not typing it");
                                 processed.final_text.clear();
                                 processed.post_processed_text = None;
@@ -942,6 +944,11 @@ impl ShortcutAction for TranscribeAction {
 
                             if final_text.is_empty() {
                                 finish_without_text(&ah, input_silent, sample_count, stop_time);
+                                // Said briefly; the words heard stay in the
+                                // recent dictations.
+                                if other_language {
+                                    utils::show_overlay_note(&ah, "otherLanguage");
+                                }
                             } else {
                                 let ah_clone = ah.clone();
                                 let paste_time = Instant::now();

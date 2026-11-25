@@ -1508,6 +1508,20 @@ async seogiOpenTypingPermission() : Promise<Result<null, string>> {
 }
 },
 /**
+ * Whether the system will open Seogi at login, as the system has it (the
+ * setting may want it while System Settings has it switched off).
+ */
+async seogiLoginItem() : Promise<LoginItem> {
+    return await TAURI_INVOKE("seogi_login_item");
+},
+/**
+ * Opens the system's list of apps that open at login, where only the user
+ * can switch Seogi back on.
+ */
+async seogiOpenLoginItems() : Promise<void> {
+    await TAURI_INVOKE("seogi_open_login_items");
+},
+/**
  * Shows one notification the way Seogi shows its own. The first one is when
  * macOS asks whether Seogi may show notifications, so the first-run screen
  * sends it when the user asks, not in the middle of a meeting. The words
@@ -2328,6 +2342,20 @@ export type LanguageStatus =
  */
 { kind: "auto_unavailable"; language: string; reason: AutoUnavailableReason }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
+/**
+ * Whether the system will open the app at login, as the system says, not
+ * as the setting says.
+ */
+export type LoginItem = "on" | "off" | 
+/**
+ * Registered, but switched off in System Settings › Login Items (or
+ * waiting for the user's approval there). Only the user can turn it on.
+ */
+"needs_approval" | 
+/**
+ * The system could not be asked.
+ */
+"unknown"
 /**
  * A calendar in the Calendar app.
  */

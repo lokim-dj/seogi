@@ -66,6 +66,8 @@ export default function DictationSettings({
   const downloads = useSeogi((s) => s.downloads);
   const [dictation, setDictation] = useState<Dictation | null>(null);
   const [status, setStatus] = useState<DictationStatus | null>(null);
+  // "모두 지우기" asks once more, in its place.
+  const [askingAll, setAskingAll] = useState(false);
   const mac = platform() === "macos";
 
   const look = useCallback(async () => {
@@ -116,18 +118,18 @@ export default function DictationSettings({
 
   // Gone from the list at once, and from the dictation history for good.
   const forget = async (ids: number[] | null) => {
-    const before = status;
+    setAskingAll(false);
     setStatus({
       ...status,
       recent: ids ? status.recent.filter((item) => !ids.includes(item.id)) : [],
     });
     const result = await commands.seogiForgetDictations(ids);
-    if (result.status === "error") {
-      setStatus(before);
-      onNote(t("failed", { reason: result.error }));
-      return;
-    }
-    onNote(t("dictation.forgotten"));
+    onNote(
+      result.status === "error"
+        ? t("failed", { reason: result.error })
+        : t("dictation.forgotten"),
+    );
+    // Read again either way: a failure halfway shows what is really left.
     void look();
   };
 
@@ -499,11 +501,29 @@ export default function DictationSettings({
               </div>
             </div>
             <div className="v">
-              {status.recent.length > 0 ? (
+              {status.recent.length > 0 && askingAll ? (
+                <>
+                  <span>{t("dictation.forgetAllAsk")}</span>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => void forget(null)}
+                  >
+                    {t("dictation.forget")}
+                  </button>
+                  <button
+                    type="button"
+                    className="lnk"
+                    onClick={() => setAskingAll(false)}
+                  >
+                    {t("dictation.forgetCancel")}
+                  </button>
+                </>
+              ) : status.recent.length > 0 ? (
                 <button
                   type="button"
                   className="lnk"
-                  onClick={() => void forget(null)}
+                  onClick={() => setAskingAll(true)}
                 >
                   {t("dictation.forgetAll")}
                 </button>

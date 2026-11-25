@@ -495,6 +495,8 @@ const ko = {
     atLogin: "컴퓨터를 켜면 서기도 함께 켜져요. 설정에서 끌 수 있어요.",
     dictation:
       "어느 앱에서든 {{keys}} 키를 누르고 말하면 글자가 들어가요. 설정에서 끌 수 있어요.",
+    dictationKeyTrouble:
+      "{{keys}} 키를 다른 프로그램이 쓰고 있어 등록하지 못했어요. 설정 › 받아쓰기에서 다른 키를 고를 수 있어요.",
     later: "나중에 정하기",
     start: "서기 시작하기",
   },
@@ -506,6 +508,10 @@ const ko = {
     moreSettings: "더 보기",
     start: "시작",
     atLogin: "컴퓨터를 켜면 서기 켜기",
+    atLoginFailed:
+      "로그인 항목을 바꾸지 못했어요. 스위치는 지금 시스템 상태예요.",
+    atLoginOffInSystem:
+      "시스템 설정 › 일반 › 로그인 항목에서 서기가 꺼져 있어요. 거기서 켜야 해요.",
     atLoginHint:
       "로그인하면 서기가 함께 켜져서 회의 알림과 받아쓰기를 바로 쓸 수 있어요.",
     remindHint: "일정이 시작할 때 화면 위에 작게 알려요.",
@@ -634,12 +640,12 @@ const ko = {
     about: "서기 {{version}}",
   },
   permissions: {
-    title: "허락",
+    title: "서기가 쓰는 권한",
     lead: "서기가 일하려면 컴퓨터의 허락이 몇 가지 필요해요. 지금 다 하지 않아도 시작할 수 있고, 설정에서 언제든 다시 볼 수 있어요.",
     needed: "꼭 필요",
-    optional: "골라서",
+    optional: "선택",
     allowed: "허락됨",
-    notYet: "아직 안 함",
+    notYet: "아직 허락 안 함",
     off: "꺼져 있음",
     allow: "허락하기",
     openSettings: "시스템 설정 열기",
@@ -752,6 +758,8 @@ const ko = {
     copied: "복사했습니다.",
     forget: "지우기",
     forgetAll: "모두 지우기",
+    forgetAllAsk: "받아쓴 글을 모두 지울까요?",
+    forgetCancel: "그만두기",
     forgotten: "지웠습니다.",
     errors: {
       shortcut_taken: "그 키는 {{by}}이라 쓸 수 없어요.",
@@ -780,6 +788,7 @@ const ko = {
         meeting: "회의 녹음 중이라 받아쓰기를 쉬어요",
         nowhere: "넣을 곳이 없어요",
         pasteFailed: "글자를 넣지 못했어요",
+        otherLanguage: "다른 나라 말로 들려서 넣지 않았어요",
       },
     },
   },

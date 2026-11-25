@@ -87,6 +87,17 @@ export default function Permissions({ firstRun }: { firstRun: boolean }) {
       setMicAsked(true);
       try {
         await requestMicrophonePermission();
+        // The system's question takes the focus away. Still in front a
+        // moment later and still not allowed: it was refused before and
+        // there is no question, so System Settings opens instead.
+        window.setTimeout(() => {
+          void checkMicrophonePermission()
+            .catch(() => false)
+            .then((allowed) => {
+              if (!allowed && document.hasFocus())
+                void commands.openMicrophonePrivacySettings();
+            });
+        }, 1000);
       } catch {
         await commands.openMicrophonePrivacySettings();
       }

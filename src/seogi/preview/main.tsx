@@ -140,7 +140,7 @@ const dictationStatus = (): DictationStatus => ({
       size_mb: 2100,
       speed: "fair",
       accurate: true,
-      recommended: true,
+      recommended: false,
     },
     {
       id: "handy-computer/Fun-ASR-MLT-Nano-2512-gguf/Fun-ASR-MLT-Nano-2512-Q8_0.gguf",
@@ -149,7 +149,7 @@ const dictationStatus = (): DictationStatus => ({
       size_mb: 1000,
       speed: "fast",
       accurate: true,
-      recommended: false,
+      recommended: true,
     },
   ],
   tidy_choices: [
@@ -575,6 +575,14 @@ mockIPC(
         return { app_language: "ko", autostart_enabled: atLogin };
       case "change_autostart_setting":
         atLogin = Boolean(args.enabled);
+        return null;
+      case "seogi_login_item":
+        // `?loginItem=needs_approval` shows it switched off in System Settings.
+        return (
+          new URLSearchParams(window.location.search).get("loginItem") ??
+          (atLogin ? "on" : "off")
+        );
+      case "seogi_open_login_items":
         return null;
       case "seogi_config":
         return config;
