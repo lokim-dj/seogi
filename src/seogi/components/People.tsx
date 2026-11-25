@@ -122,11 +122,14 @@ export function PeopleLine({
   open: startOpen = false,
   className = "",
   mark = "",
+  labelled = true,
 }: {
   meeting: Meeting;
   onChanged: () => Promise<void> | void;
   open?: boolean;
   className?: string;
+  /** False where the row already has "참석자" written above it. */
+  labelled?: boolean;
   /** Words a search went to, marked in the names. */
   mark?: string;
 }) {
@@ -162,7 +165,9 @@ export function PeopleLine({
   return (
     <div className={`grid gap-2 text-[13.5px] ${className}`}>
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="t3 mr-1.5">{t("people.label")}</span>
+        {labelled ? (
+          <span className="t3 mr-1.5">{t("people.label")}</span>
+        ) : null}
         {people.map((name) => (
           <NameKey
             key={name}

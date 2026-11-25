@@ -376,7 +376,7 @@ const en: Strings = {
   },
   recording: {
     mayStayEmpty: "may stay empty",
-    aboutFold: "Customer, site, note",
+    aboutFold: "People, customer, site, note",
     stopShort: "Stop",
     titleHint: "A name makes it easy to find among the meetings.",
     titleFromEvent: "Taken from the calendar event. Press to change it.",
@@ -414,7 +414,7 @@ const en: Strings = {
     kindAuto: "Left alone, it is chosen from what is said.",
     kindFromEvent: "Chosen from the event's title.",
     customer: "Customer",
-    peopleField: "Who is there",
+    peopleField: "People",
     peopleHint:
       "Separate names with commas and the transcript will carry them.",
     placeField: "Site",
