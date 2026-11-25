@@ -86,6 +86,10 @@ const en: Strings = {
         "Pictures are read only when minutes are written by a signed-in plan (Claude, ChatGPT). They are skipped with a model on this computer.",
     },
   },
+  talkShare: {
+    label: "Who talked how much",
+    hover: "{{name}} · talked {{length}}",
+  },
   names: {
     renameSpeakers: "Rename speakers",
     tapToRename: "Press a name to change who said it.",
@@ -93,7 +97,8 @@ const en: Strings = {
     peopleFirst: "First type the names of those who were in this meeting.",
     unnamed: "{{n}} speakers have no name ·",
     start: "Name them",
-    allSeen: "Every unnamed speaker has been seen.",
+    hearThree:
+      "Listen, then pick who it is. Once one is named, the next comes up.",
     cardLabel: "Naming a speaker",
     cardShare: "{{share}}% of the talking · {{left}} left",
     quiet: "Someone who hardly spoke (others)",
@@ -378,7 +383,6 @@ const en: Strings = {
       "Follows what you are hearing. Press a time to hear from there.",
     nowHere: "Playing here",
     markedHere: "Marked",
-    nameIt: "Name them",
     save: "Save",
     corrected: "Corrected from your vocabulary",
     took: "Took {{length}}.",

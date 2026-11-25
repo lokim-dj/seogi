@@ -47,3 +47,96 @@ export function speakerTones(
   });
   return tones;
 }
+
+/** A line of the transcript, as far as the helpers below need it. */
+export interface SpokenLine {
+  start_ms: number;
+  end_ms: number;
+  text: string;
+  confidence?: number | null;
+  unsure?: boolean | null;
+  overlap?: boolean | null;
+}
+
+/** A line shorter than this (letters, not spaces or marks) says too little
+ *  to tell a voice by. */
+export const SAMPLE_MIN_CHARS = 6;
+
+const letters = (text: string) =>
+  text.replace(/[\s.,!?'"「」…·~-]/g, "").length;
+
+/**
+ * Up to `count` lines that show who a speaker is, from that speaker's
+ * `lines`: long enough to hear (SAMPLE_MIN_CHARS), one from each part of
+ * the meeting (beginning, middle, end of `durationMs`) where the speaker
+ * talked, the most surely heard first. With too few long lines, shorter
+ * ones fill in; a speaker with fewer lines gets as many as there are.
+ * In the order said.
+ */
+export function sampleLines<T extends SpokenLine>(
+  lines: T[],
+  durationMs: number,
+  count = 3,
+): T[] {
+  const span = Math.max(1, durationMs, ...lines.map((line) => line.end_ms));
+  // Surely heard first, then the longer.
+  const score = (line: T) =>
+    (line.confidence ?? 1) -
+    (line.unsure ? 0.5 : 0) -
+    (line.overlap ? 0.5 : 0) +
+    Math.min(letters(line.text), 60) / 1000;
+  const ranked = [...lines].sort((a, b) => score(b) - score(a));
+  const long = ranked.filter((line) => letters(line.text) >= SAMPLE_MIN_CHARS);
+  const short = ranked.filter((line) => letters(line.text) < SAMPLE_MIN_CHARS);
+  const part = (line: T) =>
+    Math.min(count - 1, Math.floor((line.start_ms / span) * count));
+  const chosen: T[] = [];
+  // The best long line of each part of the meeting.
+  for (let p = 0; p < count; p++) {
+    const best = long.find((line) => part(line) === p);
+    if (best) chosen.push(best);
+  }
+  // Then the best of what is left, long before short.
+  for (const line of [...long, ...short]) {
+    if (chosen.length >= count) break;
+    if (!chosen.includes(line)) chosen.push(line);
+  }
+  return chosen.sort((a, b) => a.start_ms - b.start_ms);
+}
+
+/** One speaker's piece of the talking, as the share bar shows it. */
+export interface SharePiece {
+  speaker: number;
+  /** Whole percent; the pieces add up to 100. */
+  percent: number;
+  talkMs: number;
+}
+
+/**
+ * Whole percentages for the speakers' talking times that add up to 100
+ * (the largest remainders round up), the one who talked most first.
+ * Speakers who did not talk are left out.
+ */
+export function shareBar(
+  talk: { speaker: number; talk_ms: number }[],
+): SharePiece[] {
+  const spoke = talk.filter((s) => s.talk_ms > 0);
+  const total = spoke.reduce((n, s) => n + s.talk_ms, 0);
+  if (total === 0) return [];
+  const exact = spoke.map((s) => (s.talk_ms * 100) / total);
+  const pieces = spoke.map((s, i) => ({
+    speaker: s.speaker,
+    percent: Math.floor(exact[i]),
+    talkMs: s.talk_ms,
+  }));
+  let left = 100 - pieces.reduce((n, p) => n + p.percent, 0);
+  const byRemainder = exact
+    .map((value, i) => ({ i, rest: value - Math.floor(value) }))
+    .sort((a, b) => b.rest - a.rest);
+  for (const { i } of byRemainder) {
+    if (left <= 0) break;
+    pieces[i].percent += 1;
+    left -= 1;
+  }
+  return pieces.sort((a, b) => b.talkMs - a.talkMs);
+}

@@ -512,6 +512,29 @@ function search(query: string): Found[] {
   return [{ id: done.id, places: places.slice(0, 5), total: places.length }];
 }
 
+/** Each speaker's talking in a meeting, the way talk.rs measures it. */
+function talkOf(meeting: Meeting) {
+  const totals = new Map<number, number>();
+  for (const line of meeting.transcript?.segments ?? []) {
+    if (line.speaker === 0) continue;
+    const ms = line.end_ms - line.start_ms;
+    totals.set(line.speaker, (totals.get(line.speaker) ?? 0) + ms);
+  }
+  const all = [...totals.values()].reduce((n, ms) => n + ms, 0) || 1;
+  return [...totals.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([speaker, talk_ms]) => ({
+      speaker,
+      talk_ms,
+      share: Math.round((talk_ms * 1000) / all) / 10,
+      turns: 5,
+      longest_ms: 12000,
+      longest_at_ms: 15000,
+      questions: 1,
+      cut_ins: 1,
+    }));
+}
+
 const templates = [
   meetingTemplate,
   consult,
@@ -633,48 +656,8 @@ mockIPC(
       }
       case "seogi_talk":
         return {
-          speakers: [
-            {
-              speaker: 1,
-              talk_ms: 120000,
-              share: 56,
-              turns: 9,
-              longest_ms: 24000,
-              longest_at_ms: 15000,
-              questions: 2,
-              cut_ins: 3,
-            },
-            {
-              speaker: 2,
-              talk_ms: 70000,
-              share: 33,
-              turns: 7,
-              longest_ms: 14000,
-              longest_at_ms: 6000,
-              questions: 1,
-              cut_ins: 1,
-            },
-            {
-              speaker: 3,
-              talk_ms: 22000,
-              share: 10.4,
-              turns: 4,
-              longest_ms: 7000,
-              longest_at_ms: 46000,
-              questions: 3,
-              cut_ins: 0,
-            },
-            {
-              speaker: 4,
-              talk_ms: 1000,
-              share: 0.6,
-              turns: 1,
-              longest_ms: 1000,
-              longest_at_ms: 90000,
-              questions: 0,
-              cut_ins: 0,
-            },
-          ],
+          // Measured from the made-up meeting, as the backend would.
+          speakers: talkOf(done),
           moments: [
             { at_ms: 40000, by: 1, from: 3, overlap_ms: 600 },
             { at_ms: 126000, by: 2, from: 3, overlap_ms: 300 },

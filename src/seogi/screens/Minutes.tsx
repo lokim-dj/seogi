@@ -12,7 +12,9 @@ import {
   type MinutesSection,
   type NameScope,
   type Segment,
+  type TalkStats,
   type Template,
+  type Transcript as MeetingTranscript,
 } from "@/bindings";
 import {
   isUnnamed,
@@ -38,7 +40,7 @@ import { ConfirmDelete, busy } from "../components/DeleteMeeting";
 import { NS } from "../i18n";
 import { clock, fullDay, hm, hms, isoDay, shortModel } from "../lib/format";
 import { joinPath, usePlayer, type Player } from "../lib/player";
-import { speakerTones } from "../lib/speakers";
+import { sampleLines, shareBar, speakerTones } from "../lib/speakers";
 import { taskLine, titleNeeded } from "../lib/tasks";
 import { Mark } from "../components/Mark";
 import { useSeogi, type Jump } from "../store";
@@ -382,16 +384,6 @@ function Fold({
   );
 }
 
-/** Opens the transcript and goes to it, where a speaker's name is pressed
- *  to change it. */
-function showTranscriptNames() {
-  const fold = document.getElementById("transcript-fold");
-  if (fold instanceof HTMLDetailsElement) {
-    fold.open = true;
-    fold.scrollIntoView({ block: "start", behavior: "smooth" });
-  }
-}
-
 /** The line of the minutes a search went to, as the sheet lays it out. */
 type Spot =
   | { at: "title" | "summary" | "people" }
@@ -511,6 +503,7 @@ function Sheet({
   const length = useLength();
   const refreshDetail = useSeogi((s) => s.refreshDetail);
   const sheet = useRef<HTMLElement | null>(null);
+  const talk = useTalk(meeting);
   useGoToSpot(sheet, jump);
   const spot = spotOf(jump, meeting);
   const words = jump?.words ?? "";
@@ -570,16 +563,8 @@ function Sheet({
           mark={spot?.at === "people" ? words : ""}
         />
       </div>
-      {meeting.transcript ? (
-        <button
-          type="button"
-          className="lnk mt-1.5 text-[13.5px]"
-          onClick={showTranscriptNames}
-        >
-          {t("names.renameSpeakers")}
-        </button>
-      ) : null}
-      <NameSpeakers meeting={meeting} player={player} />
+      <TalkShare meeting={meeting} talk={talk} />
+      <NameSpeakers meeting={meeting} player={player} talk={talk} />
 
       {!minutes ? (
         <p className="mt-8 mb-0 max-w-[60ch] text-[15px] leading-[1.7] t2">
@@ -1134,72 +1119,161 @@ function paragraphs(segments: Segment[]): Paragraph[] {
 /** A speaker who said less than this share is asked about last. */
 const QUIET_SHARE = 1;
 
-/**
- * The lines that best show who a speaker is: long, clearly heard, and apart
- * from each other.
- */
-function telltaleLines(meeting: Meeting, speaker: number): Segment[] {
-  const lines = (meeting.transcript?.segments ?? [])
-    .filter(
-      (line) =>
-        line.speaker === speaker &&
-        !(line.unsure ?? false) &&
-        !(line.overlap ?? false) &&
-        (line.confidence ?? 1) >= 0.6,
-    )
-    .sort((a, b) => b.text.length - a.text.length);
-  const chosen: Segment[] = [];
-  for (const line of lines) {
-    if (
-      chosen.every((other) => Math.abs(other.start_ms - line.start_ms) > 60000)
-    ) {
-      chosen.push(line);
-    }
-    if (chosen.length === 2) break;
-  }
-  return chosen.sort((a, b) => a.start_ms - b.start_ms);
+/** Each speaker's tone (1 … 4), by number, the same in every place a
+ *  speaker is shown: a new name keeps it. */
+function tonesOf(transcript: MeetingTranscript | null | undefined) {
+  const order = (transcript?.segments ?? []).map((line) => line.speaker);
+  return speakerTones(
+    [...(transcript?.speakers ?? []).map((speaker) => speaker.id), ...order],
+    order,
+  );
+}
+
+/** How the talking went, measured again whenever who said what changes. */
+function useTalk(meeting: Meeting): TalkStats | null {
+  const [talk, setTalk] = useState<TalkStats | null>(null);
+  const shape = (meeting.transcript?.segments ?? [])
+    .map((line) => line.speaker)
+    .join(",");
+  const heard = Boolean(meeting.transcript);
+  useEffect(() => {
+    if (!heard) return;
+    void commands.seogiTalk(meeting.id).then((result) => {
+      if (result.status === "ok") setTalk(result.data);
+    });
+  }, [meeting.id, shape, heard]);
+  return heard ? talk : null;
 }
 
 /**
- * Speakers with no name yet, asked about one at a time from a thin line at
- * the top of the minutes: never a window after the recording ends.
+ * Who talked how much, as one thin bar split by speaker in their tones,
+ * and the names with their share under it; how long each talked shows on
+ * pointing at a piece.
+ */
+function TalkShare({
+  meeting,
+  talk,
+}: {
+  meeting: Meeting;
+  talk: TalkStats | null;
+}) {
+  const { t } = useTranslation(NS);
+  const length = useLength();
+  const speakerName = useSpeakerName();
+  const pieces = shareBar(talk?.speakers ?? []);
+  if (pieces.length < 2) return null;
+  const tones = tonesOf(meeting.transcript);
+  const nameOf = (id: number) =>
+    speakerName(
+      meeting.transcript?.speakers.find((s) => s.id === id)?.name ??
+        `화자 ${id}`,
+    );
+  const percent = (n: number) => (n === 0 ? "<1%" : `${n}%`);
+  const hover = (speaker: number, talkMs: number) =>
+    t("talkShare.hover", { name: nameOf(speaker), length: length(talkMs) });
+  return (
+    <div className="mt-3 max-w-[420px]">
+      <div
+        role="img"
+        aria-label={`${t("talkShare.label")}: ${pieces
+          .map((p) => `${nameOf(p.speaker)} ${percent(p.percent)}`)
+          .join(", ")}`}
+        className="flex gap-[2px] h-[3px]"
+      >
+        {pieces.map((p) => (
+          <span
+            key={p.speaker}
+            title={hover(p.speaker, p.talkMs)}
+            className="block rounded-[1.5px] min-w-[2px]"
+            style={{
+              flexGrow: p.talkMs,
+              flexBasis: 0,
+              background: `var(--sp${tones.get(p.speaker) ?? 1})`,
+            }}
+          />
+        ))}
+      </div>
+      <div
+        aria-hidden="true"
+        className="flex flex-wrap gap-x-3.5 gap-y-0.5 mt-1.5 text-[13px] t2"
+      >
+        {pieces.map((p) => (
+          <span
+            key={p.speaker}
+            title={hover(p.speaker, p.talkMs)}
+            className="inline-flex items-center gap-1"
+          >
+            <span
+              className="inline-flex"
+              style={{ color: `var(--sp${tones.get(p.speaker) ?? 1})` }}
+            >
+              <Mark size={10} tight color="currentColor" className="block" />
+            </span>
+            {nameOf(p.speaker)}
+            <span className="tab t3">{percent(p.percent)}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Naming who spoke, one speaker at a time from a thin line at the top of
+ * the minutes (never a window after the recording ends): three lines of
+ * each to hear, a name pressed, and on to the next. Opened from the line
+ * "N명에 이름이 없어요" for the unnamed, or from "말한 사람 이름 바꾸기"
+ * for everyone.
  */
 function NameSpeakers({
   meeting,
   player,
+  talk,
 }: {
   meeting: Meeting;
   player: Player;
+  talk: TalkStats | null;
 }) {
   const { t } = useTranslation(NS);
   const speakerName = useSpeakerName();
   const refreshDetail = useSeogi((s) => s.refreshDetail);
-  const [open, setOpen] = useState(false);
-  const [skipped, setSkipped] = useState<number[]>([]);
-  const [share, setShare] = useState<Record<number, number>>({});
+  // Who is being asked about: the unnamed only, or everyone.
+  const [open, setOpen] = useState<false | "unnamed" | "all">(false);
+  // Speakers seen this round (named or skipped).
+  const [seen, setSeen] = useState<number[]>([]);
   const [other, setOther] = useState<Segment | null>(null);
-  const speakers = meeting.transcript?.speakers ?? [];
-  const shape = speakers.map((s) => `${s.id}:${s.name}`).join("|");
+  if (!meeting.transcript) return null;
+  const speakers = meeting.transcript.speakers;
+  const share: Record<number, number> = {};
+  for (const s of talk?.speakers ?? []) share[s.speaker] = s.share;
 
-  useEffect(() => {
-    void commands.seogiTalk(meeting.id).then((result) => {
-      if (result.status !== "ok") return;
-      const shares: Record<number, number> = {};
-      for (const s of result.data.speakers) shares[s.speaker] = s.share;
-      setShare(shares);
-    });
-  }, [meeting.id, shape]);
-
-  // The unnamed, those who said most first, the quiet ones last.
-  const unnamed = speakers
-    .filter((s) => isUnnamed(s.name) && (share[s.id] ?? 0) > 0)
+  // Those who said most first, the quiet ones last.
+  const talked = speakers
+    .filter((s) => (share[s.id] ?? 0) > 0)
     .sort((a, b) => (share[b.id] ?? 0) - (share[a.id] ?? 0));
-  const loud = unnamed.filter((s) => (share[s.id] ?? 0) >= QUIET_SHARE);
-  const quiet = unnamed.filter((s) => (share[s.id] ?? 0) < QUIET_SHARE);
-  const queue = [...loud, ...quiet].filter((s) => !skipped.includes(s.id));
-  if (unnamed.length === 0 || !meeting.transcript) return null;
+  const unnamed = talked.filter((s) => isUnnamed(s.name));
+  const loud = (list: typeof talked) =>
+    list.filter((s) => (share[s.id] ?? 0) >= QUIET_SHARE);
+  const quiet = (list: typeof talked) =>
+    list.filter((s) => (share[s.id] ?? 0) < QUIET_SHARE);
+  const asked = open === "all" ? talked : unnamed;
+  const queue = [...loud(asked), ...quiet(asked)].filter(
+    (s) => !seen.includes(s.id),
+  );
+  const current = open ? queue[0] : undefined;
 
-  const current = queue[0];
+  const begin = (who: "unnamed" | "all") => {
+    setSeen([]);
+    setOther(null);
+    setOpen(who);
+  };
+  // On to the next speaker; after the last, done.
+  const next = () => {
+    if (!current) return;
+    setOther(null);
+    setSeen((now) => [...now, current.id]);
+    if (queue.length <= 1) setOpen(false);
+  };
   const give = async (name: string, line: Segment | null) => {
     if (!current) return;
     await commands.seogiNameSpeaker(
@@ -1210,34 +1284,49 @@ function NameSpeakers({
       line ? line.start_ms : 0,
       line ? line.end_ms : 0,
     );
-    setOther(null);
+    // One line given to someone else: the same speaker is still asked.
+    if (line) setOther(null);
+    else next();
     await refreshDetail();
   };
 
-  const bar =
-    "flex flex-wrap items-center gap-x-3 mt-3 py-2 px-3 rounded-[9px] bg-s1 text-[13.5px]";
-  if (!open) {
-    return (
-      <div className={bar}>
-        <span>{t("names.unnamed", { n: loud.length || unnamed.length })}</span>
-        <button type="button" className="lnk" onClick={() => setOpen(true)}>
-          {t("names.start")}
-        </button>
-      </div>
-    );
-  }
   if (!current) {
     return (
-      <div className={bar}>
-        <span>{t("names.allSeen")}</span>
-        <button type="button" className="lnk" onClick={() => setOpen(false)}>
-          {t("names.cancel")}
-        </button>
-      </div>
+      <>
+        {talked.length > 0 ? (
+          <button
+            type="button"
+            className="lnk mt-1.5 text-[13.5px]"
+            onClick={() => begin("all")}
+          >
+            {t("names.renameSpeakers")}
+          </button>
+        ) : null}
+        {unnamed.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-x-3 mt-3 py-2 px-3 rounded-[9px] bg-s1 text-[13.5px]">
+            <span>
+              {t("names.unnamed", {
+                n: loud(unnamed).length || unnamed.length,
+              })}
+            </span>
+            <button
+              type="button"
+              className="lnk"
+              onClick={() => begin("unnamed")}
+            >
+              {t("names.start")}
+            </button>
+          </div>
+        ) : null}
+      </>
     );
   }
-  const lines = telltaleLines(meeting, current.id);
-  const quietOne = (share[current.id] ?? 0) < QUIET_SHARE;
+  const lines = sampleLines(
+    meeting.transcript.segments.filter((line) => line.speaker === current.id),
+    meeting.duration_ms,
+  );
+  const quietOne =
+    isUnnamed(current.name) && (share[current.id] ?? 0) < QUIET_SHARE;
   const noPeople = (meeting.people ?? []).length === 0;
   return (
     <section
@@ -1250,7 +1339,7 @@ function NameSpeakers({
           <PeopleLine meeting={meeting} onChanged={refreshDetail} open />
         </div>
       ) : null}
-      <div className="flex flex-wrap items-baseline gap-x-3 mb-2">
+      <div className="flex flex-wrap items-baseline gap-x-3 mb-1">
         <b className="text-[15px]">
           {quietOne ? t("names.quiet") : speakerName(current.name)}
         </b>
@@ -1261,11 +1350,7 @@ function NameSpeakers({
           })}
         </span>
         <span className="ml-auto flex gap-3">
-          <button
-            type="button"
-            className="lnk text-[13px]"
-            onClick={() => setSkipped((now) => [...now, current.id])}
-          >
+          <button type="button" className="lnk text-[13px]" onClick={next}>
             {t("names.skip")}
           </button>
           <button
@@ -1277,6 +1362,7 @@ function NameSpeakers({
           </button>
         </span>
       </div>
+      <div className="mb-2 text-[13px] t3">{t("names.hearThree")}</div>
       <ul className="m-0 mb-3 p-0 list-none">
         {lines.map((line) => (
           <li key={line.start_ms} className="py-1.5 border-t border-line">
@@ -1427,17 +1513,7 @@ function Transcript({
     [transcript],
   );
   // Each speaker's tone, by number: a new name keeps it.
-  const tones = useMemo(
-    () =>
-      speakerTones(
-        [
-          ...(transcript?.speakers ?? []).map((speaker) => speaker.id),
-          ...lines.map((line) => line.speaker),
-        ],
-        lines.map((line) => line.speaker),
-      ),
-    [transcript, lines],
-  );
+  const tones = useMemo(() => tonesOf(transcript), [transcript]);
   const nowIndex = lines.findIndex(
     (line, index) =>
       player.timeMs >= line.startMs &&
@@ -1538,14 +1614,6 @@ function Transcript({
                     .filter(Boolean)
                     .join(", ")}
                 </span>
-              ) : isUnnamed(raw) && naming !== line.startMs ? (
-                <button
-                  type="button"
-                  className="lnk ml-auto"
-                  onClick={() => setNaming(line.startMs)}
-                >
-                  {t("minutes.nameIt")}
-                </button>
               ) : null}
             </div>
             {naming === line.startMs ? (
