@@ -32,7 +32,7 @@ use super::platform::hide_console;
 use crate::managers::history::HistoryManager;
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::TranscriptionManager;
-use crate::settings::{self, ClipboardHandling, PasteMethod, ShortcutActivation};
+use crate::settings::{self, AppSettings, ClipboardHandling, PasteMethod, ShortcutActivation};
 
 /// The speech model dictation uses unless the user picks another: the most
 /// accurate Korean model in the catalog, and the one Handy users have.
@@ -396,6 +396,7 @@ pub fn apply(app: &AppHandle) {
         return;
     };
     let config = secretary.config();
+    follow_language(app, &config.language);
     let dictation = &config.dictation;
     if dictation.enabled {
         ensure_model(app, config.speech_model());
@@ -408,6 +409,56 @@ pub fn apply(app: &AppHandle) {
         stop_listening(app);
     }
     super::mic_button::set_shown(app, dictation.enabled && dictation.button);
+}
+
+/// Dictation speaks Seogi's language (`seogi.json`, Korean unless changed),
+/// not the engine's "auto": left to guess, a model can hear a drawn-out
+/// Korean "아아아" as Chinese and type 啊啊啊. Words said in English inside
+/// Korean still come out in English (checked on mixed clips; see the pull
+/// request that made this change).
+fn follow_language(app: &AppHandle, language: &str) {
+    let mut s = settings::get_settings(app);
+    if speak_language(&mut s, language) {
+        info!("Dictation now listens for {language}");
+        settings::write_settings(app, s);
+    }
+}
+
+/// Sets the engine's language to `language`; true when it changed.
+fn speak_language(s: &mut AppSettings, language: &str) -> bool {
+    let language = language.trim();
+    if language.is_empty() || s.selected_language == language {
+        return false;
+    }
+    s.selected_language = language.to_string();
+    true
+}
+
+/// Whether dictated words came out in a script the user's language does not
+/// use: for Korean, Chinese characters or kana with no Hangul at all. Such
+/// words were not what was said, so nothing is typed rather than something
+/// made up. English stays: Korean speakers say English words.
+pub fn wrong_script(app: &AppHandle, text: &str) -> bool {
+    Secretary::of(app).is_some_and(|s| other_script_only(text, &s.config().language))
+}
+
+fn other_script_only(text: &str, language: &str) -> bool {
+    if !language.starts_with("ko") {
+        return false;
+    }
+    let (mut hangul, mut other) = (0, 0);
+    for c in text.chars() {
+        match c as u32 {
+            0xAC00..=0xD7A3 | 0x1100..=0x11FF | 0x3130..=0x318F => hangul += 1,
+            0x3040..=0x30FF
+            | 0x31F0..=0x31FF
+            | 0x3400..=0x4DBF
+            | 0x4E00..=0x9FFF
+            | 0xF900..=0xFAFF => other += 1,
+            _ => {}
+        }
+    }
+    hangul == 0 && other > 0
 }
 
 /// Called once the app has started.
@@ -687,11 +738,14 @@ pub fn status(app: &AppHandle) -> DictationStatus {
 /// Models for dictation, by what the catalog measured for Korean
 /// (`catalog.json`: error rate, and speed as times faster than real time on
 /// an accelerated machine). Shown are those good enough to type with, and
-/// any other already downloaded.
+/// any other already downloaded. The recommended one is the default
+/// ([`DEFAULT_DICTATION_MODEL`]): the lowest Korean error (4.6 % against
+/// Fun-ASR Nano's 5.2 %), already downloaded for meetings, and quick enough
+/// on Apple Silicon (a 5-second take in about half a second).
 const SPEECH_MODELS: &[(&str, &str, Speed, bool, bool)] = &[
     // (id contains, label, speed, accurate, recommended)
-    ("Qwen3-ASR-1.7B", "Qwen3 ASR 1.7B", Speed::Fair, true, false),
-    ("Fun-ASR-MLT-Nano", "Fun-ASR Nano", Speed::Fast, true, true),
+    ("Qwen3-ASR-1.7B", "Qwen3 ASR 1.7B", Speed::Fair, true, true),
+    ("Fun-ASR-MLT-Nano", "Fun-ASR Nano", Speed::Fast, true, false),
     (
         "Qwen3-ASR-0.6B",
         "Qwen3 ASR 0.6B",
@@ -1694,6 +1748,61 @@ mod tests {
         for key in [this_system.as_str(), "option+space", "alt+space"] {
             assert_eq!(shortcut_refused_by("", key, &taken), None, "{key}");
         }
+    }
+
+    /// The engine's "auto" let a model guess the language; Seogi's language
+    /// is passed instead, and then the model is told Korean.
+    #[test]
+    fn dictation_speaks_seogis_language() {
+        use crate::language_detection::policy::{self, ModelLanguages, Plan};
+        let mut s = settings::get_default_settings();
+        s.spoken_languages = vec!["ko".into(), "en".into()];
+        assert_eq!(s.selected_language, "auto");
+        assert!(speak_language(&mut s, "ko"));
+        assert_eq!(s.selected_language, "ko");
+        assert!(!speak_language(&mut s, "ko"));
+        assert!(!speak_language(&mut s, ""));
+        assert_eq!(s.selected_language, "ko");
+
+        let languages: Vec<String> = ["zh", "en", "ja", "ko"].map(String::from).to_vec();
+        let model = ModelLanguages {
+            languages: &languages,
+            detects: false,
+            streaming: false,
+        };
+        let plan = policy::plan(
+            &s.selected_language,
+            &s.spoken_languages,
+            &model,
+            s.language_detection,
+            &[],
+        );
+        assert!(matches!(plan, Plan::Fixed { ref language, .. } if language == "ko"));
+    }
+
+    #[test]
+    fn words_in_another_script_are_not_typed_for_korean() {
+        assert!(other_script_only("啊啊啊啊啊啊", "ko"));
+        assert!(other_script_only("あああ。", "ko"));
+        assert!(!other_script_only("아아아아아아", "ko"));
+        // English is typed as said; so is a Chinese character among Hangul.
+        assert!(!other_script_only("Okay, sounds good.", "ko"));
+        assert!(!other_script_only("회의 資料 정리", "ko"));
+        assert!(!other_script_only("", "ko"));
+        // Only Korean is checked.
+        assert!(!other_script_only("啊啊啊", "zh"));
+    }
+
+    /// The list's recommended model is the one dictation starts on.
+    #[test]
+    fn the_recommended_model_is_the_default() {
+        let recommended: Vec<&str> = SPEECH_MODELS
+            .iter()
+            .filter(|(.., recommended)| *recommended)
+            .map(|(fragment, ..)| *fragment)
+            .collect();
+        assert_eq!(recommended.len(), 1);
+        assert!(DEFAULT_DICTATION_MODEL.contains(recommended[0]));
     }
 
     #[test]

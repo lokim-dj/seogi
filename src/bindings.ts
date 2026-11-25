@@ -2032,7 +2032,7 @@ muted_events: string[];
 minutes_beside_source: boolean; 
 /**
  * Dictation: a shortcut or the floating key, speech, and the words
- * typed where the cursor is. Off until the user turns it on.
+ * typed where the cursor is. On for a new install.
  */
 dictation: DictationConfig }
 /**
@@ -2098,7 +2098,8 @@ keep: number }
  */
 export type DictationConfig = { 
 /**
- * Dictation answers its shortcut and its key. Off until turned on.
+ * Dictation answers its shortcut and its key. On for a new install;
+ * a `seogi.json` that already says either way keeps what it says.
  */
 enabled: boolean; 
 /**

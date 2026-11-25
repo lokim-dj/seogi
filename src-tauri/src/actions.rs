@@ -866,10 +866,19 @@ impl ShortcutAction for TranscribeAction {
                                 return;
                             };
 
+                            // Seogi: words in a script the user's language
+                            // does not use (啊啊啊 for a Korean "아아아") were
+                            // not what was said; nothing is typed.
+                            if crate::seogi::dictation::wrong_script(&ah, &processed.final_text) {
+                                log::info!("Dictation came out in another script; not typing it");
+                                processed.final_text.clear();
+                                processed.post_processed_text = None;
+                            }
+
                             // Seogi's tidying. Whatever happens to it, the
                             // words go in: tidied, or as heard with a note.
                             let mut tidy_note: Option<&'static str> = None;
-                            if seogi_tidy {
+                            if seogi_tidy && !processed.final_text.is_empty() {
                                 use crate::seogi::dictation::Tidied;
                                 let Some(tidied) = complete_unless_cancelled(
                                     crate::seogi::dictation::tidy(&ah, &processed.final_text),

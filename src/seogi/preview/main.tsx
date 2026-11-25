@@ -131,7 +131,7 @@ const dictationStatus = (): DictationStatus => ({
       size_mb: 2100,
       speed: "fair",
       accurate: true,
-      recommended: false,
+      recommended: true,
     },
     {
       id: "handy-computer/Fun-ASR-MLT-Nano-2512-gguf/Fun-ASR-MLT-Nano-2512-Q8_0.gguf",
@@ -140,7 +140,7 @@ const dictationStatus = (): DictationStatus => ({
       size_mb: 1000,
       speed: "fast",
       accurate: true,
-      recommended: true,
+      recommended: false,
     },
   ],
   tidy_choices: [
