@@ -501,6 +501,8 @@ const en: Strings = {
     speechLoading: "Downloading {{percent}}%",
     speechLoadingHint: "You can record meanwhile",
     mic: "Permission to use the microphone is asked once, at the first recording.",
+    atLogin:
+      "Seogi also opens when you log in. You can turn this off in Settings.",
     later: "Decide later",
     start: "Start Seogi",
   },
@@ -509,6 +511,10 @@ const en: Strings = {
     vocabularyFile: "Vocabulary as one file",
     speechModelHint: "The model that transcribes, on this computer.",
     moreSettings: "More",
+    start: "Startup",
+    atLogin: "Open Seogi when the computer starts",
+    atLoginHint:
+      "Seogi opens when you log in, so meeting reminders and dictation are ready right away.",
     remindHint: "A small notice at the top of the screen when an event starts.",
     calendarCount: "{{n}} addresses connected",
     macOkShort: "Mac calendar connected",

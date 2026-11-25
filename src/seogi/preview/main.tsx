@@ -413,6 +413,7 @@ Object.assign(window, {
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 Object.assign(window, { __seogiCalls: calls });
 let isRecording = screen === "recording";
+let atLogin = true;
 const trashedRows: MeetingSummary[] = [];
 
 mockIPC(
@@ -555,7 +556,10 @@ mockIPC(
         return null;
       }
       case "get_app_settings":
-        return { app_language: "ko" };
+        return { app_language: "ko", autostart_enabled: atLogin };
+      case "change_autostart_setting":
+        atLogin = Boolean(args.enabled);
+        return null;
       case "seogi_config":
         return config;
       case "seogi_templates":

@@ -62,6 +62,8 @@ export default function Settings() {
   const [macCalendars, setMacCalendars] = useState<MacCalendar[]>([]);
   const [asking, setAsking] = useState(false);
   const [microphones, setMicrophones] = useState<Microphone[]>([]);
+  // Whether Seogi opens when the user logs in; null until read.
+  const [atLogin, setAtLogin] = useState<boolean | null>(null);
   // What the last "시험해 보기" gave: null while not tried, "…" while asking.
   const [tried, setTried] = useState<SummaryTry | "asking" | null>(null);
   const mac = platform() === "macos";
@@ -72,6 +74,13 @@ export default function Settings() {
   useEffect(() => {
     void commands.seogiMicrophones().then((result) => {
       if (result.status === "ok") setMicrophones(result.data);
+    });
+  }, []);
+
+  useEffect(() => {
+    void commands.getAppSettings().then((result) => {
+      if (result.status === "ok")
+        setAtLogin(result.data.autostart_enabled ?? false);
     });
   }, []);
 
@@ -156,6 +165,20 @@ export default function Settings() {
     }
     setKey("");
     setHasKey(true);
+    setNote(t("settings.saved"));
+  };
+
+  // Saved and applied to the system's login items at once, so a login item
+  // added by hand is not taken away again at the next start.
+  const chooseAtLogin = async (enabled: boolean) => {
+    const before = atLogin;
+    setAtLogin(enabled);
+    const result = await commands.changeAutostartSetting(enabled);
+    if (result.status === "error") {
+      setAtLogin(before);
+      setNote(t("failed", { reason: result.error }));
+      return;
+    }
     setNote(t("settings.saved"));
   };
 
@@ -843,6 +866,28 @@ export default function Settings() {
         </div>
 
         <DictationSettings onNote={setNote} />
+
+        {atLogin !== null ? (
+          <>
+            <h2 className="set-h">{t("settings.start")}</h2>
+            <div className="srow">
+              <div>
+                <div className="l">{t("settings.atLogin")}</div>
+                <div className="h">{t("settings.atLoginHint")}</div>
+              </div>
+              <div className="v">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  className="tg"
+                  checked={atLogin}
+                  aria-label={t("settings.atLogin")}
+                  onChange={(event) => void chooseAtLogin(event.target.checked)}
+                />
+              </div>
+            </div>
+          </>
+        ) : null}
 
         <details className="mt-6">
           <summary className="fold">

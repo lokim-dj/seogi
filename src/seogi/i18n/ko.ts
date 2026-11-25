@@ -493,6 +493,7 @@ const ko = {
     speechLoading: "내려받는 중 {{percent}}%",
     speechLoadingHint: "받는 동안에도 녹음은 할 수 있어요",
     mic: "마이크를 써도 되는지는 처음 녹음할 때 한 번만 묻습니다.",
+    atLogin: "컴퓨터를 켜면 서기도 함께 켜져요. 설정에서 끌 수 있어요.",
     later: "나중에 정하기",
     start: "서기 시작하기",
   },
@@ -502,6 +503,10 @@ const ko = {
     speechModelHint:
       "녹음을 글로 받아쓰는 모델이에요. 이 컴퓨터 안에서 돌아요.",
     moreSettings: "더 보기",
+    start: "시작",
+    atLogin: "컴퓨터를 켜면 서기 켜기",
+    atLoginHint:
+      "로그인하면 서기가 함께 켜져서 회의 알림과 받아쓰기를 바로 쓸 수 있어요.",
     remindHint: "일정이 시작할 때 화면 위에 작게 알려요.",
     calendarCount: "주소 {{n}}개 연결됨",
     macOkShort: "맥 캘린더 연결됨",

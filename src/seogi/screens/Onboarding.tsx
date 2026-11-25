@@ -49,10 +49,19 @@ export default function Onboarding() {
   const [made, setMade] = useState<string[]>([]);
   const [trouble, setTrouble] = useState("");
   const [busy, setBusy] = useState(false);
+  // Seogi opens at login unless turned off; said once, here.
+  const [atLogin, setAtLogin] = useState(false);
 
   useEffect(() => {
     void refreshSetup();
   }, [refreshSetup]);
+
+  useEffect(() => {
+    void commands.getAppSettings().then((result) => {
+      if (result.status === "ok")
+        setAtLogin(result.data.autostart_enabled ?? false);
+    });
+  }, []);
 
   // Whichever login is found is the one offered.
   useEffect(() => {
@@ -516,6 +525,9 @@ export default function Onboarding() {
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 mt-5">
             <span className="flex-[1_1_300px] text-[13px] t3">
               {t("onboarding.mic")}
+              {atLogin ? (
+                <span className="block">{t("onboarding.atLogin")}</span>
+              ) : null}
             </span>
             <button
               type="button"
