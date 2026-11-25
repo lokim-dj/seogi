@@ -26,7 +26,18 @@ export const MICROPHONE_DENIED = "microphone_denied";
 export type View =
   | { name: "home" }
   | { name: "minutes"; id: string }
-  | { name: "settings" };
+  | { name: "settings"; part?: SettingsPart };
+
+/** The groups the settings are sorted into, in the order the side list
+ *  shows them. A way into the settings may name one to open. */
+export const SETTINGS_PARTS = [
+  "summary",
+  "recording",
+  "dictation",
+  "keep",
+  "start",
+] as const;
+export type SettingsPart = (typeof SETTINGS_PARTS)[number];
 
 /** Where a search sent the minutes: the line with the words, marked until
  *  the person presses somewhere else, goes back or opens another meeting.
@@ -66,6 +77,9 @@ interface Seogi {
   recording: RecordingState | null;
   today: Upcoming[];
   view: View;
+  /** The settings group looked at last, shown again when the settings
+   *  open without naming one. */
+  settingsPart: SettingsPart;
   /** Where ⌘[ / Alt+← goes, the latest last; and where ⌘] goes back to. */
   backStack: View[];
   forwardStack: View[];
@@ -92,6 +106,7 @@ interface Seogi {
   /** Changes the finding; closing it forgets the words. */
   setFinding: (change: Partial<Finding>) => void;
   go: (view: View) => void;
+  setSettingsPart: (part: SettingsPart) => void;
   goBack: () => void;
   goForward: () => void;
   saveConfig: (config: Config) => Promise<string | null>;
@@ -114,6 +129,7 @@ export const useSeogi = create<Seogi>((set, get) => ({
   recording: null,
   today: [],
   view: { name: "home" },
+  settingsPart: "summary",
   backStack: [],
   forwardStack: [],
   droppedDocuments: null,
@@ -229,6 +245,8 @@ export const useSeogi = create<Seogi>((set, get) => ({
     set({ ...moved(get(), view), jump: null });
     arrived(view);
   },
+
+  setSettingsPart: (part) => set({ settingsPart: part }),
 
   goBack: () => {
     const { backStack, forwardStack, view, meetings } = get();
@@ -357,7 +375,10 @@ function arrived(view: View) {
     useSeogi.setState({ selected: view.id });
     void state.refreshDetail();
   }
-  if (view.name === "settings") void state.refreshSetup();
+  if (view.name === "settings") {
+    if (view.part) useSeogi.setState({ settingsPart: view.part });
+    void state.refreshSetup();
+  }
 }
 
 /** The folder of a meeting, from the list. */

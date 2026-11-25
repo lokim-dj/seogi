@@ -911,13 +911,8 @@ async function show() {
     stop();
     if (screen === "minutes") state.open(done.id);
     if (screen === "settings") state.go({ name: "settings" });
-    if (screen === "settings-dictation") {
-      state.go({ name: "settings" });
-      window.setTimeout(
-        () => document.getElementById("dictation")?.scrollIntoView(),
-        400,
-      );
-    }
+    if (screen === "settings-dictation")
+      state.go({ name: "settings", part: "dictation" });
     if (screen === "waiting") state.select("working");
   });
 }

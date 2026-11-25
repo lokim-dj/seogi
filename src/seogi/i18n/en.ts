@@ -541,6 +541,8 @@ const en: Strings = {
     vocabularyFile: "Vocabulary as one file",
     speechModelHint: "The model that transcribes, on this computer.",
     moreSettings: "More",
+    parts: "Settings sections",
+    startAndPermissions: "Startup and permissions",
     start: "Startup",
     atLogin: "Open Seogi when the computer starts",
     atLoginFailed:
@@ -599,7 +601,7 @@ const en: Strings = {
     needsKey: "A key is needed",
     removeKey: "Remove key",
     saveKey: "Save key",
-    speech: "Transcribing",
+    speech: "Recording",
     speechModel: "Speech model",
     download: "Download",
     downloading: "Downloading {{percent}}%",

@@ -66,14 +66,7 @@ function moveTo(where: string) {
       window.setTimeout(() => window.dispatchEvent(new Event(FIND_EVENT)), 50);
       break;
     case "dictation":
-      state.go({ name: "settings" });
-      window.setTimeout(
-        () =>
-          document
-            .getElementById("dictation")
-            ?.scrollIntoView({ block: "start" }),
-        300,
-      );
+      state.go({ name: "settings", part: "dictation" });
       break;
   }
 }
