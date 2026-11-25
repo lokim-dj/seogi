@@ -1496,6 +1496,20 @@ async seogiOpenTypingPermission() : Promise<Result<null, string>> {
 }
 },
 /**
+ * Shows one notification the way Seogi shows its own. The first one is when
+ * macOS asks whether Seogi may show notifications, so the first-run screen
+ * sends it when the user asks, not in the middle of a meeting. The words
+ * come from the screen.
+ */
+async seogiTryNotification(title: string, body: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_try_notification", { title, body }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Shows one of a meeting's files selected in Finder or Explorer: `minutes`
  * (회의록.md) or `recording` (the original recording).
  */

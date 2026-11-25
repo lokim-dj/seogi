@@ -51,6 +51,9 @@ done.started_at_ms = today(10, 30);
 // Whether the preview may read the Mac's calendars: asked once, like the
 // system does.
 let macAccess = "not_determined";
+// The first-run screen starts with the microphone not yet allowed, so its
+// permission rows show their buttons.
+let micAllowed = screen !== "onboarding";
 
 const config: Config = {
   library_dir: "",
@@ -107,7 +110,9 @@ const dictation: Dictation = {
 };
 
 const dictationStatus = (): DictationStatus => ({
-  permitted: screen !== "settings-dictation" || dictation.button,
+  permitted:
+    (screen !== "settings-dictation" || dictation.button) &&
+    screen !== "onboarding",
   active: dictation.enabled,
   handy_installed: true,
   handy_running: true,
@@ -616,7 +621,12 @@ mockIPC(
         };
       }
       case "plugin:macos-permissions|check_microphone_permission":
-        return true;
+        return micAllowed;
+      case "plugin:macos-permissions|request_microphone_permission":
+        micAllowed = true;
+        return null;
+      case "seogi_try_notification":
+        return null;
       case "seogi_check_calendar": {
         const source = String(args.source ?? "").trim();
         const good = source.endsWith(".ics");

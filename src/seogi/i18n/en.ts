@@ -500,12 +500,10 @@ const en: Strings = {
     speechMissingHint: "It starts when you press start",
     speechLoading: "Downloading {{percent}}%",
     speechLoadingHint: "You can record meanwhile",
-    mic: "Permission to use the microphone is asked once, at the first recording.",
     atLogin:
       "Seogi also opens when you log in. You can turn this off in Settings.",
     dictation:
       "Press {{keys}} in any app and speak, and the words go in where you type. You can turn this off in Settings.",
-    dictationAllow: "To type the words, allow it once in Settings › Dictation.",
     later: "Decide later",
     start: "Start Seogi",
   },
@@ -645,6 +643,40 @@ const en: Strings = {
     micDefault: "The system's default",
     saved: "Saved.",
     about: "Seogi {{version}}",
+  },
+  permissions: {
+    title: "Permissions",
+    lead: "Seogi needs a few permissions from the computer to do its work. You can start without all of them and come back to them in Settings at any time.",
+    needed: "Needed",
+    optional: "Optional",
+    allowed: "Allowed",
+    notYet: "Not yet",
+    off: "Off",
+    allow: "Allow",
+    openSettings: "Open System Settings",
+    openWindows: "Open Settings",
+    microphone: "Microphone",
+    microphoneFor: "For recording meetings and for dictation.",
+    typing: "Accessibility",
+    typingFor:
+      "Puts dictated words where the cursor is. Turn on Seogi in System Settings › Privacy & Security › Accessibility, and this row changes by itself.",
+    calendar: "Calendar",
+    calendarFor:
+      "Names meetings after events in the Mac's Calendar app. Your calendar is never changed.",
+    calendarBlocked:
+      "You can turn on Seogi in System Settings › Privacy & Security › Calendars.",
+    calendarPick:
+      "Choose which calendars to use in Settings › Storage and calendar.",
+    notify: "Notifications",
+    notifyFor: "Tells you when the minutes are ready.",
+    notifyTry: "Send a test",
+    notifySent:
+      "Sent. If you did not see it, turn on Seogi in System Settings › Notifications.",
+    notifyTitle: "Seogi",
+    notifyBody: "This is how Seogi tells you the minutes are ready.",
+    documents: "Documents folder",
+    documentsFor:
+      "Meetings are kept in Documents › 서기. If the Mac asks whether Seogi may use the Documents folder, choose Allow.",
   },
   dictation: {
     title: "Dictation",

@@ -492,11 +492,9 @@ const ko = {
     speechMissingHint: "시작하기를 누르면 받습니다",
     speechLoading: "내려받는 중 {{percent}}%",
     speechLoadingHint: "받는 동안에도 녹음은 할 수 있어요",
-    mic: "마이크를 써도 되는지는 처음 녹음할 때 한 번만 묻습니다.",
     atLogin: "컴퓨터를 켜면 서기도 함께 켜져요. 설정에서 끌 수 있어요.",
     dictation:
       "어느 앱에서든 {{keys}} 키를 누르고 말하면 글자가 들어가요. 설정에서 끌 수 있어요.",
-    dictationAllow: "글자를 넣으려면 설정 › 받아쓰기에서 한 번 허락해 주세요.",
     later: "나중에 정하기",
     start: "서기 시작하기",
   },
@@ -634,6 +632,39 @@ const ko = {
     micDefault: "시스템 기본 마이크",
     saved: "저장했습니다.",
     about: "서기 {{version}}",
+  },
+  permissions: {
+    title: "허락",
+    lead: "서기가 일하려면 컴퓨터의 허락이 몇 가지 필요해요. 지금 다 하지 않아도 시작할 수 있고, 설정에서 언제든 다시 볼 수 있어요.",
+    needed: "꼭 필요",
+    optional: "골라서",
+    allowed: "허락됨",
+    notYet: "아직 안 함",
+    off: "꺼져 있음",
+    allow: "허락하기",
+    openSettings: "시스템 설정 열기",
+    openWindows: "설정 열기",
+    microphone: "마이크",
+    microphoneFor: "회의를 녹음하고 받아쓰기를 할 때 써요.",
+    typing: "손쉬운 사용",
+    typingFor:
+      "받아쓴 글을 커서 자리에 넣어요. 시스템 설정 › 개인정보 보호 및 보안 › 손쉬운 사용에서 '서기'를 켜면 여기가 저절로 바뀌어요.",
+    calendar: "캘린더",
+    calendarFor:
+      "맥 '캘린더' 앱의 일정 이름으로 회의 제목을 붙여요. 캘린더는 고치지 않아요.",
+    calendarBlocked:
+      "시스템 설정 › 개인정보 보호 및 보안 › 캘린더에서 '서기'를 켤 수 있어요.",
+    calendarPick: "쓸 캘린더는 설정 › 보관과 일정에서 골라요.",
+    notify: "알림",
+    notifyFor: "회의록이 다 되면 알려 드려요.",
+    notifyTry: "알림 보내 보기",
+    notifySent:
+      "알림을 보냈어요. 보이지 않으면 시스템 설정 › 알림에서 '서기'를 켜 주세요.",
+    notifyTitle: "서기",
+    notifyBody: "회의록이 다 되면 이렇게 알려 드려요.",
+    documents: "문서 폴더",
+    documentsFor:
+      "회의는 문서 › 서기 폴더에 보관해요. 맥이 '문서' 폴더에 접근해도 되는지 물으면 '허용'을 눌러 주세요.",
   },
   dictation: {
     title: "받아쓰기",

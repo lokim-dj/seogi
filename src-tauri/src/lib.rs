@@ -900,6 +900,7 @@ pub fn run(cli_args: CliArgs) {
             seogi::commands::seogi_copy_last_dictation,
             seogi::commands::seogi_mic_menu,
             seogi::commands::seogi_open_typing_permission,
+            seogi::commands::seogi_try_notification,
             seogi::commands::seogi_reveal,
             seogi::commands::seogi_open_trash,
             seogi::commands::seogi_try_summary,

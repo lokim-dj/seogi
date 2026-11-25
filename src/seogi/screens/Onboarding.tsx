@@ -17,6 +17,7 @@ import {
   type LoginTool,
   type Mode,
 } from "../lib/summary";
+import Permissions from "../components/Permissions";
 import { useSeogi } from "../store";
 
 const MODES: Mode[] = ["local", "login", "key"];
@@ -51,10 +52,9 @@ export default function Onboarding() {
   const [trouble, setTrouble] = useState("");
   const [busy, setBusy] = useState(false);
   // Seogi opens at login and dictation is on unless turned off; both are
-  // said once, here. On a Mac, typing waits for the user's permission.
+  // said once, here, under what the computer has to allow.
   const [atLogin, setAtLogin] = useState(false);
   const [dictationKeys, setDictationKeys] = useState("");
-  const [typingAllowed, setTypingAllowed] = useState(true);
 
   useEffect(() => {
     void refreshSetup();
@@ -72,9 +72,6 @@ export default function Onboarding() {
         ? keysShort(dictation.shortcut, true)
         : keysLabel(dictation.shortcut, false);
       setDictationKeys(keys.replace(/space/i, "Space"));
-    });
-    void commands.seogiDictationStatus().then((result) => {
-      if (result.status === "ok") setTypingAllowed(result.data.permitted);
     });
   }, []);
 
@@ -532,6 +529,8 @@ export default function Onboarding() {
             </table>
           </div>
 
+          <Permissions firstRun />
+
           {trouble ? (
             <p role="alert" className="rt mt-4 mb-0 text-[13.5px]">
               {t("failed", { reason: trouble })}
@@ -539,14 +538,12 @@ export default function Onboarding() {
           ) : null}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 mt-5">
             <span className="flex-[1_1_300px] text-[13px] t3">
-              {t("onboarding.mic")}
               {atLogin ? (
                 <span className="block">{t("onboarding.atLogin")}</span>
               ) : null}
               {dictationKeys ? (
                 <span className="block">
                   {t("onboarding.dictation", { keys: dictationKeys })}
-                  {typingAllowed ? "" : ` ${t("onboarding.dictationAllow")}`}
                 </span>
               ) : null}
             </span>

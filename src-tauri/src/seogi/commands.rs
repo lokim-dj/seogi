@@ -803,6 +803,22 @@ pub fn seogi_open_typing_permission() -> Result<(), String> {
     }
 }
 
+/// Shows one notification the way Seogi shows its own. The first one is when
+/// macOS asks whether Seogi may show notifications, so the first-run screen
+/// sends it when the user asks, not in the middle of a meeting. The words
+/// come from the screen.
+#[tauri::command]
+#[specta::specta]
+pub fn seogi_try_notification(app: AppHandle, title: String, body: String) -> Result<(), String> {
+    use tauri_plugin_notification::NotificationExt;
+    app.notification()
+        .builder()
+        .title(title)
+        .body(body)
+        .show()
+        .map_err(|e| e.to_string())
+}
+
 /// Shows one of a meeting's files selected in Finder or Explorer: `minutes`
 /// (회의록.md) or `recording` (the original recording).
 #[tauri::command]

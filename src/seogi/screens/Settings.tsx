@@ -17,6 +17,7 @@ import {
 } from "@/bindings";
 import { BackIcon, RightIcon } from "../components/icons";
 import DictationSettings from "./DictationSettings";
+import Permissions from "../components/Permissions";
 import { NS } from "../i18n";
 import {
   friendlyPath,
@@ -888,6 +889,8 @@ export default function Settings() {
             </div>
           </>
         ) : null}
+
+        <Permissions firstRun={false} />
 
         <details className="mt-6">
           <summary className="fold">
