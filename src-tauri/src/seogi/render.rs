@@ -92,12 +92,24 @@ pub fn minutes_markdown(
         .filter(|section| section.kind == SectionKind::Actions)
         .collect();
     if !tasks.is_empty() {
+        // The people of the meeting, whose names a task line may leave out.
+        let names: Vec<String> = header
+            .attendees
+            .iter()
+            .cloned()
+            .chain(
+                transcript
+                    .speakers
+                    .iter()
+                    .map(|speaker| speaker.name.clone()),
+            )
+            .collect();
         out.push_str("## 할 일\n\n");
         for section in &tasks {
-            if tasks.len() > 1 {
+            if tasks.len() > 1 || Side::of_title(&section.title).is_some() {
                 out.push_str(&format!("### {}\n\n", section.title));
             }
-            out.push_str(&task_lines(section));
+            out.push_str(&task_lines(section, &names));
             out.push('\n');
         }
     }
@@ -372,19 +384,24 @@ fn feedback_markdown(feedback: &super::feedback::Feedback, transcript: &Transcri
 }
 
 /// A section's tasks, one line each, the same everywhere: who – what – by
-/// when.
-fn task_lines(section: &MinutesSection) -> String {
+/// when. Who is left out when the section's title already says it; nobody
+/// known is a small "담당 미정" after the task. `names` are the people of
+/// the meeting.
+fn task_lines(section: &MinutesSection, names: &[String]) -> String {
     let mut out = String::new();
     for entry in &section.entries {
-        let owner = entry.owner.trim();
+        let line = task_line(&section.title, &entry.owner, &entry.text, names);
         out.push_str(&format!(
-            "- {} – {}{} – {} {}\n",
-            if owner.is_empty() || owner.starts_with("화자") {
-                "**확인 필요**".to_string()
+            "- {}{}{}{} – {} {}\n",
+            line.who
+                .as_ref()
+                .map_or(String::new(), |who| format!("**{who}** – ")),
+            one_line(&line.text),
+            if line.unowned {
+                " _(담당 미정)_"
             } else {
-                format!("**{owner}**")
+                ""
             },
-            one_line(&entry.text),
             if entry.needs_check() {
                 " _(확인 필요)_"
             } else {
@@ -401,10 +418,248 @@ fn task_lines(section: &MinutesSection) -> String {
     out
 }
 
+// How a task line reads under its group. The same rules are in
+// src/seogi/lib/tasks.ts for the screen, and both are tested against
+// src/seogi/lib/tasks.cases.json; keep the two alike.
+
+/// Whose tasks a group holds, when its title says so.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Side {
+    Us,
+    Customer,
+    Them,
+}
+
+impl Side {
+    const ALL: [Side; 3] = [Side::Us, Side::Customer, Side::Them];
+
+    /// The words that name the side in a group's title or as an owner.
+    fn words(self) -> &'static str {
+        match self {
+            Side::Us => "우리|저희",
+            Side::Customer => "고객",
+            Side::Them => r"상대\s*업체|상대방|상대|업체",
+        }
+    }
+
+    /// The words that may be taken off as a sentence's subject. A bare
+    /// "업체" is left: "업체는 두 곳으로 좁혀" speaks of vendors.
+    fn subject_words(self) -> &'static str {
+        match self {
+            Side::Them => r"상대\s*업체|상대방|상대",
+            side => side.words(),
+        }
+    }
+
+    fn subject(self) -> String {
+        format!(r"(?:{})(?:\s*님)?(?:\s*(?:쪽|측))?", self.subject_words())
+    }
+
+    /// The side a group's title names: "우리 숙제", "고객 숙제", "업체 할
+    /// 일". "업체에 요청할 일" or "고객 응대 개선" is not a side's group.
+    fn of_title(title: &str) -> Option<Side> {
+        let title = title.trim();
+        Side::ALL.into_iter().find(|side| {
+            matches(
+                &format!(
+                    r"^(?:{})(?:\s*(?:쪽|측))?\s*(?:숙제|할\s*일)$",
+                    side.words()
+                ),
+                title,
+            )
+        })
+    }
+
+    /// The side an owner is, when the owner is a side and not a person:
+    /// "우리(상담 담당)", "고객님", "상대 업체" — but not "고객 김서윤".
+    fn of_owner(owner: &str) -> Option<Side> {
+        Side::ALL.into_iter().find(|side| {
+            matches(
+                &format!(
+                    r"^(?:{})(?:\s*님)?(?:\s*(?:쪽|측))?\s*(?:\(.*\))?$",
+                    side.words()
+                ),
+                owner,
+            )
+        })
+    }
+}
+
+fn matches(pattern: &str, text: &str) -> bool {
+    regex::Regex::new(pattern).is_ok_and(|re| re.is_match(text))
+}
+
+/// Titles that may follow a name: "김서윤 실장이".
+const TITLES: &str = "실장|팀장|소장|대표|이사|부장|차장|과장|대리|주임|매니저|디자이너|선생";
+/// The particles a subject ends with, longest first.
+const PARTICLES: &str = "에서는|에서|께서는|께서|이|가|은|는";
+/// What, right after the subject, says the subject is not the one who does
+/// the task: "우리가 아니라 …", "저희는 빼고 …".
+const NOT_THE_DOER: &str = "^(?:아니라|아닌|빼고|물론|말고)";
+/// Endings of a word that describes the next one or sets a condition:
+/// "고객이 원하는 타일", "업체가 정해지면". Whose word it is stays.
+const DESCRIBES: &str = "(?:는|은|던|진|른|낸|든|쓴|한|된|뀐|면)$";
+/// Words with such an ending that only tell the time or name a thing.
+const DESCRIBES_NOT: &[&str] = &[
+    "사진", "기한", "이번", "지난", "한번", "도면", "화면", "벽면", "측면", "전면", "정면", "평면",
+    "단면", "표면",
+];
+/// Endings of a word that is the subject of a clause: "관리실이".
+const ANOTHER_SUBJECT: &str = "(?:이|가|께서|은|는)$";
+/// Words with such an ending that are not subjects.
+const ANOTHER_SUBJECT_NOT: &[&str] = &[
+    "같이",
+    "깊이",
+    "높이",
+    "넓이",
+    "길이",
+    "많이",
+    "깨끗이",
+    "일찍이",
+    "사이",
+    "차이",
+    "종이",
+    "추가",
+    "단가",
+    "원가",
+    "정가",
+];
+
+/// Whether an owner is a speaker label ("화자 2", "화자 A (디자이너)")
+/// rather than someone's name.
+fn is_speaker_label(owner: &str) -> bool {
+    owner.trim().starts_with("화자")
+}
+
+/// Whether `owner` is one of the people of the meeting.
+fn listed(owner: &str, names: &[String]) -> bool {
+    names
+        .iter()
+        .map(|name| name.trim())
+        .filter(|name| !name.is_empty() && !is_speaker_label(name))
+        .any(|name| {
+            name == owner
+                || owner.starts_with(&format!("{name} "))
+                || name.starts_with(&format!("{owner} "))
+        })
+}
+
+/// A person's name as a subject. A name shorter than three letters must
+/// come with a title or 님, so that an owner that is also a word ("유리",
+/// "이사") is not taken off a sentence about the thing.
+fn name_subject(owner: &str) -> String {
+    let words: Vec<&str> = owner.split_whitespace().collect();
+    let mut forms = vec![owner.to_string(), words.concat()];
+    if words.len() > 1 && words[0].chars().count() >= 2 {
+        forms.push(words[0].to_string());
+    }
+    forms.sort_by_key(|form| std::cmp::Reverse(form.chars().count()));
+    forms.dedup();
+    let title = format!(r"(?:\s*(?:{TITLES}))");
+    let names: Vec<String> = forms
+        .iter()
+        .map(|form| {
+            let name = regex::escape(form).replace(' ', r"\s*");
+            if form.chars().count() >= 3 {
+                format!(r"{name}{title}?(?:\s*님)?")
+            } else {
+                format!(r"{name}(?:{title}(?:\s*님)?|\s*님)")
+            }
+        })
+        .collect();
+    format!("(?:{})", names.join("|"))
+}
+
+/// Takes the subject `pattern` describes off the front of `text`, unless
+/// that would change what the sentence says.
+fn drop_subject(text: &str, pattern: &str) -> String {
+    let Ok(subject) = regex::Regex::new(&format!(r"^(?:{pattern})(?:{PARTICLES})[\s,]+")) else {
+        return text.to_string();
+    };
+    let Some(found) = subject.find(text) else {
+        return text.to_string();
+    };
+    let rest = text[found.end()..].trim();
+    if rest.is_empty() || rest.contains([',', '，']) {
+        return text.to_string();
+    }
+    let bare = |word: &str| word.trim_end_matches(['.', '!', '?', '。']).to_string();
+    let words: Vec<String> = rest.split_whitespace().map(bare).collect();
+    let first = words[0].as_str();
+    if matches(NOT_THE_DOER, first)
+        || (matches(DESCRIBES, first) && !DESCRIBES_NOT.contains(&first))
+    {
+        return text.to_string();
+    }
+    if words.iter().any(|word| {
+        word.chars().count() >= 2
+            && matches(ANOTHER_SUBJECT, word)
+            && !ANOTHER_SUBJECT_NOT.contains(&word.as_str())
+    }) {
+        return text.to_string();
+    }
+    rest.to_string()
+}
+
+/// One task line as written.
+#[derive(Debug, PartialEq, Eq)]
+struct TaskLine {
+    /// The person or side to name beside the task; `None` when the group
+    /// says the side, or nobody is known.
+    who: Option<String>,
+    text: String,
+    /// Nobody is known: a small "담당 미정" stands in for a name.
+    unowned: bool,
+}
+
+/// How a task reads under its group's `title`. A group such as "우리 숙제"
+/// already says whose task it is, so its lines neither name that side again
+/// nor start with it as the subject ("우리 쪽에서", "고객이"). The saved
+/// minutes keep every word.
+fn task_line(title: &str, owner: &str, text: &str, names: &[String]) -> TaskLine {
+    let side = Side::of_title(title);
+    let raw = owner.trim();
+    let owner = if is_speaker_label(raw) { "" } else { raw };
+    let owner_side = if owner.is_empty() {
+        None
+    } else {
+        Side::of_owner(owner)
+    };
+
+    let mut text = text.trim().to_string();
+    if let Some(side) = side {
+        text = drop_subject(&text, &side.subject());
+    }
+    if owner.is_empty() {
+        return TaskLine {
+            who: None,
+            text,
+            unowned: true,
+        };
+    }
+    if side.is_some() && owner_side == side {
+        return TaskLine {
+            who: None,
+            text,
+            unowned: false,
+        };
+    }
+    if let Some(named) = owner_side {
+        text = drop_subject(&text, &named.subject());
+    } else if listed(owner, names) {
+        text = drop_subject(&text, &name_subject(owner));
+    }
+    TaskLine {
+        who: Some(owner.to_string()),
+        text,
+        unowned: false,
+    }
+}
+
 fn section_markdown(section: &MinutesSection) -> String {
     let mut out = format!("## {}\n\n", section.title);
     match section.kind {
-        SectionKind::Actions => out.push_str(&task_lines(section)),
+        SectionKind::Actions => out.push_str(&task_lines(section, &[])),
         SectionKind::Items => {
             for entry in &section.entries {
                 out.push_str(&format!(
@@ -608,9 +863,89 @@ mod tests {
         assert!(markdown.contains(
             "- **김서윤 실장** – 신발장 도면 다시 그려 보내기 – 금요일까지 `00:01:03`\n"
         ));
-        // No owner or deadline is said in plain words.
-        assert!(markdown
-            .contains("- **확인 필요** – 타일 | 견본 준비 _(확인 필요)_ – 미정 `00:02:05`\n"));
+        // The section's title says whose task it is; no deadline is said in
+        // plain words.
+        assert!(markdown.contains("### 우리 숙제\n"));
+        assert!(
+            markdown.contains("- 타일 | 견본 준비 _(담당 미정)_ _(확인 필요)_ – 미정 `00:02:05`\n")
+        );
+    }
+
+    /// The cases the screen is tested on too (src/seogi/lib/tasks.test.ts):
+    /// the same input reads the same on the screen and in 회의록.md.
+    #[test]
+    fn task_lines_read_as_the_screen_draws_them() {
+        let cases: serde_json::Value =
+            serde_json::from_str(include_str!("../../../src/seogi/lib/tasks.cases.json"))
+                .expect("the shared cases are JSON");
+        let names: Vec<String> = cases["names"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|name| name.as_str().unwrap().to_string())
+            .collect();
+        for case in cases["titles"].as_array().unwrap() {
+            let title = case["title"].as_str().unwrap();
+            let side = Side::of_title(title).map(|side| match side {
+                Side::Us => "us",
+                Side::Customer => "customer",
+                Side::Them => "them",
+            });
+            assert_eq!(side, case["side"].as_str(), "{title}");
+        }
+        let lines = cases["lines"].as_array().unwrap();
+        assert!(lines.len() > 30);
+        for case in lines {
+            let text = |key: &str| case[key].as_str().unwrap();
+            assert_eq!(
+                task_line(text("title"), text("owner"), text("text"), &names),
+                TaskLine {
+                    who: case["who"].as_str().map(str::to_string),
+                    text: text("out").to_string(),
+                    unowned: case["unowned"].as_bool().unwrap(),
+                },
+                "{} / {} / {}",
+                text("title"),
+                text("owner"),
+                text("text")
+            );
+        }
+        for label in ["화자 2", "화자 A", "화자 2 (디자이너)", "화자대표"] {
+            assert!(is_speaker_label(label), "{label}");
+        }
+    }
+
+    #[test]
+    fn a_task_line_in_the_document() {
+        let section = MinutesSection {
+            key: "our_tasks".into(),
+            title: "우리 숙제".into(),
+            kind: SectionKind::Actions,
+            entries: vec![
+                entry(
+                    "우리 쪽에서 제안서를 보내기로 함.",
+                    "우리(상담 담당)",
+                    "",
+                    0,
+                    vec![],
+                ),
+                entry(
+                    "김서윤 실장이 도면을 다시 그려 보내기",
+                    "김서윤 실장",
+                    "금요일까지",
+                    0,
+                    vec![],
+                ),
+                entry("견본 목록 정리하기", "", "", 0, vec![]),
+            ],
+        };
+        let names = vec!["김서윤".to_string()];
+        assert_eq!(
+            task_lines(&section, &names),
+            "- 제안서를 보내기로 함. – 미정 `00:00:00`\n\
+             - **김서윤 실장** – 도면을 다시 그려 보내기 – 금요일까지 `00:00:00`\n\
+             - 견본 목록 정리하기 _(담당 미정)_ – 미정 `00:00:00`\n"
+        );
     }
 
     #[test]

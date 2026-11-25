@@ -4,7 +4,7 @@ const ko = {
   brand: "서기",
   untitled: "제목 없는 녹음",
   speaker: "말한 사람 {{n}}",
-  ownerUnknown: "확인 필요",
+  ownerUnknown: "담당 미정",
   dueUnknown: "미정",
   failed: "하지 못했습니다: {{reason}}",
   today: "오늘",

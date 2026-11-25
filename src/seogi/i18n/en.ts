@@ -7,7 +7,7 @@ const en: Strings = {
   brand: "Seogi",
   untitled: "Untitled recording",
   speaker: "Speaker {{n}}",
-  ownerUnknown: "To check",
+  ownerUnknown: "No owner yet",
   dueUnknown: "Not set",
   failed: "That did not work: {{reason}}",
   today: "Today",

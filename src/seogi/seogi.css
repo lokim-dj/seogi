@@ -489,6 +489,11 @@
     color: var(--t3);
     font-weight: 500;
   }
+  .task .unowned {
+    color: var(--t3);
+    font-size: 13px;
+    margin-left: 8px;
+  }
   .task em {
     font-style: normal;
     color: var(--rt);

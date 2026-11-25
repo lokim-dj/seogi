@@ -38,9 +38,16 @@ import { ConfirmDelete, busy } from "../components/DeleteMeeting";
 import { NS } from "../i18n";
 import { clock, fullDay, hm, hms, isoDay, shortModel } from "../lib/format";
 import { joinPath, usePlayer, type Player } from "../lib/player";
+import { taskLine, titleNeeded } from "../lib/tasks";
 import { useSeogi, type Jump } from "../store";
 
 const bare = (text: string) => text.replace(/[\s.,!?'"「」…·]/g, "");
+
+/** The people of a meeting, whose names a task line may leave out. */
+const peopleOf = (meeting: Meeting) => [
+  ...(meeting.people ?? []),
+  ...(meeting.transcript?.speakers ?? []).map((speaker) => speaker.name),
+];
 
 export default function Minutes({ id }: { id: string }) {
   const { t } = useTranslation(NS);
@@ -61,17 +68,22 @@ export default function Minutes({ id }: { id: string }) {
   const tasks = (minutes?.sections ?? []).filter((s) => s.kind === "actions");
 
   const copyTasks = async () => {
-    const lines = tasks.flatMap((section) =>
-      section.entries.map((entry) => {
-        const owner =
-          entry.owner && !isUnnamed(entry.owner)
-            ? entry.owner
-            : t("ownerUnknown");
+    const groups = tasks.filter((section) => section.entries.length > 0);
+    const lines = groups.flatMap((section) => [
+      ...(titleNeeded(section, groups.length) ? [`${section.title}:`] : []),
+      ...section.entries.map((entry) => {
+        const { who, text, unowned } = taskLine(
+          section,
+          entry,
+          meeting ? peopleOf(meeting) : [],
+        );
+        const owner = who ? `${who} – ` : "";
+        const mark = unowned ? ` (${t("ownerUnknown")})` : "";
         const due = entry.due || t("dueUnknown");
         const at = entry.sources[0] ? ` (${clock(entry.sources[0].ms)})` : "";
-        return `- [${entry.done ? "x" : " "}] ${owner} – ${entry.text} – ${due}${at}`;
+        return `- [${entry.done ? "x" : " "}] ${owner}${text}${mark} – ${due}${at}`;
       }),
-    );
+    ]);
     await navigator.clipboard.writeText(lines.join("\n"));
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);
@@ -586,7 +598,8 @@ function Sheet({
                 <TaskGroup
                   key={section.key}
                   section={section}
-                  showTitle={actionSections.length > 1}
+                  showTitle={titleNeeded(section, actionSections.length)}
+                  people={peopleOf(meeting)}
                   found={foundEntry(section.key)}
                   words={words}
                   onListen={listen}
@@ -825,6 +838,7 @@ function Sheet({
 function TaskGroup({
   section,
   showTitle,
+  people,
   found,
   words,
   onListen,
@@ -832,6 +846,8 @@ function TaskGroup({
 }: {
   section: MinutesSection;
   showTitle: boolean;
+  /** The people of the meeting, whose names a line may leave out. */
+  people: string[];
   /** The task a search went to, by its place in the section. */
   found: number | null;
   words: string;
@@ -849,10 +865,8 @@ function TaskGroup({
       ) : null}
       {section.entries.map((entry, index) => {
         const source = entry.sources[0];
-        const owner =
-          entry.owner && !isUnnamed(entry.owner)
-            ? speakerName(entry.owner)
-            : "";
+        const { who, text, unowned } = taskLine(section, entry, people);
+        const owner = who ? speakerName(who) : "";
         const here = found === index;
         return (
           <div
@@ -871,22 +885,23 @@ function TaskGroup({
               className={entry.done ? "t3 line-through" : undefined}
               title={quoteOf(entry) ? `「${quoteOf(entry)}」` : undefined}
             >
-              <span className={`who ${owner ? "" : "rt"}`}>
-                {here && owner ? (
-                  <Marked text={owner} words={words} />
-                ) : (
-                  owner || t("ownerUnknown")
-                )}
-              </span>
+              {owner ? (
+                <span className="who">
+                  {here ? <Marked text={owner} words={words} /> : owner}
+                </span>
+              ) : null}
               {here ? (
                 <Marked
-                  text={entry.text}
+                  text={text}
                   words={words}
                   wholeIfAbsent={!has(owner, words)}
                 />
               ) : (
-                entry.text
+                text
               )}
+              {unowned ? (
+                <span className="unowned">{t("ownerUnknown")}</span>
+              ) : null}
               {(entry.reasons ?? []).length > 0 ? (
                 <em>{t("minutes.checkMark")}</em>
               ) : null}
