@@ -907,6 +907,13 @@ impl ShortcutAction for TranscribeAction {
                                 }
                             }
 
+                            // Seogi: "이십 초" goes in as "20초". A rule, so
+                            // it runs on every take, tidied or not.
+                            processed.final_text = crate::seogi::dictation::with_digits(
+                                &ah,
+                                std::mem::take(&mut processed.final_text),
+                            );
+
                             if rm.was_cancelled_since(cancel_generation) {
                                 debug!("Transcription operation cancelled before paste");
                                 utils::hide_recording_overlay(&ah);

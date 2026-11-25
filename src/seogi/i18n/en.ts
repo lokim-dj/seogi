@@ -748,6 +748,9 @@ const en: Strings = {
     downloading: "downloading {{percent}}%",
     fillers: "Drop filler sounds",
     fillersHint: "Takes out sounds like 'um', without AI.",
+    numbers: "Numbers as digits",
+    numbersHint:
+      "Writes '이십 초' as '20초', at once and without AI. Anything that could be a word stays as said.",
     sounds: "Start and end sounds",
     soundsHint: "A soft sound when listening starts and ends.",
     tidy: "Tidy the words",

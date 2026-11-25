@@ -735,6 +735,9 @@ const ko = {
     downloading: "내려받는 중 {{percent}}%",
     fillers: "군말 빼기",
     fillersHint: "'음', '으음' 같은 소리를 AI 없이 빼요.",
+    numbers: "숫자는 숫자로",
+    numbersHint:
+      "'이십 초'는 '20초'로 써요. AI 없이 바로 바꾸고, 헷갈리는 말은 그대로 둬요.",
     sounds: "시작·끝 소리",
     soundsHint: "듣기 시작할 때와 끝날 때 작게 소리를 내요.",
     tidy: "글 다듬기",

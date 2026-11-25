@@ -62,6 +62,9 @@ pub struct DictationConfig {
     pub tidy: bool,
     /// The model that tidies them.
     pub tidy_with: Provider,
+    /// Write spoken numbers before a unit as digits ("이십 초" → "20초").
+    /// On unless turned off; a rule, not a model, so it costs nothing.
+    pub numbers: bool,
     /// Show the floating microphone key above other apps.
     pub button: bool,
     /// Where the user left the key; `None` for the bottom right corner.
@@ -84,6 +87,7 @@ impl Default for DictationConfig {
                 base_url: "http://localhost:11434".to_string(),
                 model: "gemma3:4b".to_string(),
             },
+            numbers: true,
             button: false,
             button_at: None,
             key_moved: false,
@@ -133,6 +137,8 @@ pub struct Dictation {
     pub fillers: bool,
     pub tidy: bool,
     pub tidy_with: Provider,
+    /// Spoken numbers before a unit written as digits.
+    pub numbers: bool,
     pub button: bool,
     /// How many recent dictations are kept (only on this computer, never in
     /// the meetings).
@@ -247,6 +253,7 @@ pub fn read(app: &AppHandle, config: &DictationConfig) -> Dictation {
         fillers: s.filler_word_removal_enabled,
         tidy: config.tidy,
         tidy_with: config.tidy_with.clone(),
+        numbers: config.numbers,
         button: config.button,
         keep: s.history_limit as u32,
     }
@@ -302,6 +309,7 @@ pub fn write(app: &AppHandle, wanted: Dictation) -> Result<(), String> {
         enabled: wanted.enabled,
         tidy: wanted.tidy,
         tidy_with: wanted.tidy_with.clone(),
+        numbers: wanted.numbers,
         button: wanted.button,
         button_at: config.dictation.button_at,
         key_moved: config.dictation.key_moved,
@@ -744,6 +752,17 @@ pub fn may_start(app: &AppHandle) -> bool {
 /// for now after failing.
 pub fn will_tidy(app: &AppHandle) -> bool {
     Secretary::of(app).is_some_and(|s| s.config().dictation.tidy) && skipping().is_none()
+}
+
+/// The words as they are typed: spoken numbers before a unit written as
+/// digits when the user has that on (the default).
+pub fn with_digits(app: &AppHandle, text: String) -> String {
+    let on = Secretary::of(app).is_none_or(|s| s.config().dictation.numbers);
+    if on {
+        super::numbers::spoken_to_digits(&text)
+    } else {
+        text
+    }
 }
 
 /// The words of the last dictation, kept for "복사" when they could not be
@@ -1786,6 +1805,14 @@ fn billions(name: &str) -> Option<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn digits_are_on_for_settings_saved_before_they_existed() {
+        let old: DictationConfig =
+            serde_json::from_str(r#"{"enabled":true,"tidy":false}"#).expect("old settings read");
+        assert!(old.numbers);
+        assert!(DictationConfig::default().numbers);
+    }
 
     #[test]
     fn keys_compare_in_any_order_and_spelling() {
