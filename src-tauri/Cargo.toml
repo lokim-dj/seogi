@@ -1,6 +1,6 @@
 [package]
 name = "seogi"
-version = "0.1.12"
+version = "0.1.13"
 description = "Seogi (서기): an AI meeting secretary"
 authors = ["lokim-dj", "Seogi contributors"]
 edition = "2021"

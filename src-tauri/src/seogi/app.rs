@@ -24,6 +24,7 @@ use super::calendar;
 use super::chunks::RATE;
 use super::config::{Config, WatchedFolder};
 use super::evidence::{self, Evidence};
+use super::llm::{self, Provider, Ways};
 use super::minutes;
 use super::pipeline::{self, Monitor, Request, Stage};
 use super::power::KeepAwake;
@@ -42,6 +43,10 @@ const MAX_TRANSCRIBE_ATTEMPTS: u32 = 4;
 /// Minutes that cannot be written after this many tries wait for the user
 /// or the next start; the transcript is kept meanwhile.
 const MAX_MINUTES_ATTEMPTS: u32 = 12;
+/// How often minutes with no way to be written look again for one (a
+/// sign-in, a saved key, a model on this computer). Waiting does not use up
+/// their tries.
+const LOOK_FOR_A_WAY_MS: i64 = 5 * 60_000;
 /// How often watched folders are looked at.
 const WATCH_EVERY: Duration = Duration::from_secs(10);
 
@@ -513,6 +518,7 @@ impl Secretary {
         if library_moved {
             self.read_library();
         }
+        self.minutes_may_go();
         self.wake();
         Ok(())
     }
@@ -1511,6 +1517,10 @@ impl Secretary {
         }
 
         if meeting.minutes.is_empty() {
+            let to_try = self.ways_to_write();
+            if to_try.is_empty() {
+                return self.wait_for_a_way(&mut meeting, &folder);
+            }
             let minutes_started = Instant::now();
             meeting.status = Status::Working;
             meeting.stage = "writing_minutes".to_string();
@@ -1518,7 +1528,7 @@ impl Secretary {
             meeting.minutes_attempts += 1;
             self.save(&meeting, &folder)?;
 
-            match self.write_minutes(&mut meeting, &cancel) {
+            match self.write_minutes(&mut meeting, &to_try, &cancel) {
                 Ok(true) => {}
                 Ok(false) => {
                     meeting.status = Status::Transcribed;
@@ -1716,16 +1726,119 @@ impl Secretary {
         }
     }
 
-    /// `Ok(false)` if it was stopped part way.
-    fn write_minutes(&self, meeting: &mut Meeting, cancel: &AtomicBool) -> Result<bool, Trouble> {
-        let config = self.config();
+    /// The ways minutes can be written with now, in the order they are
+    /// tried ([`Ways::to_try`]): the one chosen first when it can be used.
+    /// A model on this computer that is not ready yet is still tried, as
+    /// before, and its own error says why.
+    fn ways_to_write(&self) -> Vec<Provider> {
+        let chosen = self.config().summary;
+        let mut to_try = Ways::look(&chosen, &|name| super::secrets::has(name)).to_try(&chosen);
+        if to_try.is_empty() && chosen.is_local() {
+            to_try.push(chosen);
+        }
+        to_try
+    }
+
+    /// Minutes that nothing on this computer can write: no key, no
+    /// signed-in plan, no model here. They wait without using up their tries
+    /// and are written as soon as a way appears; the user hears of it once.
+    fn wait_for_a_way(&self, meeting: &mut Meeting, folder: &Path) -> Result<()> {
+        let first_time = meeting.error != "summary_unavailable";
+        if first_time {
+            warn!(
+                "Minutes for {}: nothing can write them ({} cannot be used, no other plan is signed in, no other key is saved, no model on this computer)",
+                meeting.id,
+                self.config().summary.label()
+            );
+        }
+        meeting.status = Status::Transcribed;
+        meeting.stage.clear();
+        meeting.error = "summary_unavailable".to_string();
+        meeting.error_detail = format!(
+            "{} cannot be used, and no other way to write minutes is ready",
+            self.config().summary.label()
+        );
+        meeting.retry_at_ms = now_ms() + LOOK_FOR_A_WAY_MS;
+        self.save(meeting, folder)?;
+        if first_time {
+            self.notify(
+                say(
+                    &self.app,
+                    "회의록을 아직 쓰지 못했습니다",
+                    "The minutes are not written yet",
+                ),
+                say(
+                    &self.app,
+                    "받아쓴 글은 저장했습니다. 로그인하거나 키를 넣으면 바로 씁니다.",
+                    "The transcript is saved. Sign in or add a key and the minutes are written at once.",
+                ),
+            );
+        }
+        Ok(())
+    }
+
+    /// Minutes waiting for another try are tried now: a way to write them
+    /// may have appeared (a sign-in, a key, other settings). Only within
+    /// their tries: minutes that used them all up still wait for the user.
+    pub fn minutes_may_go(&self) {
+        let mut any = false;
+        for slot in lock(&self.slots).values_mut() {
+            if slot.summary.status == Status::Transcribed
+                && slot.summary.error.starts_with("summary_")
+                && !slot.parked
+                && slot.retry_at_ms > 0
+            {
+                slot.retry_at_ms = 0;
+                any = true;
+            }
+        }
+        if any {
+            self.wake();
+        }
+    }
+
+    /// `Ok(false)` if it was stopped part way. `to_try` are the ways to
+    /// write them with, in order: when one cannot be used (a key refused, a
+    /// plan run out) the next writes them, and the minutes say which did.
+    fn write_minutes(
+        &self,
+        meeting: &mut Meeting,
+        to_try: &[Provider],
+        cancel: &AtomicBool,
+    ) -> Result<bool, Trouble> {
+        let mut last = None;
+        for (index, provider) in to_try.iter().enumerate() {
+            match self.write_minutes_with(meeting, provider, cancel) {
+                Err(e) if index + 1 < to_try.len() && llm::cannot_use(&format!("{e:#}")) => {
+                    warn!(
+                        "Minutes for {} could not be written with {} ({e:#}); trying {}",
+                        meeting.id,
+                        provider.label(),
+                        to_try[index + 1].label()
+                    );
+                    last = Some(e);
+                }
+                Err(e) => {
+                    let code = llm::trouble_code(&format!("{e:#}"));
+                    return Err(Trouble::new(code, e, true));
+                }
+                Ok(written) => return Ok(written),
+            }
+        }
+        let e = last.unwrap_or_else(|| anyhow!("there is no way to write minutes"));
+        let code = llm::trouble_code(&format!("{e:#}"));
+        Err(Trouble::new(code, e, true))
+    }
+
+    fn write_minutes_with(
+        &self,
+        meeting: &mut Meeting,
+        provider: &Provider,
+        cancel: &AtomicBool,
+    ) -> Result<bool> {
         let all_templates = templates::load(&self.data_dir.join("templates"));
         let Some(transcript) = meeting.transcript.clone() else {
-            return Err(Trouble::new(
-                "summary_model",
-                anyhow!("there is no transcript"),
-                false,
-            ));
+            return Err(anyhow!("there is no transcript"));
         };
         let recorded_on = meeting.recorded_on();
         let context = meeting.context();
@@ -1735,7 +1848,7 @@ impl Secretary {
             people.push(meeting.customer.clone());
         }
         // Keys for the user's own paid models come from the system's
-        // keychain, and only when such a model is the one chosen.
+        // keychain, and only when such a model is the one writing.
         let keychain = |name: &str| super::secrets::get(name);
         let id = meeting.id.clone();
         let progress = |fraction: f32| {
@@ -1755,7 +1868,7 @@ impl Secretary {
             recorded_on: &recorded_on,
             context: &context,
             feedback_rules: &feedback_rules,
-            provider: &config.summary,
+            provider,
             secrets: &keychain,
         };
         match minutes::write(&input, &progress, cancel) {
@@ -1777,10 +1890,7 @@ impl Secretary {
                 Ok(true)
             }
             Ok(None) => Ok(false),
-            Err(e) => {
-                let code = super::llm::trouble_code(&format!("{e:#}"));
-                Err(Trouble::new(code, e, true))
-            }
+            Err(e) => Err(e),
         }
     }
 

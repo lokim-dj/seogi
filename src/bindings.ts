@@ -2541,7 +2541,7 @@ stage?: string; percent?: number;
  * Why it is not done, as a short code the screen has words for:
  * `cannot_decode`, `speech_model`, `speech_model_missing`,
  * `summary_model`, `summary_model_refused`, `summary_limit`,
- * `no_speech`, `too_short`.
+ * `summary_unavailable`, `no_speech`, `too_short`.
  */
 error?: string; 
 /**
@@ -2917,6 +2917,12 @@ summary: string; summary_ready: boolean;
  * minutes until another is picked.
  */
 summary_model_refused: boolean; 
+/**
+ * When the chosen way cannot be used now, the one that writes the
+ * minutes instead; `None` when the chosen one can, or when nothing can
+ * (then `summary_ready` is false).
+ */
+summary_fallback: Provider | null; 
 /**
  * The models offered for each signed-in tool, the recommended one
  * first.

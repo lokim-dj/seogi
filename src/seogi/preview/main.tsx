@@ -3,8 +3,8 @@
 // every screen in one go (scripts/seogi-screens.mjs). Not part of the app.
 //
 //   http://localhost:1420/src/seogi/preview/index.html?screen=home
-//   screen = home | minutes | recording | onboarding | settings |
-//            waiting | banner-starting | banner-ready | settings-dictation |
+//   screen = home | home-going | home-many | minutes | recording | onboarding |
+//            settings | waiting | banner-starting | banner-ready | settings-dictation |
 //            mic-idle | mic-listening | mic-working |
 //            indicator-listening | indicator-tidying | indicator-note |
 //            indicator-nowhere
@@ -215,6 +215,7 @@ const readiness: Readiness = {
   summary: "claude sonnet",
   summary_ready: true,
   summary_model_refused: false,
+  summary_fallback: null,
   claude_models: [
     { id: "claude-opus-5-5", label: "Opus 5.5" },
     { id: "claude-sonnet-5-5", label: "Sonnet 5.5" },
@@ -380,6 +381,53 @@ const upcoming: Upcoming[] = [
   },
 ];
 
+// An event going on since early afternoon, and the next one soon: the home
+// leads with the next one (screen=home-going).
+const going: Upcoming[] = [
+  {
+    event: {
+      uid: "review",
+      title: "[회의실B] 한결 / 3차 디자인 검토",
+      start_ms: now - 163 * minute,
+      end_ms: now + 77 * minute,
+      location: "회의실B",
+      attendees: [],
+    },
+    muted: false,
+  },
+  {
+    event: {
+      uid: "site",
+      title: "[미팅] 새봄타일 / 현장 실측",
+      start_ms: now + 17 * minute,
+      end_ms: now + 77 * minute,
+      location: "",
+      attendees: [],
+    },
+    muted: false,
+  },
+];
+
+// A full afternoon: one leads, three are listed, the rest counted
+// (screen=home-many).
+const many: Upcoming[] = [
+  ["m1", "[회의실A] 윤슬 / 2차 상담", 25],
+  ["m2", "[미팅] 새봄조명 / 조명 견본", 85],
+  ["m3", "[회의] 공정 점검", 130],
+  ["m4", "[회의실B] 다온 / 계약 전 확인", 190],
+  ["m5", "[미팅] 새봄창호 / 견적 설명", 250],
+].map(([uid, title, from]) => ({
+  event: {
+    uid: String(uid),
+    title: String(title),
+    start_ms: now + Number(from) * minute,
+    end_ms: now + (Number(from) + 50) * minute,
+    location: "",
+    attendees: [],
+  },
+  muted: false,
+}));
+
 const recording: RecordingState = {
   id: "recording",
   started_at_ms: now - 23 * minute - 41000,
@@ -502,6 +550,25 @@ const savedKeys = new Set(query.getAll("key"));
 const signIns: SignIns = {
   claude: signInState("claude", "signed_in"),
   codex: signInState("codex", "signed_out"),
+};
+
+// With '내 API 키' chosen and no key saved, the backend names the way that
+// writes instead: the signed-in Claude, ChatGPT, or none.
+const readinessNow = (): Readiness => {
+  const keyMissing =
+    new URLSearchParams(window.location.search).get("summary") === "key" &&
+    !savedKeys.has("anthropic");
+  if (!keyMissing) return readiness;
+  return {
+    ...readiness,
+    summary_ready: false,
+    summary_fallback:
+      signIns.claude === "signed_in"
+        ? { kind: "claude_cli", model: "" }
+        : signIns.codex === "signed_in"
+          ? { kind: "codex_cli", model: "" }
+          : null,
+  };
 };
 
 // What the screens asked of the backend, for scripts/seogi-flows.mjs to read.
@@ -690,7 +757,7 @@ mockIPC(
       case "seogi_templates":
         return templates;
       case "seogi_readiness":
-        return readiness;
+        return readinessNow();
       case "seogi_meetings":
         return isRecording
           ? [
@@ -711,7 +778,30 @@ mockIPC(
       case "seogi_recording":
         return isRecording ? recording : null;
       case "seogi_today":
-        return upcoming;
+        // A fresh copy each time, as the backend gives.
+        return structuredClone(
+          screen === "home-going"
+            ? going
+            : screen === "home-many"
+              ? many
+              : upcoming,
+        );
+      case "seogi_upcoming":
+        return [...upcoming, ...going, ...many].map((shown) => shown.event);
+      case "seogi_mute_event": {
+        // Turned off: the next one takes its place, as in the app.
+        const off = args.muted === true;
+        for (const list of [upcoming, going, many]) {
+          for (const shown of list) {
+            if (shown.event.uid === args.uid) shown.muted = off;
+          }
+        }
+        config.muted_events = config.muted_events.filter(
+          (uid) => uid !== args.uid,
+        );
+        if (off) config.muted_events.push(String(args.uid));
+        return null;
+      }
       case "seogi_banner":
         if (screen === "banner-starting") {
           return { kind: "starting", event: upcoming[0].event };

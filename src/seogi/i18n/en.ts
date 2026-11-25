@@ -190,7 +190,8 @@ const en: Strings = {
     inMinutes: "in {{n}} min",
     inHours: "in {{h}} h",
     inHoursMinutes: "in {{h}} h {{m}} min",
-    recordEvent: "Press to record this event",
+    moreEvents: "and {{n}} more",
+    recordEvent: "Press to record this event; right-click to turn it off",
     noTasksShort: "Minutes ready · nothing to do",
     checkShort: "{{n}} to check",
     fromInbox: "from the inbox",
@@ -275,6 +276,8 @@ const en: Strings = {
       "The chosen AI model cannot be used with this account. Pick another in Settings.",
     summary_limit:
       "The AI plan's usage limit was reached. Minutes are written once it resets.",
+    summary_unavailable:
+      "Nothing can write the minutes. Sign in or add a key and they are written at once.",
     no_speech: "No speech was found.",
     too_short: "The recording is too short.",
   },
@@ -608,6 +611,16 @@ const en: Strings = {
     ready: "Can be used",
     notReady: "Cannot be used yet",
     needsKey: "A key is needed",
+    fallbackNoKey: "With no key, minutes are written with {{way}}",
+    fallbackNotReady:
+      "This cannot be used now, so minutes are written with {{way}}",
+    noWay: "Nothing can write minutes — sign in or add a key",
+    way: {
+      claude: "the signed-in Claude",
+      codex: "the signed-in ChatGPT",
+      key: "the {{owner}} key",
+      local: "a model on this computer",
+    },
     removeKey: "Remove key",
     saveKey: "Save key",
     speech: "Recording",
@@ -677,6 +690,10 @@ const en: Strings = {
       mac_missing:
         "The chosen calendars are not in the Calendar app. Choose again.",
     },
+    mutedEvents: "Events turned off",
+    mutedEventsHint: "Left out of the home and the start reminders.",
+    mutedGone: "An event no longer in the calendar",
+    unmute: "Turn back on",
     remind: "Reminder at the start",
     remindOn: "Shown at the top of the screen when an event starts",
     remindOff: "Not shown",
