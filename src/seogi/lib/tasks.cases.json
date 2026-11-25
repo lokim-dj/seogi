@@ -1,0 +1,442 @@
+{
+  "names": ["김서윤", "박도현 소장", "유리", "이사"],
+  "titles": [
+    {
+      "title": "우리 숙제",
+      "side": "us"
+    },
+    {
+      "title": "고객 숙제",
+      "side": "customer"
+    },
+    {
+      "title": "업체 할 일",
+      "side": "them"
+    },
+    {
+      "title": "상대 할 일",
+      "side": "them"
+    },
+    {
+      "title": "우리 쪽 할 일",
+      "side": "us"
+    },
+    {
+      "title": "저희 할일",
+      "side": "us"
+    },
+    {
+      "title": "할 일",
+      "side": null
+    },
+    {
+      "title": "업체에 요청할 일",
+      "side": null
+    },
+    {
+      "title": "고객에게 보낼 것",
+      "side": null
+    },
+    {
+      "title": "고객 응대 개선",
+      "side": null
+    },
+    {
+      "title": "우리집 공사 할 일",
+      "side": null
+    },
+    {
+      "title": "상대적으로 급한 일",
+      "side": null
+    }
+  ],
+  "lines": [
+    {
+      "note": "same side hidden, subject off",
+      "title": "우리 숙제",
+      "owner": "우리(상담 담당)",
+      "text": "우리 쪽에서 제안서를 보내기로 함.",
+      "who": null,
+      "out": "제안서를 보내기로 함.",
+      "unowned": false
+    },
+    {
+      "note": "",
+      "title": "우리 숙제",
+      "owner": "우리",
+      "text": "저희가 견본을 챙겨 가기",
+      "who": null,
+      "out": "견본을 챙겨 가기",
+      "unowned": false
+    },
+    {
+      "note": "",
+      "title": "고객 숙제",
+      "owner": "고객님",
+      "text": "고객님께서 색을 골라 알려 주기",
+      "who": null,
+      "out": "색을 골라 알려 주기",
+      "unowned": false
+    },
+    {
+      "note": "같이 is not another subject",
+      "title": "고객 숙제",
+      "owner": "고객",
+      "text": "고객이 토요일 쇼룸에 같이 가기",
+      "who": null,
+      "out": "토요일 쇼룸에 같이 가기",
+      "unowned": false
+    },
+    {
+      "note": "",
+      "title": "업체 할 일",
+      "owner": "상대 업체",
+      "text": "상대 업체에서 납기를 알려 주기",
+      "who": null,
+      "out": "납기를 알려 주기",
+      "unowned": false
+    },
+    {
+      "note": "",
+      "title": "상대 할 일",
+      "owner": "상대방",
+      "text": "상대방이 계약서 초안 보내기",
+      "who": null,
+      "out": "계약서 초안 보내기",
+      "unowned": false
+    },
+    {
+      "note": "empty owner",
+      "title": "우리 숙제",
+      "owner": "",
+      "text": "견본 목록 정리하기",
+      "who": null,
+      "out": "견본 목록 정리하기",
+      "unowned": true
+    },
+    {
+      "note": "",
+      "title": "할 일",
+      "owner": "",
+      "text": "견적서 두 가지 안을 만들기",
+      "who": null,
+      "out": "견적서 두 가지 안을 만들기",
+      "unowned": true
+    },
+    {
+      "note": "speaker label",
+      "title": "할 일",
+      "owner": "화자 2",
+      "text": "견적서 만들기",
+      "who": null,
+      "out": "견적서 만들기",
+      "unowned": true
+    },
+    {
+      "note": "",
+      "title": "우리 숙제",
+      "owner": "화자 A (디자이너)",
+      "text": "우리가 도면 다시 그리기",
+      "who": null,
+      "out": "도면 다시 그리기",
+      "unowned": true
+    },
+    {
+      "note": "",
+      "title": "할 일",
+      "owner": "화자대표",
+      "text": "자료 묶기",
+      "who": null,
+      "out": "자료 묶기",
+      "unowned": true
+    },
+    {
+      "note": "",
+      "title": "우리 숙제",
+      "owner": "김서윤 실장",
+      "text": "김서윤 실장이 도면을 다시 그려 보내기",
+      "who": "김서윤 실장",
+      "out": "도면을 다시 그려 보내기",
+      "unowned": false
+    },
+    {
+      "note": "",
+      "title": "우리 숙제",
+      "owner": "박도현",
+      "text": "우리가 일정을 다시 안내하기",
+      "who": "박도현",
+      "out": "일정을 다시 안내하기",
+      "unowned": false
+    },
+    {
+      "note": "",
+      "title": "우리 숙제",
+      "owner": "박도현 소장",
+      "text": "박도현 소장님께서 현장을 다시 재기",
+      "who": "박도현 소장",
+      "out": "현장을 다시 재기",
+      "unowned": false
+    },
+    {
+      "note": "other side stays named",
+      "title": "우리 숙제",
+      "owner": "고객",
+      "text": "자재 목록 보내기",
+      "who": "고객",
+      "out": "자재 목록 보내기",
+      "unowned": false
+    },
+    {
+      "note": "a person whose owner starts with a side word",
+      "title": "고객 숙제",
+      "owner": "고객 김서윤",
+      "text": "색을 골라 알려 주기",
+      "who": "고객 김서윤",
+      "out": "색을 골라 알려 주기",
+      "unowned": false
+    },
+    {
+      "note": "not among the people: kept",
+      "title": "할 일",
+      "owner": "민지",
+      "text": "민지가 견본 챙기기",
+      "who": "민지",
+      "out": "민지가 견본 챙기기",
+      "unowned": false
+    },
+    {
+      "note": "short owner that is a word",
+      "title": "할 일",
+      "owner": "유리",
+      "text": "유리가 다음 주라 시공 날짜 잡기",
+      "who": "유리",
+      "out": "유리가 다음 주라 시공 날짜 잡기",
+      "unowned": false
+    },
+    {
+      "note": "",
+      "title": "할 일",
+      "owner": "이사",
+      "text": "이사가 다음 달이라 짐 보관 알아보기",
+      "who": "이사",
+      "out": "이사가 다음 달이라 짐 보관 알아보기",
+      "unowned": false
+    },
+    {
+      "note": "",
+      "title": "할 일",
+      "owner": "현장",
+      "text": "현장이 끝나는 대로 사진 보내기",
+      "who": "현장",
+      "out": "현장이 끝나는 대로 사진 보내기",
+      "unowned": false
+    },
+    {
+      "note": "short name with a title",
+      "title": "할 일",
+      "owner": "유리",
+      "text": "유리 실장님이 견본 챙기기",
+      "who": "유리",
+      "out": "견본 챙기기",
+      "unowned": false
+    },
+    {
+      "note": "",
+      "title": "우리 숙제",
+      "owner": "",
+      "text": "우리가 아니라 관리실이 승강기 사용 신청하기",
+      "who": null,
+      "out": "우리가 아니라 관리실이 승강기 사용 신청하기",
+      "unowned": true
+    },
+    {
+      "note": "",
+      "title": "우리 숙제",
+      "owner": "",
+      "text": "저희는 빼고 고객과 시공팀만 단체방 만들기",
+      "who": null,
+      "out": "저희는 빼고 고객과 시공팀만 단체방 만들기",
+      "unowned": true
+    },
+    {
+      "note": "",
+      "title": "우리 숙제",
+      "owner": "",
+      "text": "우리는 물론 고객도 볼 수 있게 일정표 공유하기",
+      "who": null,
+      "out": "우리는 물론 고객도 볼 수 있게 일정표 공유하기",
+      "unowned": true
+    },
+    {
+      "note": "",
+      "title": "우리 숙제",
+      "owner": "",
+      "text": "우리는 A안, 고객은 B안을 원하니 절충안 만들기",
+      "who": null,
+      "out": "우리는 A안, 고객은 B안을 원하니 절충안 만들기",
+      "unowned": true
+    },
+    {
+      "note": "",
+      "title": "우리 숙제",
+      "owner": "",
+      "text": "우리 쪽에서 빠진 항목이 있는지 고객에게 물어보기",
+      "who": null,
+      "out": "우리 쪽에서 빠진 항목이 있는지 고객에게 물어보기",
+      "unowned": true
+    },
+    {
+      "note": "",
+      "title": "우리 숙제",
+      "owner": "",
+      "text": "우리가 보낸 도면을 고객이 확인하기",
+      "who": null,
+      "out": "우리가 보낸 도면을 고객이 확인하기",
+      "unowned": true
+    },
+    {
+      "note": "",
+      "title": "고객 숙제",
+      "owner": "",
+      "text": "고객이 아니라 시공사가 철거 신고하기",
+      "who": null,
+      "out": "고객이 아니라 시공사가 철거 신고하기",
+      "unowned": true
+    },
+    {
+      "note": "",
+      "title": "고객 숙제",
+      "owner": "",
+      "text": "고객은 토요일, 우리는 일요일에 현장 보기",
+      "who": null,
+      "out": "고객은 토요일, 우리는 일요일에 현장 보기",
+      "unowned": true
+    },
+    {
+      "note": "",
+      "title": "고객 숙제",
+      "owner": "",
+      "text": "고객이 원하는 타일로 견본 주문하기",
+      "who": null,
+      "out": "고객이 원하는 타일로 견본 주문하기",
+      "unowned": true
+    },
+    {
+      "note": "",
+      "title": "고객 숙제",
+      "owner": "",
+      "text": "타일 견본은 고객이 고르면 알려 주기",
+      "who": null,
+      "out": "타일 견본은 고객이 고르면 알려 주기",
+      "unowned": true
+    },
+    {
+      "note": "",
+      "title": "고객 숙제",
+      "owner": "",
+      "text": "고객이름표를 붙여 보내기",
+      "who": null,
+      "out": "고객이름표를 붙여 보내기",
+      "unowned": true
+    },
+    {
+      "note": "",
+      "title": "고객 숙제",
+      "owner": "",
+      "text": "고객이",
+      "who": null,
+      "out": "고객이",
+      "unowned": true
+    },
+    {
+      "note": "",
+      "title": "업체 할 일",
+      "owner": "",
+      "text": "업체가 정해지면 납기 알려 주기",
+      "who": null,
+      "out": "업체가 정해지면 납기 알려 주기",
+      "unowned": true
+    },
+    {
+      "note": "",
+      "title": "업체 할 일",
+      "owner": "",
+      "text": "업체는 두 곳으로 좁혀 다시 알려 주기",
+      "who": null,
+      "out": "업체는 두 곳으로 좁혀 다시 알려 주기",
+      "unowned": true
+    },
+    {
+      "note": "",
+      "title": "업체 할 일",
+      "owner": "",
+      "text": "업체 측에서 받은 견본 돌려보내기",
+      "who": null,
+      "out": "업체 측에서 받은 견본 돌려보내기",
+      "unowned": true
+    },
+    {
+      "note": "name then another name",
+      "title": "할 일",
+      "owner": "박도현",
+      "text": "김서윤이 고른 색으로 박도현 소장이 주문하기",
+      "who": "박도현",
+      "out": "김서윤이 고른 색으로 박도현 소장이 주문하기",
+      "unowned": false
+    },
+    {
+      "note": "",
+      "title": "할 일",
+      "owner": "김서윤",
+      "text": "김서윤이 고른 색으로 박도현 소장이 주문하기",
+      "who": "김서윤",
+      "out": "김서윤이 고른 색으로 박도현 소장이 주문하기",
+      "unowned": false
+    },
+    {
+      "note": "",
+      "title": "업체에 요청할 일",
+      "owner": "고객",
+      "text": "고객이 사진 보내기",
+      "who": "고객",
+      "out": "사진 보내기",
+      "unowned": false
+    },
+    {
+      "note": "",
+      "title": "고객에게 보낼 것",
+      "owner": "고객",
+      "text": "고객이 사진 보내기",
+      "who": "고객",
+      "out": "사진 보내기",
+      "unowned": false
+    },
+    {
+      "note": "",
+      "title": "고객 응대 개선",
+      "owner": "고객",
+      "text": "고객이 사진 보내기",
+      "who": "고객",
+      "out": "사진 보내기",
+      "unowned": false
+    },
+    {
+      "note": "",
+      "title": "우리집 공사 할 일",
+      "owner": "고객",
+      "text": "고객이 사진 보내기",
+      "who": "고객",
+      "out": "사진 보내기",
+      "unowned": false
+    },
+    {
+      "note": "",
+      "title": "상대적으로 급한 일",
+      "owner": "고객",
+      "text": "고객이 사진 보내기",
+      "who": "고객",
+      "out": "사진 보내기",
+      "unowned": false
+    }
+  ]
+}
