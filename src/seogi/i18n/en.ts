@@ -170,7 +170,9 @@ const en: Strings = {
       "Type a name and press Enter to add it. Names stay on this computer and no one else sees them.",
   },
   permissionLost: {
-    text: "To use dictation, allow Seogi again in Accessibility",
+    typing: "To use dictation, allow Seogi again in Accessibility",
+    calendar:
+      "To read your events, allow Seogi again in Calendars. Until then no event reminders come.",
     open: "Open System Settings",
   },
   update: {

@@ -931,6 +931,7 @@
   },
   "errors": {
     "loadDirectory": "Error en carregar el directori: {{error}}",
+    "calendarPermissionLostTitle": "Allow Seogi again in Calendars to read your events",
     "typingPermissionLostTitle": "Allow Seogi again in Accessibility to use dictation",
     "micPermissionDeniedTitle": "Accés al micròfon denegat",
     "micPermissionDenied": {

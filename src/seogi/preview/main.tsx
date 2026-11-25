@@ -795,11 +795,17 @@ mockIPC(
         };
       }
       case "get_active_notices":
-        // `?permission-lost` shows the band for a lost typing permission.
+        // `?permission-lost` shows the bands for lost permissions.
         return new URLSearchParams(window.location.search).has(
           "permission-lost",
         )
           ? [
+              {
+                code: "CalendarPermissionLost",
+                level: "error",
+                source: "calendar",
+                detail: null,
+              },
               {
                 code: "TypingPermissionLost",
                 level: "error",

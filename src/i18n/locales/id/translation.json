@@ -931,6 +931,7 @@
   },
   "errors": {
     "loadDirectory": "Kesalahan saat memuat direktori: {{error}}",
+    "calendarPermissionLostTitle": "Allow Seogi again in Calendars to read your events",
     "typingPermissionLostTitle": "Allow Seogi again in Accessibility to use dictation",
     "micPermissionDeniedTitle": "Akses Mikrofon Ditolak",
     "micPermissionDenied": {

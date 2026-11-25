@@ -63,6 +63,9 @@ const NOTICE_DISPLAY: Record<NoticeCode, NoticeDisplay> = {
   TypingPermissionLost: {
     title: "errors.typingPermissionLostTitle",
   },
+  CalendarPermissionLost: {
+    title: "errors.calendarPermissionLostTitle",
+  },
 };
 
 export const noticeDisplay = (code: NoticeCode) => NOTICE_DISPLAY[code];

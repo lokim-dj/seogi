@@ -331,12 +331,16 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 show_main_window(app);
             }
             "notice" => {
-                // Lost typing permission is fixed in System Settings, so the
+                // A lost permission is given back in System Settings, so the
                 // line goes straight there (the window says the same).
-                if notices::tray_headline(app)
-                    .is_some_and(|n| n.code == notices::NoticeCode::TypingPermissionLost)
-                {
-                    let _ = seogi::commands::seogi_open_typing_permission();
+                match notices::tray_headline(app).map(|n| n.code) {
+                    Some(notices::NoticeCode::TypingPermissionLost) => {
+                        let _ = seogi::commands::seogi_open_typing_permission();
+                    }
+                    Some(notices::NoticeCode::CalendarPermissionLost) => {
+                        let _ = seogi::commands::seogi_open_calendar_permission();
+                    }
+                    _ => {}
                 }
                 show_main_window(app);
             }
@@ -911,6 +915,7 @@ pub fn run(cli_args: CliArgs) {
             seogi::commands::seogi_download_dictation_model,
             seogi::commands::seogi_mic_menu,
             seogi::commands::seogi_open_typing_permission,
+            seogi::commands::seogi_open_calendar_permission,
             seogi::commands::seogi_login_item,
             seogi::commands::seogi_open_login_items,
             seogi::commands::seogi_try_notification,

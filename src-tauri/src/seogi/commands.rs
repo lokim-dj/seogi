@@ -852,16 +852,31 @@ pub fn seogi_mic_menu(app: AppHandle, hide: String, settings: String) -> Result<
 #[tauri::command]
 #[specta::specta]
 pub fn seogi_open_typing_permission() -> Result<(), String> {
+    open_privacy_pane("Privacy_Accessibility")
+}
+
+/// Opens the system's page where Seogi is allowed to read calendars. Only
+/// opens it: the user turns Seogi on there themselves.
+#[tauri::command]
+#[specta::specta]
+pub fn seogi_open_calendar_permission() -> Result<(), String> {
+    open_privacy_pane("Privacy_Calendars")
+}
+
+fn open_privacy_pane(pane: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("open")
-            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+            .arg(format!(
+                "x-apple.systempreferences:com.apple.preference.security?{pane}"
+            ))
             .spawn()
             .map(|_| ())
             .map_err(|e| e.to_string())
     }
     #[cfg(not(target_os = "macos"))]
     {
+        let _ = pane;
         Ok(())
     }
 }

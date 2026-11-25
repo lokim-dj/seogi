@@ -931,6 +931,7 @@
   },
   "errors": {
     "loadDirectory": "디렉토리 로딩 오류: {{error}}",
+    "calendarPermissionLostTitle": "일정을 읽으려면 캘린더에서 서기를 다시 허락해 주세요",
     "typingPermissionLostTitle": "받아쓰기를 쓰려면 손쉬운 사용에서 서기를 다시 허락해 주세요",
     "micPermissionDeniedTitle": "마이크 접근이 거부되었습니다",
     "micPermissionDenied": {

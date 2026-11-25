@@ -931,6 +931,7 @@
   },
   "errors": {
     "loadDirectory": "خطأ في تحميل المجلد: {{error}}",
+    "calendarPermissionLostTitle": "Allow Seogi again in Calendars to read your events",
     "typingPermissionLostTitle": "Allow Seogi again in Accessibility to use dictation",
     "micPermissionDeniedTitle": "تم رفض الوصول إلى الميكروفون",
     "micPermissionDenied": {

@@ -931,6 +931,7 @@
   },
   "errors": {
     "loadDirectory": "Грешка при зареждане на папката: {{error}}",
+    "calendarPermissionLostTitle": "Allow Seogi again in Calendars to read your events",
     "typingPermissionLostTitle": "Allow Seogi again in Accessibility to use dictation",
     "micPermissionDeniedTitle": "Няма достъп до микрофона",
     "micPermissionDenied": {

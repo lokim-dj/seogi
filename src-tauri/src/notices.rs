@@ -36,6 +36,8 @@ pub enum NoticeSource {
     Dictation,
     File,
     Model,
+    /// Reading the calendars, every few minutes in the background.
+    Calendar,
 }
 
 /// The frontend maps each code to its text in `src/lib/notices.ts`.
@@ -56,6 +58,9 @@ pub enum NoticeCode {
     /// Dictation is on but macOS no longer lets Seogi type (Accessibility),
     /// as after an update whose signature macOS did not recognize.
     TypingPermissionLost,
+    /// Calendars from macOS's Calendar app were chosen, but macOS no longer
+    /// lets Seogi read them, for the same reason.
+    CalendarPermissionLost,
 }
 
 impl NoticeCode {
@@ -71,7 +76,8 @@ impl NoticeCode {
             | Self::ModelLoadFailed
             | Self::NoModelSelected
             | Self::FileTranscriptionFailed
-            | Self::TypingPermissionLost => NoticeLevel::Error,
+            | Self::TypingPermissionLost
+            | Self::CalendarPermissionLost => NoticeLevel::Error,
             Self::PostProcessFailed | Self::FilePostProcessFailed => NoticeLevel::Warning,
         }
     }
@@ -92,6 +98,7 @@ impl NoticeCode {
             Self::FileTranscriptionFailed => &strings.file_transcription_failed_title,
             Self::FilePostProcessFailed => &strings.file_post_process_failed_title,
             Self::TypingPermissionLost => &strings.typing_permission_lost_title,
+            Self::CalendarPermissionLost => &strings.calendar_permission_lost_title,
         }
     }
 }
