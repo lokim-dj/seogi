@@ -190,6 +190,7 @@ const en: Strings = {
     inMinutes: "in {{n}} min",
     inHours: "in {{h}} h",
     inHoursMinutes: "in {{h}} h {{m}} min",
+    moreEvents: "and {{n}} more",
     recordEvent: "Press to record this event; right-click to turn it off",
     noTasksShort: "Minutes ready · nothing to do",
     checkShort: "{{n}} to check",
@@ -677,6 +678,10 @@ const en: Strings = {
       mac_missing:
         "The chosen calendars are not in the Calendar app. Choose again.",
     },
+    mutedEvents: "Events turned off",
+    mutedEventsHint: "Left out of the home and the start reminders.",
+    mutedGone: "An event no longer in the calendar",
+    unmute: "Turn back on",
     remind: "Reminder at the start",
     remindOn: "Shown at the top of the screen when an event starts",
     remindOff: "Not shown",
