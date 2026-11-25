@@ -19,6 +19,7 @@ use super::llm::{self, Provider};
 use super::mac_calendar::{self, MacCalendar};
 use super::mic_button;
 use super::recorder::{self, Microphone};
+use super::sign_in::{self, SignIn, SignIns, Tool};
 use super::store::{Found, Meeting, MeetingSummary, Origin, MINUTES_NAME};
 use super::templates::{self, Template};
 use super::vocab::Vocabulary;
@@ -683,10 +684,17 @@ pub async fn seogi_readiness(
             Provider::Ollama { model, .. } => ollama_models
                 .iter()
                 .any(|name| name == model || name.strip_suffix(":latest") == Some(model.as_str())),
-            Provider::ClaudeCli { .. } => claude_cli,
-            Provider::CodexCli { .. } => codex_cli,
+            // Installed is not enough: the tool must be signed in too.
+            Provider::ClaudeCli { .. } => {
+                claude_cli && sign_in::status(Tool::Claude) == SignIn::SignedIn
+            }
+            Provider::CodexCli { .. } => {
+                codex_cli && sign_in::status(Tool::Codex) == SignIn::SignedIn
+            }
             // A key is needed; whether it works shows when it is used.
-            _ => true,
+            Provider::Anthropic { key, .. } | Provider::OpenAiCompatible { key, .. } => {
+                key.is_empty() || super::secrets::has(key)
+            }
         };
 
         let vocabulary_path = config.vocabulary(secretary.data_dir());
@@ -723,6 +731,45 @@ pub async fn seogi_readiness(
         })
     })
     .await
+}
+
+/// The models the company behind `provider` offers to the user's own key,
+/// as its model list answers; only the ones that write text. Empty when
+/// there is no key yet. An error is the company's answer.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_key_models(provider: Provider) -> Result<Vec<String>, String> {
+    off_screen(move || llm::key_models(&provider, &|name| super::secrets::get(name)).map_err(text))
+        .await
+}
+
+/// Whether Claude Code and Codex are installed and signed in. Quick: each
+/// tool answers from what it has stored, so the screen may ask every few
+/// seconds while a sign-in is open.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_sign_ins() -> Result<SignIns, String> {
+    off_screen(|| Ok(sign_in::statuses())).await
+}
+
+/// Opens `tool`'s own sign-in in a terminal window; the browser opens from
+/// there. `farewell` is shown in that window once it is done. The error
+/// `not_installed` means the tool is not on this computer.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_sign_in(tool: Tool, farewell: String) -> Result<(), String> {
+    off_screen(move || sign_in::open_sign_in(tool, &farewell).map_err(text)).await
+}
+
+/// Opens the official page on installing `tool` in the browser. Seogi does
+/// not run an installer itself.
+#[tauri::command]
+#[specta::specta]
+pub fn seogi_open_install_page(app: AppHandle, tool: Tool) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(tool.install_page(), None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 /// Downloads the model that tells speakers apart, if it is not here yet.

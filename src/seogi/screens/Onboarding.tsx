@@ -1,11 +1,11 @@
 // The first run: one table to choose who writes the minutes, and two rows
 // to connect the calendar and the folder phone recordings arrive in.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
 import { platform } from "@tauri-apps/plugin-os";
-import { commands, type CalendarCheck } from "@/bindings";
+import { commands, type CalendarCheck, type SignIns } from "@/bindings";
 import { NS } from "../i18n";
 import { friendlyPath, keysLabel, keysShort } from "../lib/format";
 import {
@@ -18,6 +18,7 @@ import {
   type Mode,
 } from "../lib/summary";
 import Permissions from "../components/Permissions";
+import SignInRows from "../components/SignInRows";
 import { useSeogi } from "../store";
 
 const MODES: Mode[] = ["local", "login", "key"];
@@ -92,6 +93,27 @@ export default function Onboarding() {
     }
   }, [readiness]);
 
+  // Where the two subscription tools stand. The first reading picks the
+  // one already signed in; a sign-in made here picks the one just signed
+  // in to.
+  const [signIns, setSignIns] = useState<SignIns | null>(null);
+  const signInsBefore = useRef<SignIns | null>(null);
+  const followSignIns = useCallback((now: SignIns) => {
+    const before = signInsBefore.current;
+    const just = (name: LoginTool) =>
+      now[name] === "signed_in" && before?.[name] !== "signed_in";
+    if (before ? just("codex") : now.claude !== "signed_in" && just("codex"))
+      setTool("codex");
+    else if (before && just("claude")) setTool("claude");
+    signInsBefore.current = now;
+    setSignIns(now);
+  }, []);
+  useEffect(() => {
+    void commands.seogiSignIns().then((result) => {
+      if (result.status === "ok") followSignIns(result.data);
+    });
+  }, [followSignIns]);
+
   if (!config) return null;
   // Each person's own Google Drive: the accounts found on this computer,
   // or a folder of their choosing, or one in the home folder when there is
@@ -119,8 +141,7 @@ export default function Onboarding() {
     !!readiness &&
     readiness.ollama_running &&
     !readiness.ollama_models.includes("gemma3:12b");
-  const loginFound =
-    tool === "claude" ? readiness?.claude_cli : readiness?.codex_cli;
+  const loginFound = signIns?.[tool] === "signed_in";
 
   const pull = async () => {
     setPulling(true);
@@ -326,7 +347,10 @@ export default function Onboarding() {
                         })
                       : t("onboarding.need.loginMissing")}
                     {mode === "login" ? (
-                      <label className="flex items-center gap-2 mt-2 text-[15px]">
+                      <SignInRows compact onChange={followSignIns} />
+                    ) : null}
+                    {mode === "login" ? (
+                      <label className="flex items-center gap-2 mt-3 text-[15px]">
                         <span className="font-medium">
                           {t("onboarding.loginWith")}
                         </span>
@@ -341,6 +365,11 @@ export default function Onboarding() {
                           <option value="codex">{"ChatGPT (Codex)"}</option>
                         </select>
                       </label>
+                    ) : null}
+                    {mode === "login" ? (
+                      <div className="mt-2 text-[13px] t3">
+                        {t("signIn.noPlan")}
+                      </div>
                     ) : null}
                   </td>
                   <td className={column("key")}>

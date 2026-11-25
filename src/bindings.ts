@@ -1578,6 +1578,57 @@ async seogiTrySummary() : Promise<Result<SummaryTry, string>> {
 }
 },
 /**
+ * The models the company behind `provider` offers to the user's own key,
+ * as its model list answers; only the ones that write text. Empty when
+ * there is no key yet. An error is the company's answer.
+ */
+async seogiKeyModels(provider: Provider) : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_key_models", { provider }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Whether Claude Code and Codex are installed and signed in. Quick: each
+ * tool answers from what it has stored, so the screen may ask every few
+ * seconds while a sign-in is open.
+ */
+async seogiSignIns() : Promise<Result<SignIns, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_sign_ins") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Opens `tool`'s own sign-in in a terminal window; the browser opens from
+ * there. `farewell` is shown in that window once it is done. The error
+ * `not_installed` means the tool is not on this computer.
+ */
+async seogiSignIn(tool: Tool, farewell: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_sign_in", { tool, farewell }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Opens the official page on installing `tool` in the browser. Seogi does
+ * not run an installer itself.
+ */
+async seogiOpenInstallPage(tool: Tool) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_open_install_page", { tool }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * How the talking went in a meeting, measured from its transcript as it
  * is now (after any speaker was renamed or moved).
  */
@@ -3108,6 +3159,26 @@ questions: number;
  */
 cut_ins: number }
 /**
+ * Where a tool stands on this computer.
+ */
+export type SignIn = 
+/**
+ * The tool is not installed.
+ */
+"missing" | 
+/**
+ * Installed, not signed in.
+ */
+"signed_out" | 
+/**
+ * Installed and signed in.
+ */
+"signed_in"
+/**
+ * Where both tools stand.
+ */
+export type SignIns = { claude: SignIn; codex: SignIn }
+/**
  * A speech model the user can pick for dictation.
  */
 export type SpeechChoice = { id: string; label: string; downloaded: boolean; size_mb: number; speed: Speed; 
@@ -3318,6 +3389,18 @@ title?: string; place?: string;
  * company.
  */
 mentions?: string[] }
+/**
+ * A tool that signs in with the user's own plan.
+ */
+export type Tool = 
+/**
+ * Claude Code, for a Claude plan.
+ */
+"claude" | 
+/**
+ * Codex, for a ChatGPT plan.
+ */
+"codex"
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
 export type Transcript = { 
 /**

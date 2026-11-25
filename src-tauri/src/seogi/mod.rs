@@ -31,6 +31,7 @@ pub mod power;
 pub mod recorder;
 pub mod render;
 pub mod secrets;
+pub mod sign_in;
 pub mod snippet;
 pub mod status;
 pub mod store;

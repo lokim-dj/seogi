@@ -466,6 +466,80 @@ fn anthropic(model: &str, api_key: String, request: &Request<'_>) -> Result<Stri
     answer.ok_or_else(|| anyhow!("Anthropic's answer has no text"))
 }
 
+/// The models the company behind `provider` offers to the user's key, from
+/// its model list (`GET /models`), keeping only the ones that write text,
+/// newest names first. Empty for a provider without a key, or with none
+/// saved yet.
+pub fn key_models(provider: &Provider, secrets: Secrets<'_>) -> Result<Vec<String>> {
+    use crate::settings::{PostProcessApiFormat, PostProcessProvider};
+    let (base_url, key, api_format) = match provider {
+        Provider::Anthropic { key, .. } => (
+            "https://api.anthropic.com/v1",
+            key,
+            PostProcessApiFormat::Anthropic,
+        ),
+        Provider::OpenAiCompatible { base_url, key, .. } => {
+            (base_url.as_str(), key, PostProcessApiFormat::OpenAi)
+        }
+        _ => return Ok(Vec::new()),
+    };
+    let Some(api_key) = (!key.is_empty()).then(|| secrets(key)).flatten() else {
+        return Ok(Vec::new());
+    };
+    let endpoint = PostProcessProvider {
+        id: "custom".to_string(),
+        label: "custom".to_string(),
+        base_url: base_url.to_string(),
+        allow_base_url_edit: true,
+        models_endpoint: None,
+        supports_structured_output: false,
+        api_format,
+    };
+    let names = tauri::async_runtime::block_on(crate::llm_client::fetch_models(&endpoint, api_key))
+        .map_err(|e| anyhow!(e))?;
+    Ok(text_models(names))
+}
+
+/// The names in a model list that write text: no pictures, voices,
+/// embeddings or moderation. Gemini's names lose their `models/` prefix.
+fn text_models(names: Vec<String>) -> Vec<String> {
+    const NOT_TEXT: [&str; 18] = [
+        "audio",
+        "realtime",
+        "image",
+        "transcribe",
+        "tts",
+        "live",
+        "search",
+        "embedding",
+        "moderation",
+        "whisper",
+        "dall-e",
+        "sora",
+        "veo",
+        "imagen",
+        "aqa",
+        "cyber",
+        "robotics",
+        "computer-use",
+    ];
+    let mut models: Vec<String> = names
+        .into_iter()
+        .map(|name| name.trim_start_matches("models/").to_string())
+        .filter(|name| {
+            let lower = name.to_lowercase();
+            ["claude-", "gpt-", "gemini-"]
+                .iter()
+                .any(|start| lower.starts_with(start))
+                && !NOT_TEXT.iter().any(|word| lower.contains(word))
+                && !lower.starts_with("gpt-oss")
+        })
+        .collect();
+    models.sort_by(|a, b| b.cmp(a));
+    models.dedup();
+    models
+}
+
 /// Runs a command-line tool with `input` on its stdin and returns its
 /// stdout. The tool is killed if it runs past the request timeout.
 fn run_tool(mut command: Command, input: &str, name: &str) -> Result<String> {
@@ -547,6 +621,18 @@ pub fn find_codex_cli() -> Option<PathBuf> {
     if let Some(home) = dirs_home() {
         extra.push(home.join(".local").join("bin"));
         extra.push(home.join(".codex").join("bin"));
+    }
+    // Where OpenAI's installer for Windows puts it. The app's PATH is the
+    // one it started with, so a tool installed while Seogi runs is found
+    // here rather than through PATH.
+    if let Some(local) = std::env::var_os("LOCALAPPDATA").filter(|_| cfg!(windows)) {
+        extra.push(
+            PathBuf::from(local)
+                .join("Programs")
+                .join("OpenAI")
+                .join("Codex")
+                .join("bin"),
+        );
     }
     find_program("codex", &extra)
 }
@@ -1005,6 +1091,41 @@ mod tests {
         );
         assert_eq!(models[0].label, "GPT-9 Astra");
         assert!(codex_models_in(&json!({})).is_empty());
+    }
+
+    #[test]
+    fn a_model_list_keeps_the_models_that_write_text() {
+        let names = [
+            "gpt-6.2-astra",
+            "gpt-6-luna",
+            "gpt-image-2.6-flare",
+            "gpt-realtime-2.1",
+            "text-embedding-3-large",
+            "omni-moderation-latest",
+            "gpt-oss-120b",
+            "models/gemini-4-carbon",
+            "models/gemini-3.8-flash-tts",
+            "models/text-embedding-004",
+            "claude-opus-5-5",
+        ]
+        .map(str::to_string)
+        .to_vec();
+        assert_eq!(
+            text_models(names),
+            [
+                "gpt-6.2-astra",
+                "gpt-6-luna",
+                "gemini-4-carbon",
+                "claude-opus-5-5"
+            ]
+        );
+        let none = Provider::default_ollama();
+        assert!(key_models(&none, &|_| None).unwrap().is_empty());
+        let no_key = Provider::Anthropic {
+            model: "claude-opus-5-5".to_string(),
+            key: "anthropic".to_string(),
+        };
+        assert!(key_models(&no_key, &|_| None).unwrap().is_empty());
     }
 
     #[test]

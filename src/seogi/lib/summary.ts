@@ -38,23 +38,77 @@ export function loginProvider(
 
 export type KeyOwner = "openai" | "anthropic" | "gemini";
 
-/** Whose key, the name it is kept under, and the model first offered. */
+/** A model a company offers to a key, and what it is good at. */
+interface KeyModel {
+  id: string;
+  label: string;
+  aboutKey: string;
+}
+
+/**
+ * Whose key, the name it is kept under, and the models offered, the
+ * recommended one first. The names are the companies' current ones, from
+ * their model pages (Anthropic: models overview; OpenAI: API models; Google:
+ * Gemini API models). With a key saved, the company's own model list adds
+ * what else it offers.
+ */
 export const KEY_OWNERS: {
   id: KeyOwner;
   label: string;
   provider: (model: string) => Provider;
+  /** The model first offered: the first of `models`. */
   model: string;
+  models: KeyModel[];
 }[] = [
   {
     id: "anthropic",
     label: "Anthropic (Claude)",
-    model: "claude-sonnet-4-5",
+    model: "claude-opus-5-5",
+    models: [
+      {
+        id: "claude-opus-5-5",
+        label: "Opus 5.5",
+        aboutKey: "settings.models.keyOpus",
+      },
+      {
+        id: "claude-sonnet-5-5",
+        label: "Sonnet 5.5",
+        aboutKey: "settings.models.keySonnet",
+      },
+      {
+        id: "claude-haiku-5-5",
+        label: "Haiku 5.5",
+        aboutKey: "settings.models.keyHaiku",
+      },
+    ],
     provider: (model) => ({ kind: "anthropic", model, key: "anthropic" }),
   },
   {
     id: "openai",
     label: "OpenAI",
-    model: "gpt-4.1-mini",
+    model: "gpt-6.2-astra",
+    models: [
+      {
+        id: "gpt-6.2-astra",
+        label: "GPT-6.2 Astra",
+        aboutKey: "settings.models.astra",
+      },
+      {
+        id: "gpt-6.2-sol",
+        label: "GPT-6.2 Sol",
+        aboutKey: "settings.models.sol",
+      },
+      {
+        id: "gpt-6.1-terra",
+        label: "GPT-6.1 Terra",
+        aboutKey: "settings.models.terra",
+      },
+      {
+        id: "gpt-6-luna",
+        label: "GPT-6 Luna",
+        aboutKey: "settings.models.luna",
+      },
+    ],
     provider: (model) => ({
       kind: "open_ai_compatible",
       base_url: "https://api.openai.com/v1",
@@ -65,7 +119,19 @@ export const KEY_OWNERS: {
   {
     id: "gemini",
     label: "Google Gemini",
-    model: "gemini-2.5-flash",
+    model: "gemini-4-carbon",
+    models: [
+      {
+        id: "gemini-4-carbon",
+        label: "Gemini 4 Carbon",
+        aboutKey: "settings.models.keyGeminiTop",
+      },
+      {
+        id: "gemini-4-hydrogen",
+        label: "Gemini 4 Hydrogen",
+        aboutKey: "settings.models.keyGeminiFree",
+      },
+    ],
     provider: (model) => ({
       kind: "open_ai_compatible",
       base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
@@ -108,6 +174,8 @@ function aboutKey(id: string): string {
 export function modelOptions(
   provider: Provider,
   readiness: Readiness | null,
+  /** What the company's model list gave for the saved key, if read. */
+  keyModels: string[] = [],
 ): ModelOption[] {
   let options: ModelOption[];
   switch (provider.kind) {
@@ -135,16 +203,19 @@ export function modelOptions(
       break;
     default: {
       const owner = KEY_OWNERS.find((item) => item.id === keyOwnerOf(provider));
-      options = owner
-        ? [
-            {
-              id: owner.model,
-              label: owner.model,
-              aboutKey: "settings.models.key",
-              recommended: true,
-            },
-          ]
-        : [];
+      options = (owner?.models ?? []).map((model, index) => ({
+        ...model,
+        recommended: index === 0,
+      }));
+      for (const id of keyModels) {
+        if (options.some((option) => option.id === id)) continue;
+        options.push({
+          id,
+          label: id,
+          aboutKey: "settings.models.key",
+          recommended: false,
+        });
+      }
     }
   }
   const saved = provider.model;

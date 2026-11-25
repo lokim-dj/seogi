@@ -2,7 +2,7 @@
 // and its value. What is rarely changed waits under "더 보기". Each change
 // is saved as it is made.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
 import { platform } from "@tauri-apps/plugin-os";
@@ -14,11 +14,13 @@ import {
   type LoginItem,
   type MacCalendar,
   type Microphone,
+  type SignIns,
   type SummaryTry,
 } from "@/bindings";
 import { BackIcon, RightIcon } from "../components/icons";
 import DictationSettings from "./DictationSettings";
 import Permissions from "../components/Permissions";
+import SignInRows from "../components/SignInRows";
 import { NS } from "../i18n";
 import {
   friendlyPath,
@@ -71,7 +73,13 @@ export default function Settings() {
   const [loginItem, setLoginItem] = useState<LoginItem | null>(null);
   // What the last "시험해 보기" gave: null while not tried, "…" while asking.
   const [tried, setTried] = useState<SummaryTry | "asking" | null>(null);
+  const [keyModels, setKeyModels] = useState<string[]>([]);
+  // Which "시험해 보기" is current, and how many keys were saved here: a
+  // new key is read again even when one was saved before.
+  const tryId = useRef(0);
+  const [keySaves, setKeySaves] = useState(0);
   const mac = platform() === "macos";
+  const signInsSeen = useRef("");
 
   const owner: KeyOwner = config ? keyOwnerOf(config.summary) : "anthropic";
   const mode: Mode = config ? modeOf(config.summary) : "local";
@@ -145,7 +153,39 @@ export default function Settings() {
     });
   }, [mode, owner]);
 
+  // With a key saved, the company's own list of models: what it offers
+  // now, besides the few named here.
+  const summaryKey = config ? JSON.stringify(config.summary) : "";
+  const keyProvider = mode === "key" && config ? config.summary : null;
+  const keyProviderKind = keyProvider ? owner : "";
+  useEffect(() => {
+    setKeyModels([]);
+    if (!keyProvider || !hasKey) return;
+    let stop = false;
+    void commands.seogiKeyModels(keyProvider).then((result) => {
+      if (!stop && result.status === "ok") setKeyModels(result.data);
+    });
+    return () => {
+      stop = true;
+    };
+    // Read again for another company or key, not for another model.
+  }, [keyProviderKind, hasKey, keySaves]);
+
+  // A try belongs to the way, company, model and key it was made with.
+  useEffect(() => {
+    tryId.current += 1;
+    setTried(null);
+  }, [summaryKey, hasKey, keySaves]);
+
   if (!config) return null;
+
+  // A sign-in that changed changes whether minutes can be written: the
+  // state row reads it again.
+  const followSignIns = (now: SignIns) => {
+    const key = `${now.claude}|${now.codex}`;
+    if (signInsSeen.current && signInsSeen.current !== key) void refreshSetup();
+    signInsSeen.current = key;
+  };
 
   const save = async (next: Config) => {
     const error = await saveConfig(next);
@@ -181,6 +221,7 @@ export default function Settings() {
     }
     setKey("");
     setHasKey(true);
+    setKeySaves((n) => n + 1);
     setNote(t("settings.saved"));
   };
 
@@ -294,18 +335,26 @@ export default function Settings() {
     };
   };
 
-  const options = modelOptions(config.summary, readiness);
+  const options = modelOptions(config.summary, readiness, keyModels);
 
   const inUse = options.find(
     (option) => option.id === selectedModel(config.summary, options),
   );
   const tryIt = async () => {
+    const id = tryId.current;
     setTried("asking");
     const result = await commands.seogiTrySummary();
+    // Something changed while it was asking: the answer is not for this.
+    if (id !== tryId.current) return;
     setTried(result.status === "ok" ? result.data : null);
     if (result.status === "error")
       setNote(t("failed", { reason: result.error }));
   };
+
+  // Read for the way chosen now: a key that is not saved yet is not ready,
+  // whatever the last reading said.
+  const needsKey = mode === "key" && !hasKey;
+  const summaryReady = !needsKey && !!readiness?.summary_ready;
 
   const speechPercent = readiness
     ? Math.round(downloads[readiness.speech_model] ?? -1)
@@ -373,7 +422,10 @@ export default function Settings() {
           <div className="srow">
             <div>
               <div className="l">{t("onboarding.loginWith")}</div>
-              <div className="h">{t("settings.loginHint")}</div>
+              <div className="h">
+                {t("settings.loginHint")}
+                <span className="block">{t("signIn.noPlan")}</span>
+              </div>
             </div>
             <div className="v">
               <select
@@ -396,6 +448,7 @@ export default function Settings() {
             </div>
           </div>
         ) : null}
+        {mode === "login" ? <SignInRows onChange={followSignIns} /> : null}
         {mode === "key" ? (
           <div className="srow">
             <div>
@@ -530,10 +583,12 @@ export default function Settings() {
             </div>
           </div>
           <div className="v">
-            <span className={readiness?.summary_ready ? "t2" : "rt"}>
-              {readiness?.summary_ready
+            <span className={summaryReady ? "t2" : "rt"}>
+              {summaryReady
                 ? t("settings.ready")
-                : t("settings.notReady")}
+                : needsKey
+                  ? t("settings.needsKey")
+                  : t("settings.notReady")}
             </span>
             <button
               type="button"
