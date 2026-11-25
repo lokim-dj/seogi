@@ -14,7 +14,8 @@ import {
   type Upcoming,
 } from "@/bindings";
 import { useLength, useNow } from "../components/common";
-import { around, Marked } from "../components/Found";
+import { Marked } from "../components/Found";
+import { around, has } from "../lib/found";
 import {
   CloseIcon,
   ImportIcon,
@@ -56,7 +57,8 @@ export default function Home() {
   const { t } = useTranslation(NS);
   const go = useSeogi((s) => s.go);
   const importPaths = useSeogi((s) => s.importPaths);
-  const [finding, setFinding] = useState(false);
+  const finding = useSeogi((s) => s.finding.open);
+  const setFinding = useSeogi((s) => s.setFinding);
   const [note, setNote] = useState("");
   // Something that did not work is shown so that it cannot be missed.
   const [bad, setBad] = useState(false);
@@ -73,11 +75,11 @@ export default function Home() {
       const key = event.key.toLowerCase();
       if ((event.metaKey || event.ctrlKey) && (key === "k" || key === "f")) {
         event.preventDefault();
-        setFinding(true);
+        setFinding({ open: true });
       }
-      if (event.key === "Escape") setFinding(false);
+      if (event.key === "Escape") setFinding({ open: false });
     };
-    const onFind = () => setFinding(true);
+    const onFind = () => setFinding({ open: true });
     window.addEventListener("keydown", onKey);
     window.addEventListener(FIND_EVENT, onFind);
     return () => {
@@ -123,7 +125,7 @@ export default function Home() {
             className="ib"
             aria-pressed={finding}
             aria-label={t("band.find")}
-            onClick={() => setFinding((on) => !on)}
+            onClick={() => setFinding({ open: !finding })}
           >
             <SearchIcon />
             <span className="t3">{mac ? "⌘K" : "Ctrl+K"}</span>
@@ -160,7 +162,10 @@ export default function Home() {
             {note}
           </p>
         ) : null}
-        <MeetingList finding={finding} onCloseFind={() => setFinding(false)} />
+        <MeetingList
+          finding={finding}
+          onCloseFind={() => setFinding({ open: false })}
+        />
       </main>
     </div>
   );
@@ -284,12 +289,9 @@ function MeetingList({
   const selected = useSeogi((s) => s.selected);
   const openMeeting = useSeogi((s) => s.open);
   const [filter, setFilter] = useState<Filter>("all");
-  const [query, setQuery] = useState("");
-  // What the backend found, for the words it was asked about.
-  const [found, setFound] = useState<{
-    words: string;
-    hits: Map<string, Found>;
-  } | null>(null);
+  const query = useSeogi((s) => s.finding.query);
+  const found = useSeogi((s) => s.finding.found);
+  const setFinding = useSeogi((s) => s.setFinding);
   const field = useRef<HTMLInputElement | null>(null);
   const [menu, setMenu] = useState<{
     meeting: MeetingSummary;
@@ -300,10 +302,7 @@ function MeetingList({
 
   useEffect(() => {
     if (finding) field.current?.focus();
-    else {
-      setQuery("");
-      setFilter("all");
-    }
+    else setFilter("all");
   }, [finding]);
 
   // Titles and summaries are looked through here; transcripts by the
@@ -311,31 +310,38 @@ function MeetingList({
   useEffect(() => {
     const words = query.trim();
     if (!finding || words === "") {
-      setFound(null);
+      setFinding({ found: null });
       return;
     }
+    // An answer that comes after the words changed is for old words.
+    let current = true;
     const timer = window.setTimeout(() => {
       void commands.seogiSearch(words).then((result) => {
-        if (result.status === "ok") {
-          setFound({
-            words,
-            hits: new Map(result.data.map((hit) => [hit.id, hit])),
+        if (current && result.status === "ok") {
+          setFinding({
+            found: {
+              words,
+              hits: Object.fromEntries(result.data.map((hit) => [hit.id, hit])),
+            },
           });
         }
       });
     }, 250);
-    return () => window.clearTimeout(timer);
-  }, [finding, query]);
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+    };
+  }, [finding, query, setFinding]);
 
   const shown = useMemo(() => {
-    const words = query.trim().toLowerCase();
+    const words = query.trim();
     return meetings.filter((meeting) => {
       if (filter !== "all" && meeting.template_id !== filter) return false;
       if (!finding || words === "") return true;
       return (
-        meeting.title.toLowerCase().includes(words) ||
-        meeting.summary.toLowerCase().includes(words) ||
-        (found?.hits.has(meeting.id) ?? false)
+        has(meeting.title, words) ||
+        has(meeting.summary, words) ||
+        found?.hits[meeting.id] !== undefined
       );
     });
   }, [meetings, filter, finding, query, found]);
@@ -370,7 +376,7 @@ function MeetingList({
               ref={field}
               type="search"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => setFinding({ query: event.target.value })}
               placeholder={t("band.findPlaceholder")}
               aria-label={t("band.find")}
               className="ul flex-1"
@@ -412,7 +418,7 @@ function MeetingList({
             <h2 className="a-grp m-0">{dayHeading(day.at)}</h2>
             {day.rows.map((meeting) => {
               const words = finding ? query.trim() : "";
-              const hit = words ? found?.hits.get(meeting.id) : undefined;
+              const hit = words ? found?.hits[meeting.id] : undefined;
               // The meeting's line goes to the first line the words are in;
               // only the title, or not yet asked, to the top.
               const first =

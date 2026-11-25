@@ -449,7 +449,7 @@ function search(query: string): Found[] {
   const people = (done.people ?? []).join(", ");
   if (has(people)) add("people", people);
   if (places.length === 0) return [];
-  return [{ id: done.id, places: places.slice(0, 20), total: places.length }];
+  return [{ id: done.id, places: places.slice(0, 5), total: places.length }];
 }
 
 const templates = [

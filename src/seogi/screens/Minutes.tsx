@@ -21,7 +21,8 @@ import {
   useSpeakerName,
 } from "../components/common";
 import DocumentWords from "../components/DocumentWords";
-import { has, Marked } from "../components/Found";
+import { Marked } from "../components/Found";
+import { has } from "../lib/found";
 import Feedback from "../components/Feedback";
 import {
   BackIcon,
@@ -409,6 +410,32 @@ function spotOf(jump: Jump | null, meeting: Meeting): Spot | null {
 
 /** Opens the folds around the line a search went to and brings it to the
  *  middle of the window; the next press anywhere else takes the mark off. */
+/** How far in from a scrolling box's edge its scroll bar may be pressed:
+ *  a bar that takes room, or one drawn over the content (macOS). */
+const SCROLL_BAR = 16;
+
+/** Whether a press is on a scroll bar. A bar that takes room is outside
+ *  the box's content, so the press lands on the box itself past its
+ *  inner width; one drawn over the content gets the press on whatever is
+ *  under it, so any box that scrolls is asked whether the press is near
+ *  its edge. */
+function onScrollBar(event: PointerEvent): boolean {
+  const target = event.target instanceof Element ? event.target : null;
+  for (let box = target; box; box = box.parentElement) {
+    const style = window.getComputedStyle(box);
+    const down =
+      box.scrollHeight > box.clientHeight &&
+      /auto|scroll/.test(style.overflowY);
+    const across =
+      box.scrollWidth > box.clientWidth && /auto|scroll/.test(style.overflowX);
+    if (!down && !across) continue;
+    const edge = box.getBoundingClientRect();
+    if (down && edge.right - event.clientX <= SCROLL_BAR) return true;
+    if (across && edge.bottom - event.clientY <= SCROLL_BAR) return true;
+  }
+  return false;
+}
+
 function useGoToSpot(
   sheet: React.RefObject<HTMLElement | null>,
   jump: Jump | null,
@@ -428,8 +455,10 @@ function useGoToSpot(
         fold.open = true;
       }
       const still = window.matchMedia("(prefers-reduced-motion: reduce)");
+      // The words themselves, not the top of a long paragraph they are in.
+      const words = line.querySelector<HTMLElement>("mark.hl") ?? line;
       second = window.requestAnimationFrame(() =>
-        line.scrollIntoView({
+        words.scrollIntoView({
           block: "center",
           behavior: still.matches ? "auto" : "smooth",
         }),
@@ -437,16 +466,7 @@ function useGoToSpot(
     });
     const away = (event: PointerEvent) => {
       // Dragging a scroll bar is scrolling, which keeps the mark.
-      const box = event.target;
-      if (
-        box instanceof HTMLElement &&
-        ((box.scrollHeight > box.clientHeight &&
-          event.offsetX >= box.clientWidth) ||
-          (box.scrollWidth > box.clientWidth &&
-            event.offsetY >= box.clientHeight))
-      ) {
-        return;
-      }
+      if (onScrollBar(event)) return;
       const line = sheet.current?.querySelector("[data-found]");
       if (line && event.target instanceof Node && line.contains(event.target)) {
         return;

@@ -184,7 +184,7 @@ pub struct Meeting {
 
 /// The most places a search gives for one meeting; `Found::total` counts
 /// them all.
-pub const FOUND_PLACES: usize = 20;
+pub const FOUND_PLACES: usize = 5;
 
 /// What part of a meeting some words were found in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -224,6 +224,12 @@ pub struct Found {
     pub places: Vec<FoundPlace>,
     /// How many places there are in all.
     pub total: u32,
+}
+
+/// `text` with Korean letters put together into syllables (NFC).
+fn nfc(text: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    text.nfc().collect()
 }
 
 /// What a list of meetings shows of one.
@@ -344,11 +350,13 @@ impl Meeting {
     /// none), the other sections, the transcript lines, the people. `None`
     /// when they are nowhere. Case does not matter.
     pub fn found(&self, words: &str) -> Option<Found> {
-        let words = words.trim().to_lowercase();
+        // One way of writing Korean: syllables typed on one computer and
+        // letters saved apart on another are the same words.
+        let words = nfc(words.trim()).to_lowercase();
         if words.is_empty() {
             return None;
         }
-        let has = |text: &str| text.to_lowercase().contains(&words);
+        let has = |text: &str| nfc(text).to_lowercase().contains(&words);
         // A task found by who does it shows who, as the minutes line does.
         let line = |entry: &Entry| {
             if has(&entry.text) {
@@ -361,7 +369,7 @@ impl Meeting {
         let mut add = |kind, text: &str, section: &str, index: usize, ms| {
             places.push(FoundPlace {
                 kind,
-                text: text.to_string(),
+                text: nfc(text),
                 section: section.to_string(),
                 index: index as u32,
                 ms,
@@ -874,6 +882,16 @@ mod tests {
             "일정 · 이사는 다음 달로 미뤘다."
         );
 
+        // Letters saved apart find and are found as syllables.
+        let apart = |text: &str| -> String {
+            use unicode_normalization::UnicodeNormalization;
+            text.nfd().collect()
+        };
+        meeting.minutes[0].sections[2].entries[0].text = apart("견적 보내기");
+        let found = meeting.found("견적").unwrap();
+        assert_eq!(found.places[0].text, "견적 보내기");
+        assert!(meeting.found(&apart("견적")).is_some());
+
         // Without a story the screen shows the summary, and so does a search.
         meeting.minutes[0].story.clear();
         let found = meeting.found("일정").unwrap();
@@ -897,6 +915,7 @@ mod tests {
             .collect();
         let found = meeting.found("그 말").unwrap();
         assert_eq!(found.places.len(), FOUND_PLACES);
+        assert_eq!(FOUND_PLACES, 5);
         assert_eq!(found.total, 50);
     }
 

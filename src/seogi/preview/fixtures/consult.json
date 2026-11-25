@@ -272,7 +272,7 @@
         "start_ms": 140908,
         "end_ms": 144948,
         "speaker": 1,
-        "text": "생각보다 비싸네요. 여다지로 하면 얼마나 줄어드나요?",
+        "text": "생각보다 비싸네요. 여닫이로 하면 얼마나 줄어드나요?",
         "confidence": 0.9439574,
         "unsure": false,
         "overlap": false
@@ -281,7 +281,7 @@
         "start_ms": 145324,
         "end_ms": 148464,
         "speaker": 3,
-        "text": "여다지로 바꾸면 40만원 정도 줄어듭니다.",
+        "text": "여닫이로 바꾸면 40만원 정도 줄어듭니다.",
         "confidence": 0.9152245,
         "unsure": false,
         "overlap": false
@@ -290,7 +290,7 @@
         "start_ms": 148844,
         "end_ms": 150344,
         "speaker": 1,
-        "text": "그럼 여다지로 할게요",
+        "text": "그럼 여닫이로 할게요",
         "confidence": 0.71069396,
         "unsure": false,
         "overlap": false
@@ -632,7 +632,7 @@
               "sources": [
                 {
                   "ms": 148844,
-                  "quote": "그럼 여다지로 할게요"
+                  "quote": "그럼 여닫이로 할게요"
                 }
               ],
               "reasons": ["unsure_speech"]

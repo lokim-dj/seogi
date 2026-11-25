@@ -9,6 +9,7 @@ import {
   events,
   type Config,
   type Event as CalendarEvent,
+  type Found,
   type FoundPlace,
   type Meeting,
   type MeetingSummary,
@@ -34,6 +35,16 @@ export interface Jump {
   id: string;
   words: string;
   place: FoundPlace | null;
+}
+
+/** The meetings list's finding. Kept here, not on the home, so that going
+ *  back from a found meeting shows the same words and lines to press the
+ *  next one. */
+export interface Finding {
+  open: boolean;
+  query: string;
+  /** What the backend found, by meeting, for the words it was asked. */
+  found: { words: string; hits: Record<string, Found> } | null;
 }
 
 export interface ImportTally {
@@ -65,6 +76,7 @@ interface Seogi {
   /** The meeting just moved to the trash, which can be brought back. */
   trashed: { title: string; at: number } | null;
   jump: Jump | null;
+  finding: Finding;
 
   init: () => Promise<void>;
   refreshMeetings: () => Promise<void>;
@@ -77,6 +89,8 @@ interface Seogi {
   open: (id: string, found?: Omit<Jump, "id">) => void;
   /** Takes the search's highlighter off the minutes. */
   clearJump: () => void;
+  /** Changes the finding; closing it forgets the words. */
+  setFinding: (change: Partial<Finding>) => void;
   go: (view: View) => void;
   goBack: () => void;
   goForward: () => void;
@@ -105,6 +119,7 @@ export const useSeogi = create<Seogi>((set, get) => ({
   droppedDocuments: null,
   trashed: null,
   jump: null,
+  finding: { open: false, query: "", found: null },
   downloads: {},
 
   init: async () => {
@@ -201,6 +216,13 @@ export const useSeogi = create<Seogi>((set, get) => ({
 
   clearJump: () => {
     if (get().jump) set({ jump: null });
+  },
+
+  setFinding: (change) => {
+    const next = { ...get().finding, ...change };
+    set({
+      finding: next.open ? next : { open: false, query: "", found: null },
+    });
   },
 
   go: (view) => {
