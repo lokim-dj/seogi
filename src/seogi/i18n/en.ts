@@ -190,7 +190,7 @@ const en: Strings = {
     inMinutes: "in {{n}} min",
     inHours: "in {{h}} h",
     inHoursMinutes: "in {{h}} h {{m}} min",
-    recordEvent: "Press to record this event",
+    recordEvent: "Press to record this event; right-click to turn it off",
     noTasksShort: "Minutes ready · nothing to do",
     checkShort: "{{n}} to check",
     fromInbox: "from the inbox",

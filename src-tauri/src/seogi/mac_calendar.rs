@@ -4,6 +4,7 @@
 //! their account to the Calendar app; Seogi then reads it from there. The
 //! system asks the user once whether Seogi may read calendars. Nothing is
 //! written back, and events are read only for the calendars the user ticked.
+//! Events the user declined, or is not invited to, are left out.
 //!
 //! Elsewhere than macOS the functions say the calendars are not there.
 
@@ -49,6 +50,7 @@ pub fn events(ids: &[String], from_ms: i64, to_ms: i64) -> Result<Vec<Event>> {
 
 #[cfg(target_os = "macos")]
 mod imp {
+    use std::collections::HashSet;
     use std::sync::mpsc;
     use std::time::Duration;
 
@@ -59,10 +61,11 @@ mod imp {
     use objc2::sel;
     use objc2_event_kit::{
         EKAuthorizationStatus, EKCalendar, EKEntityType, EKEventStatus, EKEventStore,
-        EKParticipantStatus,
+        EKParticipant, EKParticipantStatus,
     };
     use objc2_foundation::{NSArray, NSDate, NSError};
 
+    use super::super::calendar::{is_mine, standing, Person, Standing};
     use super::{Event, MacCalendar};
 
     pub fn access() -> &'static str {
@@ -131,6 +134,24 @@ mod imp {
         Ok(found)
     }
 
+    /// A participant as [`standing`] reads one.
+    fn person(participant: &EKParticipant, organizer: bool) -> Person {
+        unsafe {
+            let url = participant.URL();
+            let text = url
+                .resourceSpecifier()
+                .or_else(|| url.absoluteString())
+                .map(|text| text.to_string())
+                .unwrap_or_default();
+            Person {
+                address: text.trim_start_matches("mailto:").to_string(),
+                me: participant.isCurrentUser(),
+                declined: participant.participantStatus() == EKParticipantStatus::Declined,
+                organizer,
+            }
+        }
+    }
+
     fn ms(date: &NSDate) -> i64 {
         (date.timeIntervalSince1970() * 1000.0).round() as i64
     }
@@ -160,7 +181,8 @@ mod imp {
             );
             store.eventsMatchingPredicate(&predicate)
         };
-        let mut events = Vec::new();
+        // Each event with its account and where the user stands on it.
+        let mut read: Vec<(Event, String, Standing)> = Vec::new();
         for event in found.iter() {
             unsafe {
                 // An all-day event is no meeting, as in an iCal file.
@@ -187,16 +209,50 @@ mod imp {
                             .collect()
                     })
                     .unwrap_or_default();
-                events.push(Event {
-                    uid,
-                    title: event.title().to_string(),
-                    start_ms: ms(&event.startDate()),
-                    end_ms: ms(&event.endDate()),
-                    location: event.location().map(|l| l.to_string()).unwrap_or_default(),
-                    attendees,
-                });
+                // The account of a Google or Exchange calendar is named
+                // after the user's address.
+                let account = event
+                    .calendar()
+                    .and_then(|calendar| calendar.source())
+                    .map(|source| source.title().to_string())
+                    .unwrap_or_default();
+                let mut people: Vec<Person> = event
+                    .attendees()
+                    .map(|list| list.iter().map(|p| person(&p, false)).collect())
+                    .unwrap_or_default();
+                if !people.is_empty() {
+                    if let Some(organizer) = event.organizer() {
+                        people.push(person(&organizer, true));
+                    }
+                }
+                let me = account.contains('@').then_some(account.as_str());
+                let found = standing(&people, me);
+                read.push((
+                    Event {
+                        uid,
+                        title: event.title().to_string(),
+                        start_ms: ms(&event.startDate()),
+                        end_ms: ms(&event.endDate()),
+                        location: event.location().map(|l| l.to_string()).unwrap_or_default(),
+                        attendees,
+                    },
+                    account,
+                    found,
+                ));
             }
         }
+        // An account that never tells the user apart keeps every event,
+        // rather than hiding all those with people in them.
+        let knowing: HashSet<String> = read
+            .iter()
+            .filter(|(_, _, found)| matches!(found, Standing::Mine | Standing::Declined))
+            .map(|(_, account, _)| account.clone())
+            .collect();
+        let mut events: Vec<Event> = read
+            .into_iter()
+            .filter(|(_, account, found)| is_mine(*found, knowing.contains(account)))
+            .map(|(event, _, _)| event)
+            .collect();
         events.sort_by_key(|event| event.start_ms);
         Ok(events)
     }

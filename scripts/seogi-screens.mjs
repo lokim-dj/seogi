@@ -15,6 +15,7 @@ const out = process.argv[2] ?? "seogi-screens";
 const base = "http://localhost:1420/src/seogi/preview/index.html?screen=";
 const screens = [
   ["home", 1280, 800, false],
+  ["home-going", 1280, 800, false],
   ["waiting", 1280, 800, false],
   ["minutes", 1280, 800, true],
   ["recording", 1280, 800, false],

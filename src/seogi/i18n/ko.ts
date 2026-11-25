@@ -185,7 +185,7 @@ const ko = {
     inMinutes: "{{n}}분 뒤",
     inHours: "{{h}}시간 뒤",
     inHoursMinutes: "{{h}}시간 {{m}}분 뒤",
-    recordEvent: "눌러서 이 일정으로 녹음",
+    recordEvent: "눌러서 이 일정으로 녹음, 오른쪽 클릭으로 끄기",
     noTasksShort: "회의록 완료 · 할 일 없음",
     checkShort: "확인 {{n}}",
     fromInbox: "녹음함에서",
