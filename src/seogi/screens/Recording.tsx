@@ -64,11 +64,15 @@ export default function Recording() {
     if (error) setTrouble(error);
   };
 
+  const refresh = async () => {
+    const fresh = await commands.seogiMeeting(id);
+    if (fresh.status === "ok") setMeeting(fresh.data);
+  };
+
   const setInfo = async (info: Partial<MeetingInfo>) => {
     const error = await setMeetingInfo(id, info);
     if (error) setTrouble(error);
-    const fresh = await commands.seogiMeeting(id);
-    if (fresh.status === "ok") setMeeting(fresh.data);
+    await refresh();
   };
 
   const event = meeting?.event;
@@ -113,10 +117,7 @@ export default function Recording() {
         {meeting ? (
           <PeopleLine
             meeting={meeting}
-            onChanged={async () => {
-              const fresh = await commands.seogiMeeting(id);
-              if (fresh.status === "ok") setMeeting(fresh.data);
-            }}
+            onChanged={refresh}
             className="mt-3 justify-center"
           />
         ) : null}
@@ -216,6 +217,19 @@ export default function Recording() {
                     : t("recording.kindAuto")}
                 </div>
               </div>
+              {meeting ? (
+                <div>
+                  <div className="mb-1.5 text-[13.5px] t2">
+                    {t("recording.peopleField")}
+                  </div>
+                  <PeopleLine
+                    meeting={meeting}
+                    onChanged={refresh}
+                    open
+                    labelled={false}
+                  />
+                </div>
+              ) : null}
               {meeting?.template_id === "consult" ? (
                 <label className="block">
                   <span className="block text-[13.5px] t2">

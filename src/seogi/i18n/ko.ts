@@ -370,7 +370,7 @@ const ko = {
   },
   recording: {
     mayStayEmpty: "비워 둬도 돼요",
-    aboutFold: "고객 이름, 현장, 메모",
+    aboutFold: "참석자, 고객 이름, 현장, 메모",
     stopShort: "끝내기",
     titleHint: "이름을 적어 두면 회의함에서 찾기 쉬워요.",
     titleFromEvent: "캘린더 일정에서 가져온 이름이에요. 눌러서 고칠 수 있어요.",
@@ -407,7 +407,7 @@ const ko = {
     kindAuto: "정하지 않으면 내용을 보고 고릅니다.",
     kindFromEvent: "일정 제목을 보고 골랐어요.",
     customer: "고객 이름",
-    peopleField: "참석한 사람",
+    peopleField: "참석자",
     peopleHint: "쉼표로 나눠 적어 두면 받아쓴 글에 이름이 붙습니다.",
     placeField: "현장",
     noteField: "회의 메모",
