@@ -670,6 +670,7 @@ const en: Strings = {
     notify: "Notifications",
     notifyFor: "Tells you when the minutes are ready.",
     notifyTry: "Send a test",
+    askFailed: "That did not work just now. Try again in a moment.",
     notifySent:
       "Sent. If you did not see it, turn on Seogi in System Settings › Notifications.",
     notifyTitle: "Seogi",

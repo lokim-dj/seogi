@@ -622,6 +622,8 @@ mockIPC(
       }
       case "plugin:macos-permissions|check_microphone_permission":
         return micAllowed;
+      case "plugin:macos-permissions|check_accessibility_permission":
+        return dictationStatus().permitted;
       case "plugin:macos-permissions|request_microphone_permission":
         micAllowed = true;
         return null;

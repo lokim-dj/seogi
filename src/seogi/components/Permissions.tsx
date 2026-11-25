@@ -4,10 +4,11 @@
 // everything in one place; Settings shows the same rows for later. Nothing
 // here opens a window by itself: every system question comes from a press.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { platform } from "@tauri-apps/plugin-os";
 import {
+  checkAccessibilityPermission,
   checkMicrophonePermission,
   requestMicrophonePermission,
 } from "tauri-plugin-macos-permissions-api";
@@ -30,26 +31,40 @@ export default function Permissions({ firstRun }: { firstRun: boolean }) {
   const [micAsked, setMicAsked] = useState(false);
   const [typing, setTyping] = useState<Allowed>("checking");
   const [calendar, setCalendar] = useState("");
-  const [notified, setNotified] = useState(false);
+  const [notified, setNotified] = useState<"no" | "sent" | "failed">("no");
+  const [calendarTrouble, setCalendarTrouble] = useState(false);
+  // One look at a time: a slow answer is not asked again on top of itself.
+  const looking = useRef(false);
+  const typingBefore = useRef<Allowed>("checking");
 
   const look = useCallback(async () => {
-    if (mac) {
-      try {
-        setMicrophone((await checkMicrophonePermission()) ? "yes" : "no");
-      } catch {
-        setMicrophone("no");
+    if (looking.current) return;
+    looking.current = true;
+    try {
+      if (mac) {
+        const [mic, typed] = await Promise.all([
+          checkMicrophonePermission().catch(() => false),
+          checkAccessibilityPermission().catch(() => false),
+        ]);
+        setMicrophone(mic ? "yes" : "no");
+        setTyping(typed ? "yes" : "no");
+        // Just allowed: the dictation status starts dictation listening
+        // (asked once, not on every look; it does more work).
+        if (typed && typingBefore.current === "no") {
+          void commands.seogiDictationStatus();
+        }
+        typingBefore.current = typed ? "yes" : "no";
+        setCalendar(await commands.seogiMacCalendarAccess());
+      } else if (windows) {
+        const status = await commands.getWindowsMicrophonePermissionStatus();
+        setMicrophone(
+          !status.supported || status.overall_access !== "denied"
+            ? "yes"
+            : "no",
+        );
       }
-      // The same look the dictation settings use; it also starts dictation
-      // listening as soon as typing is allowed.
-      const status = await commands.seogiDictationStatus();
-      if (status.status === "ok")
-        setTyping(status.data.permitted ? "yes" : "no");
-      setCalendar(await commands.seogiMacCalendarAccess());
-    } else if (windows) {
-      const status = await commands.getWindowsMicrophonePermissionStatus();
-      setMicrophone(
-        !status.supported || status.overall_access !== "denied" ? "yes" : "no",
-      );
+    } finally {
+      looking.current = false;
     }
   }, [mac, windows]);
 
@@ -83,15 +98,16 @@ export default function Permissions({ firstRun }: { firstRun: boolean }) {
 
   const askCalendar = async () => {
     const result = await commands.seogiMacCalendarRequest();
-    setCalendar(result.status === "ok" ? result.data : "denied");
+    setCalendarTrouble(result.status === "error");
+    if (result.status === "ok") setCalendar(result.data);
   };
 
   const tryNotification = async () => {
-    await commands.seogiTryNotification(
+    const result = await commands.seogiTryNotification(
       t("permissions.notifyTitle"),
       t("permissions.notifyBody"),
     );
-    setNotified(true);
+    setNotified(result.status === "ok" ? "sent" : "failed");
   };
 
   const openLabel = t(
@@ -177,7 +193,11 @@ export default function Permissions({ firstRun }: { firstRun: boolean }) {
                 {name(t("permissions.calendar"), false)}
                 <div className="h">
                   {t("permissions.calendarFor")}
-                  {calendarBlocked ? (
+                  {calendarTrouble ? (
+                    <span className="block rt">
+                      {t("permissions.askFailed")}
+                    </span>
+                  ) : calendarBlocked ? (
                     <span className="block">
                       {t("permissions.calendarBlocked")}
                     </span>
@@ -212,8 +232,10 @@ export default function Permissions({ firstRun }: { firstRun: boolean }) {
               {name(t("permissions.notify"), false)}
               <div className="h">
                 {t("permissions.notifyFor")}
-                {notified ? (
+                {notified === "sent" ? (
                   <span className="block">{t("permissions.notifySent")}</span>
+                ) : notified === "failed" ? (
+                  <span className="block rt">{t("permissions.askFailed")}</span>
                 ) : null}
               </div>
             </div>

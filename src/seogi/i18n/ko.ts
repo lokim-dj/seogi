@@ -658,6 +658,7 @@ const ko = {
     notify: "알림",
     notifyFor: "회의록이 다 되면 알려 드려요.",
     notifyTry: "알림 보내 보기",
+    askFailed: "지금은 되지 않았어요. 잠시 뒤 다시 눌러 주세요.",
     notifySent:
       "알림을 보냈어요. 보이지 않으면 시스템 설정 › 알림에서 '서기'를 켜 주세요.",
     notifyTitle: "서기",
