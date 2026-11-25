@@ -90,6 +90,7 @@ const config: Config = {
       base_url: "http://localhost:11434",
       model: "gemma3:4b",
     },
+    numbers: true,
     button: false,
     button_at: null,
     key_moved: true,
@@ -108,6 +109,7 @@ const dictation: Dictation = {
   fillers: true,
   tidy: config.dictation.tidy,
   tidy_with: config.dictation.tidy_with,
+  numbers: config.dictation.numbers,
   button: false,
   keep: 5,
 };

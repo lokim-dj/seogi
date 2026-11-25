@@ -2119,7 +2119,11 @@ sounds: boolean;
 /**
  * Take out "음", "어" and the like without a model.
  */
-fillers: boolean; tidy: boolean; tidy_with: Provider; button: boolean; 
+fillers: boolean; tidy: boolean; tidy_with: Provider; 
+/**
+ * Spoken numbers before a unit written as digits.
+ */
+numbers: boolean; button: boolean; 
 /**
  * How many recent dictations are kept (only on this computer, never in
  * the meetings).
@@ -2143,6 +2147,11 @@ tidy: boolean;
  * The model that tidies them.
  */
 tidy_with: Provider; 
+/**
+ * Write spoken numbers before a unit as digits ("이십 초" → "20초").
+ * On unless turned off; a rule, not a model, so it costs nothing.
+ */
+numbers: boolean; 
 /**
  * Show the floating microphone key above other apps.
  */
