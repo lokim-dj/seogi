@@ -231,6 +231,12 @@ pub fn get_icon_path(theme: AppTheme, state: TrayIconState, badge: bool) -> &'st
     let dark_bar = theme == AppTheme::Dark;
     let dim = crate::seogi::status::dim();
     match (state, dark_bar, dim) {
+        // macOS tints the one-colour template for its bar. Windows draws the
+        // picture as it is, so the dark (default) taskbar needs a white mark
+        // or the black one disappears into it.
+        (TrayIconState::Idle, true, _) if !cfg!(target_os = "macos") => {
+            "resources/seogi/tray-white.png"
+        }
         (TrayIconState::Idle, _, _) => "resources/seogi/tray.png",
         (TrayIconState::Recording, true, false) => "resources/seogi/tray-rec-dark.png",
         (TrayIconState::Recording, true, true) => "resources/seogi/tray-rec-dim-dark.png",
