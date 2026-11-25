@@ -730,6 +730,74 @@
   }
 
   /* ----- settings ----- */
+  /* The groups down the left, the chosen group's rows beside them. In a
+     narrow window the groups run along the top instead. */
+  .set-wrap {
+    width: min(840px, calc(100vw - 32px));
+    margin: 0 auto;
+  }
+  .set-grid {
+    display: grid;
+    grid-template-columns: 148px minmax(0, 1fr);
+    gap: 0 44px;
+    align-items: start;
+    margin-top: 20px;
+  }
+  .set-nav {
+    position: sticky;
+    top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .set-nav > button {
+    padding: 6px 0 6px 12px;
+    border: 0;
+    border-left: 2px solid transparent;
+    background: transparent;
+    text-align: left;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--t3);
+    border-radius: 0;
+  }
+  .set-nav > button:hover {
+    color: var(--t1);
+  }
+  .set-nav > [aria-selected="true"] {
+    color: var(--t1);
+    font-weight: 700;
+    border-left-color: var(--t1);
+  }
+  .set-pane > .set-h:first-child,
+  .set-pane > section:first-child > .set-h:first-child {
+    margin-top: 0;
+  }
+  @media (max-width: 719px) {
+    .set-grid {
+      grid-template-columns: minmax(0, 1fr);
+      margin-top: 14px;
+    }
+    .set-nav {
+      position: static;
+      flex-direction: row;
+      gap: 20px;
+      overflow-x: auto;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 22px;
+      scrollbar-width: none;
+    }
+    .set-nav > button {
+      padding: 8px 0;
+      border-left: 0;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      white-space: nowrap;
+    }
+    .set-nav > [aria-selected="true"] {
+      border-bottom-color: var(--t1);
+    }
+  }
   .set-h {
     font-size: 13.5px;
     font-weight: 500;

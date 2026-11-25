@@ -532,6 +532,8 @@ const ko = {
     speechModelHint:
       "녹음을 글로 받아쓰는 모델이에요. 이 컴퓨터 안에서 돌아요.",
     moreSettings: "더 보기",
+    parts: "설정 분류",
+    startAndPermissions: "시작과 권한",
     start: "시작",
     atLogin: "컴퓨터를 켜면 서기 켜기",
     atLoginFailed:
@@ -590,7 +592,7 @@ const ko = {
     needsKey: "키가 필요해요",
     removeKey: "키 지우기",
     saveKey: "키 저장",
-    speech: "녹음 받아쓰기",
+    speech: "녹음",
     speechModel: "받아쓰기 모델",
     download: "내려받기",
     downloading: "내려받는 중 {{percent}}%",

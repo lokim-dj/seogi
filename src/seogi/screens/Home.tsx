@@ -265,7 +265,7 @@ function RecordLine({ onNote }: { onNote: (note: string) => void }) {
             <button
               type="button"
               className="lnk justify-self-end"
-              onClick={() => go({ name: "settings" })}
+              onClick={() => go({ name: "settings", part: "keep" })}
             >
               {t("band.connectCalendar")}
             </button>

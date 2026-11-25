@@ -42,6 +42,12 @@ const unfold = async (page, title) => {
   await page.waitForTimeout(200);
 };
 
+/** Opens a group of the settings from the side list. */
+const part = async (page, name) => {
+  await page.getByRole("tab", { name, exact: true }).click();
+  await page.waitForTimeout(200);
+};
+
 const expect = (ok, what) => {
   if (!ok) throw new Error(what);
 };
@@ -494,6 +500,7 @@ await flow(
   "settings: the Mac's calendars are asked for once, then ticked",
   "settings",
   async (page, called) => {
+    await part(page, "보관과 일정");
     await page
       .getByRole("button", { name: "맥 캘린더 앱에서 가져오기" })
       .click();
@@ -522,6 +529,7 @@ await flow(
   "settings: a pasted calendar address is checked, saved and read",
   "settings",
   async (page, called) => {
+    await part(page, "보관과 일정");
     await unfold(page, "더 보기");
     const field = page.getByRole("textbox", {
       name: "구글 캘린더 비공개 주소",
@@ -553,6 +561,7 @@ await flow(
   "settings: an address that is not one says why",
   "settings",
   async (page) => {
+    await part(page, "보관과 일정");
     await unfold(page, "더 보기");
     const field = page.getByRole("textbox", {
       name: "구글 캘린더 비공개 주소",
@@ -562,6 +571,40 @@ await flow(
     await page.getByRole("alert").waitFor({ timeout: 5000 });
     const text = await page.getByRole("alert").textContent();
     expect(text?.includes("비공개 주소(iCal 형식)"), "no reason was given");
+  },
+);
+
+await flow(
+  "settings: the side list moves by arrow keys and is remembered",
+  "settings",
+  async (page) => {
+    const first = page.getByRole("tab", { name: "회의록 정리" });
+    expect(
+      (await first.getAttribute("aria-selected")) === "true",
+      "the first group is not chosen at the start",
+    );
+    await first.focus();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    const dictation = page.getByRole("tab", { name: "받아쓰기", exact: true });
+    expect(
+      (await dictation.getAttribute("aria-selected")) === "true",
+      "two arrow presses did not reach dictation",
+    );
+    expect(
+      await dictation.evaluate((el) => el === document.activeElement),
+      "the focus did not follow the arrow keys",
+    );
+    await page.getByRole("switch", { name: "받아쓰기", exact: true }).waitFor();
+    await page.getByRole("button", { name: "회의함" }).click();
+    await page.getByRole("button", { name: "설정" }).first().click();
+    await page.waitForTimeout(300);
+    expect(
+      (await page
+        .getByRole("tab", { name: "받아쓰기", exact: true })
+        .getAttribute("aria-selected")) === "true",
+      "the group looked at last was not opened again",
+    );
   },
 );
 
@@ -631,6 +674,7 @@ await flow(
   "dictation: turning it on saves it and shows the rest",
   "settings",
   async (page, called) => {
+    await part(page, "받아쓰기");
     expect(
       (await page.getByRole("combobox", { name: "받아쓰기 모델" }).count()) ===
         0,
