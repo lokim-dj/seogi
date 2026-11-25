@@ -349,6 +349,14 @@ impl Meeting {
             return None;
         }
         let has = |text: &str| text.to_lowercase().contains(&words);
+        // A task found by who does it shows who, as the minutes line does.
+        let line = |entry: &Entry| {
+            if has(&entry.text) {
+                entry.text.clone()
+            } else {
+                format!("{} {}", entry.owner, entry.text)
+            }
+        };
         let mut places = Vec::new();
         let mut add = |kind, text: &str, section: &str, index: usize, ms| {
             places.push(FoundPlace {
@@ -376,12 +384,15 @@ impl Meeting {
                 .filter(|s| s.kind == SectionKind::Actions);
             for section in tasks {
                 entries(section, &mut |entry, index| {
-                    add(FoundIn::Entry, &entry.text, &section.key, index, None)
+                    add(FoundIn::Entry, &line(entry), &section.key, index, None)
                 });
             }
             for (index, part) in minutes.story.iter().enumerate() {
-                if has(&part.title) || has(&part.text) {
+                if has(&part.text) {
                     add(FoundIn::Story, &part.text, "", index, None);
+                } else if has(&part.title) {
+                    let text = format!("{} · {}", part.title, part.text);
+                    add(FoundIn::Story, &text, "", index, None);
                 }
             }
             // The screen shows the summary only where there is no story.
@@ -401,7 +412,7 @@ impl Meeting {
                 );
             for section in rest {
                 entries(section, &mut |entry, index| {
-                    add(FoundIn::Entry, &entry.text, &section.key, index, None)
+                    add(FoundIn::Entry, &line(entry), &section.key, index, None)
                 });
             }
         }
@@ -851,6 +862,17 @@ mod tests {
         assert_eq!(found.places[4].ms, Some(65_000));
         assert_eq!(found.places[4].text, "이사는 언제 하세요?");
         assert_eq!(found.total, 5);
+
+        // Found only in who does a task, or in a story part's heading: the
+        // line shows those words too.
+        assert_eq!(
+            meeting.found("이사팀").unwrap().places[0].text,
+            "이사팀 견적 보내기"
+        );
+        assert_eq!(
+            meeting.found("일정").unwrap().places[0].text,
+            "일정 · 이사는 다음 달로 미뤘다."
+        );
 
         // Without a story the screen shows the summary, and so does a search.
         meeting.minutes[0].story.clear();

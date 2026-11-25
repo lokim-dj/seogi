@@ -418,15 +418,19 @@ function search(query: string): Found[] {
     const entries = (sections: typeof minutes.sections) => {
       for (const section of sections) {
         section.entries.forEach((entry, index) => {
-          if (has(entry.text) || has(entry.owner)) {
-            add("entry", entry.text, section.key, index);
+          if (has(entry.text)) add("entry", entry.text, section.key, index);
+          else if (has(entry.owner)) {
+            add("entry", `${entry.owner} ${entry.text}`, section.key, index);
           }
         });
       }
     };
     entries(minutes.sections.filter((s) => s.kind === "actions"));
     (minutes.story ?? []).forEach((part, index) => {
-      if (has(part.title) || has(part.text)) add("story", part.text, "", index);
+      if (has(part.text)) add("story", part.text, "", index);
+      else if (has(part.title)) {
+        add("story", `${part.title} · ${part.text}`, "", index);
+      }
     });
     if ((minutes.story ?? []).length === 0 && has(minutes.summary)) {
       add("summary", minutes.summary);

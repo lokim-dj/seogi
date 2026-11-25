@@ -436,6 +436,17 @@ function useGoToSpot(
       );
     });
     const away = (event: PointerEvent) => {
+      // Dragging a scroll bar is scrolling, which keeps the mark.
+      const box = event.target;
+      if (
+        box instanceof HTMLElement &&
+        ((box.scrollHeight > box.clientHeight &&
+          event.offsetX >= box.clientWidth) ||
+          (box.scrollWidth > box.clientWidth &&
+            event.offsetY >= box.clientHeight))
+      ) {
+        return;
+      }
       const line = sheet.current?.querySelector("[data-found]");
       if (line && event.target instanceof Node && line.contains(event.target)) {
         return;
