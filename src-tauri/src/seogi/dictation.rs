@@ -565,7 +565,82 @@ pub fn start(app: &AppHandle) {
         }
         super::mic_button::prepare(&app);
         apply(&app);
+        if cfg!(target_os = "macos") {
+            watch_permission(&app);
+        }
     });
+}
+
+/// How often the typing permission is looked at while dictation is on.
+const PERMISSION_LOOK_EVERY: Duration = Duration::from_secs(3);
+
+/// What the permission watcher does after a look.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PermissionStep {
+    Nothing,
+    /// Dictation is on but the system stopped letting Seogi type: say so,
+    /// and let go of the shortcut so it is taken afresh once allowed.
+    Lost,
+    /// Allowed again (or dictation turned off): take the notice down.
+    Regained,
+    /// Allowed, on, and the shortcut not listened for: listen.
+    Listen,
+}
+
+fn permission_step(enabled: bool, permitted: bool, listening: bool, told: bool) -> PermissionStep {
+    if enabled && !permitted {
+        if told {
+            PermissionStep::Nothing
+        } else {
+            PermissionStep::Lost
+        }
+    } else if told {
+        PermissionStep::Regained
+    } else if enabled && !listening {
+        PermissionStep::Listen
+    } else {
+        PermissionStep::Nothing
+    }
+}
+
+/// macOS ties the Accessibility permission to the app's signature, so an
+/// update it does not recognize as the same app loses it, and the shortcut
+/// stops without a word. A light look every few seconds tells the user (the
+/// menu bar and the window) and takes the shortcut back the moment they
+/// allow Seogi again, without restarting it.
+fn watch_permission(app: &AppHandle) {
+    use crate::notices::{self, Notice, NoticeCode, NoticeSource};
+    let mut told = false;
+    loop {
+        std::thread::sleep(PERMISSION_LOOK_EVERY);
+        let enabled = Secretary::of(app).is_some_and(|s| s.config().dictation.enabled);
+        let step = permission_step(enabled, permitted(), is_listening(), told);
+        match step {
+            PermissionStep::Nothing => {}
+            PermissionStep::Lost => {
+                warn!("Dictation is on but the system no longer lets Seogi type");
+                stop_listening(app);
+                notices::raise_without_overlay(
+                    app,
+                    Notice::new(NoticeCode::TypingPermissionLost, NoticeSource::Typing),
+                );
+                told = true;
+            }
+            PermissionStep::Regained => {
+                notices::clear_matching(
+                    app,
+                    NoticeSource::Typing,
+                    Some(NoticeCode::TypingPermissionLost),
+                );
+                told = false;
+                if enabled {
+                    info!("The system lets Seogi type again");
+                    apply(app);
+                }
+            }
+            PermissionStep::Listen => apply(app),
+        }
+    }
 }
 
 fn listen(app: &AppHandle) {
@@ -1805,6 +1880,23 @@ fn billions(name: &str) -> Option<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_permission_watcher_tells_once_and_listens_again_when_allowed() {
+        use PermissionStep::*;
+        // On, permission gone: told once, then quiet until it changes.
+        assert_eq!(permission_step(true, false, true, false), Lost);
+        assert_eq!(permission_step(true, false, false, true), Nothing);
+        // Allowed again: the notice goes and the shortcut is taken back.
+        assert_eq!(permission_step(true, true, false, true), Regained);
+        // Allowed at a look with nothing told (e.g. allowed before the first
+        // look): just listen.
+        assert_eq!(permission_step(true, true, false, false), Listen);
+        assert_eq!(permission_step(true, true, true, false), Nothing);
+        // Dictation off: nothing to tell, and a notice already shown goes.
+        assert_eq!(permission_step(false, false, false, false), Nothing);
+        assert_eq!(permission_step(false, false, false, true), Regained);
+    }
 
     #[test]
     fn digits_are_on_for_settings_saved_before_they_existed() {

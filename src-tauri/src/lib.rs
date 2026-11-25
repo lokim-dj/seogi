@@ -331,6 +331,25 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 show_main_window(app);
             }
             "notice" => {
+                // A lost permission is given back where macOS keeps it, so
+                // the line goes straight there (the window says the same):
+                // System Settings, or macOS's own question for a calendar
+                // access it no longer knows about.
+                match notices::tray_headline(app) {
+                    Some(n) if n.code == notices::NoticeCode::TypingPermissionLost => {
+                        let _ = seogi::commands::seogi_open_typing_permission();
+                    }
+                    Some(n) if n.code == notices::NoticeCode::CalendarPermissionLost => {
+                        if n.detail.as_deref() == Some("not_determined") {
+                            tauri::async_runtime::spawn(
+                                seogi::commands::seogi_mac_calendar_request(),
+                            );
+                        } else {
+                            let _ = seogi::commands::seogi_open_calendar_permission();
+                        }
+                    }
+                    _ => {}
+                }
                 show_main_window(app);
             }
             "check_updates" => {
@@ -904,6 +923,7 @@ pub fn run(cli_args: CliArgs) {
             seogi::commands::seogi_download_dictation_model,
             seogi::commands::seogi_mic_menu,
             seogi::commands::seogi_open_typing_permission,
+            seogi::commands::seogi_open_calendar_permission,
             seogi::commands::seogi_login_item,
             seogi::commands::seogi_open_login_items,
             seogi::commands::seogi_try_notification,

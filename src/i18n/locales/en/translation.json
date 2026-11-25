@@ -931,6 +931,8 @@
   },
   "errors": {
     "loadDirectory": "Error loading directory: {{error}}",
+    "calendarPermissionLostTitle": "Allow Seogi again in Calendars to read your events",
+    "typingPermissionLostTitle": "Allow Seogi again in Accessibility to use dictation",
     "micPermissionDeniedTitle": "Microphone Access Denied",
     "micPermissionDenied": {
       "generic": "Microphone access was denied by the operating system. Please grant microphone permission in your system settings.",

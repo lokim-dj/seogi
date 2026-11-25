@@ -1090,7 +1090,37 @@ impl Secretary {
         drop(recording);
         info!("Recording {} from {}", meeting.id, meeting.device);
         self.recording_changed(true);
+        self.watch_for_no_sound(&meeting.id);
         Ok(meeting.id)
+    }
+
+    /// A microphone macOS does not let Seogi use gives silence, not an
+    /// error. A recording started by its shortcut or by the calendar may have
+    /// no window in sight, so a recording that hears nothing at all a few
+    /// seconds in is said once with a notification.
+    fn watch_for_no_sound(self: &Arc<Self>, id: &str) {
+        let me = Arc::downgrade(self);
+        let id = id.to_string();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(6));
+            let Some(me) = me.upgrade() else {
+                return;
+            };
+            let dead = lock(&me.recording)
+                .as_ref()
+                .is_some_and(|active| active.id == id && active.session.is_dead());
+            if dead {
+                warn!("Recording {id} hears nothing: muted, or the microphone is not allowed");
+                me.notify(
+                    say(&me.app, "소리가 들어오지 않습니다", "No sound is coming in"),
+                    say(
+                        &me.app,
+                        "마이크 음소거나, 시스템 설정 › 개인정보 보호 및 보안 › 마이크에서 서기가 켜져 있는지 확인해 주세요.",
+                        "Check that the microphone is not muted and that Seogi is on in System Settings › Privacy & Security › Microphone.",
+                    ),
+                );
+            }
+        });
     }
 
     /// Ends the recording and queues it. Returns its id.
@@ -1821,15 +1851,56 @@ impl Secretary {
         *lock(&self.calendars) = self.cached_calendars();
         let mut read_at: Option<Instant> = None;
         let mut reminded: std::collections::HashSet<(String, i64)> = Default::default();
+        let mut told: Option<&'static str> = None;
         loop {
             let due = read_at.is_none_or(|at| at.elapsed() >= REFRESH_EVERY);
-            if self.calendars_stale.swap(false, Ordering::AcqRel) || due {
+            // macOS can take the Calendar app's permission away (an update
+            // it did not recognize as the same app). Asking whether it is
+            // back costs nothing, so each turn does, and the calendars are
+            // read the moment it is, without restarting Seogi.
+            let allowed_again =
+                self.calendar_denied() && super::mac_calendar::access() == "granted";
+            if self.calendars_stale.swap(false, Ordering::AcqRel) || due || allowed_again {
                 self.read_calendars();
                 read_at = Some(Instant::now());
+            }
+            // Right after a new signature macOS may not list Seogi at all
+            // (not_determined): then it is asked, not sent to System Settings.
+            let refused = self.calendar_denied().then(|| {
+                if super::mac_calendar::access() == "not_determined" {
+                    "not_determined"
+                } else {
+                    "denied"
+                }
+            });
+            if refused != told {
+                use crate::notices::{self, Notice, NoticeCode, NoticeSource};
+                match refused {
+                    Some(access) => notices::raise_without_overlay(
+                        &self.app,
+                        Notice::new(NoticeCode::CalendarPermissionLost, NoticeSource::Calendar)
+                            .with_detail(access.to_string()),
+                    ),
+                    None => notices::clear_matching(
+                        &self.app,
+                        NoticeSource::Calendar,
+                        Some(NoticeCode::CalendarPermissionLost),
+                    ),
+                }
+                told = refused;
             }
             self.remind(&mut reminded);
             std::thread::sleep(Duration::from_secs(20));
         }
+    }
+
+    /// Calendars from the Calendar app were chosen, and macOS refused them
+    /// at the last read.
+    fn calendar_denied(&self) -> bool {
+        lock(&self.calendar_status)
+            .mac
+            .as_ref()
+            .is_some_and(|check| check.reason == "mac_denied")
     }
 
     fn calendar_cache(&self, index: usize) -> PathBuf {

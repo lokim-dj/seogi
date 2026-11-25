@@ -60,6 +60,12 @@ const NOTICE_DISPLAY: Record<NoticeCode, NoticeDisplay> = {
     title: "errors.filePostProcessFailedTitle",
     explanation: (t) => t("errors.filePostProcessFailed"),
   },
+  TypingPermissionLost: {
+    title: "errors.typingPermissionLostTitle",
+  },
+  CalendarPermissionLost: {
+    title: "errors.calendarPermissionLostTitle",
+  },
 };
 
 export const noticeDisplay = (code: NoticeCode) => NOTICE_DISPLAY[code];

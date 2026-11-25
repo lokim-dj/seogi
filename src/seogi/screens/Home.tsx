@@ -23,6 +23,7 @@ import {
   SlidersIcon,
 } from "../components/icons";
 import UpdateNotice from "../components/UpdateNotice";
+import PermissionNotice from "../components/PermissionNotice";
 import { ConfirmDelete, busy } from "../components/DeleteMeeting";
 import { NS } from "../i18n";
 import { clock, daysAgo, fullDay, hm, keysShort, longDay } from "../lib/format";
@@ -154,6 +155,7 @@ export default function Home() {
       <main className="a-col">
         <RecordLine onNote={warn} />
         <UpdateNotice />
+        <PermissionNotice />
         {note ? (
           <p
             role={bad ? "alert" : "status"}

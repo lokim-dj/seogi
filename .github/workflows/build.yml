@@ -1,8 +1,12 @@
 name: Build
 
 # Builds the two platforms Seogi ships for: Windows x64 (NSIS installer) and
-# Apple Silicon macOS (dmg). Both are unsigned. The Windows job also installs
-# the result silently and runs it headless, so a broken package fails here.
+# Apple Silicon macOS (dmg). Windows is unsigned. macOS is signed with Seogi's
+# own self-signed certificate (no Apple account, so no notarization): the same
+# signature every version, so macOS keeps its permissions across updates.
+# Without the certificate's secrets (a fork) it falls back to ad-hoc. The
+# Windows job also installs the result silently and runs it headless, so a
+# broken package fails here.
 
 on:
   workflow_dispatch:
@@ -145,6 +149,50 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      # macOS ties permissions such as Accessibility to the app's designated
+      # requirement. Ad-hoc signing changes it every build, so each update
+      # lost the permission. The certificate goes into a throwaway keychain
+      # and Tauri signs with it by APPLE_SIGNING_IDENTITY. APPLE_CERTIFICATE
+      # is kept away from Tauri on purpose: its own import only accepts
+      # Apple-issued certificate names. No APPLE_ID, so nothing is notarized.
+      - name: Import the signing certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # "Release" when called from the release workflow (see concurrency).
+          CALLED_BY: ${{ github.workflow }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_CERTIFICATE_PASSWORD" ] || [ -z "$APPLE_SIGNING_IDENTITY" ]; then
+            # A release signed ad-hoc would make every Mac ask for its
+            # permissions again, so a release stops here instead.
+            if [ "$CALLED_BY" = "Release" ]; then
+              echo "::error::A release must be signed: APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD and APPLE_SIGNING_IDENTITY are all needed"
+              exit 1
+            fi
+            echo "No signing certificate in this run's secrets; the app is signed ad-hoc."
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/seogi-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/seogi-signing.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -t 3600 -u "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/seogi-signing.p12" -k "$keychain" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/seogi-signing.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+            -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" \
+            $(security list-keychains -d user | tr -d '"')
+          if ! security find-identity -p codesigning "$keychain" | grep -q "$APPLE_SIGNING_IDENTITY"; then
+            echo "::error::APPLE_SIGNING_IDENTITY is not in the imported certificate"
+            exit 1
+          fi
+          echo "SEOGI_SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY" >> "$GITHUB_ENV"
+
       - name: Build dmg
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -169,6 +217,28 @@ jobs:
           app="$(find src-tauri/target/aarch64-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' | head -1)"
           test -n "$app"
           "$app/Contents/MacOS/seogi" --list-devices
+
+      # The designated requirement must name the certificate (certificate
+      # leaf = H"..."), not a hash of this build's code, or the next update
+      # loses the Accessibility permission again.
+      - name: Show the signature
+        run: |
+          app="$(find src-tauri/target/aarch64-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' | head -1)"
+          codesign --verify --deep --strict "$app"
+          codesign -dvv "$app" 2>&1
+          requirement="$(codesign -d -r- "$app" 2>&1)"
+          echo "$requirement"
+          if [ -n "${SEOGI_SIGNING_KEYCHAIN:-}" ] && ! echo "$requirement" | grep -q 'certificate leaf = H"'; then
+            echo "::error::The app is not signed with the certificate"
+            exit 1
+          fi
+
+      - name: Remove the signing keychain
+        if: always()
+        run: |
+          if [ -n "${SEOGI_SIGNING_KEYCHAIN:-}" ]; then
+            security delete-keychain "$SEOGI_SIGNING_KEYCHAIN" || true
+          fi
 
       - uses: actions/upload-artifact@v7
         with:

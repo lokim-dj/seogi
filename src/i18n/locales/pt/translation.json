@@ -931,6 +931,8 @@
   },
   "errors": {
     "loadDirectory": "Erro ao carregar diretório: {{error}}",
+    "calendarPermissionLostTitle": "Allow Seogi again in Calendars to read your events",
+    "typingPermissionLostTitle": "Allow Seogi again in Accessibility to use dictation",
     "micPermissionDeniedTitle": "Acesso ao microfone negado",
     "micPermissionDenied": {
       "generic": "O acesso ao microfone foi negado pelo sistema operacional. Conceda a permissão do microfone nas configurações do sistema.",

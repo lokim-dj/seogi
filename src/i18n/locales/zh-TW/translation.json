@@ -931,6 +931,8 @@
   },
   "errors": {
     "loadDirectory": "載入目錄時發生錯誤: {{error}}",
+    "calendarPermissionLostTitle": "Allow Seogi again in Calendars to read your events",
+    "typingPermissionLostTitle": "Allow Seogi again in Accessibility to use dictation",
     "micPermissionDeniedTitle": "麥克風存取被拒絕",
     "micPermissionDenied": {
       "generic": "作業系統拒絕了麥克風存取。請在系統設定中授予麥克風權限。",

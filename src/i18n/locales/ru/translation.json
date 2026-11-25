@@ -931,6 +931,8 @@
   },
   "errors": {
     "loadDirectory": "Ошибка загрузки каталога: {{error}}.",
+    "calendarPermissionLostTitle": "Allow Seogi again in Calendars to read your events",
+    "typingPermissionLostTitle": "Allow Seogi again in Accessibility to use dictation",
     "micPermissionDeniedTitle": "Доступ к микрофону запрещён",
     "micPermissionDenied": {
       "generic": "Доступ к микрофону был запрещён операционной системой. Предоставьте разрешение на использование микрофона в настройках системы.",

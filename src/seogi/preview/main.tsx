@@ -794,6 +794,26 @@ mockIPC(
           addresses: config.calendar_urls.map(() => read),
         };
       }
+      case "get_active_notices":
+        // `?permission-lost` shows the bands for lost permissions.
+        return new URLSearchParams(window.location.search).has(
+          "permission-lost",
+        )
+          ? [
+              {
+                code: "CalendarPermissionLost",
+                level: "error",
+                source: "calendar",
+                detail: "not_determined",
+              },
+              {
+                code: "TypingPermissionLost",
+                level: "error",
+                source: "typing",
+                detail: null,
+              },
+            ]
+          : [];
       case "plugin:updater|check":
         // `?update` shows a new version on offer.
         return new URLSearchParams(window.location.search).has("update")
