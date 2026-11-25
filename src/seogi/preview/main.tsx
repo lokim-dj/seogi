@@ -109,6 +109,15 @@ const dictation: Dictation = {
   keep: 5,
 };
 
+// The recent dictations; "지우기" takes them out for the rest of the visit.
+let recentDictations = [
+  {
+    id: 2,
+    text: "내일 회의는 3시로 옮기고요, 자료는 다음 두 가지를 준비해 주세요.\n1. 매출표\n2. 일정표",
+    at_ms: now - 4 * minute,
+  },
+  { id: 1, text: "네, 오늘 안에 보내 드릴게요.", at_ms: now - 31 * minute },
+];
 const dictationStatus = (): DictationStatus => ({
   permitted:
     (screen !== "settings-dictation" || dictation.button) &&
@@ -175,13 +184,7 @@ const dictationStatus = (): DictationStatus => ({
     },
   ],
   ollama_running: true,
-  recent: [
-    {
-      text: "내일 회의는 3시로 옮기고요, 자료는 다음 두 가지를 준비해 주세요.\n1. 매출표\n2. 일정표",
-      at_ms: now - 4 * minute,
-    },
-    { text: "네, 오늘 안에 보내 드릴게요.", at_ms: now - 31 * minute },
-  ],
+  recent: [...recentDictations],
 });
 
 const readiness: Readiness = {
@@ -434,6 +437,14 @@ mockIPC(
         return null;
       case "seogi_copy_last_dictation":
         return null;
+      case "seogi_forget_dictations": {
+        const ids = args.ids as number[] | null;
+        const before = recentDictations.length;
+        recentDictations = ids
+          ? recentDictations.filter((item) => !ids.includes(item.id))
+          : [];
+        return before - recentDictations.length;
+      }
       case "seogi_try_summary":
         return { ok: true, ms: 2100, model: "claude sonnet", trouble: "" };
       case "seogi_dictation":

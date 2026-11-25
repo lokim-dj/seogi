@@ -764,6 +764,9 @@ const en: Strings = {
     keepNone: "Nothing dictated yet.",
     copy: "Copy",
     copied: "Copied.",
+    forget: "Delete",
+    forgetAll: "Delete all",
+    forgotten: "Deleted.",
     errors: {
       shortcut_taken: "That key is {{by}}.",
       shortcut_empty: "Pick a shortcut.",

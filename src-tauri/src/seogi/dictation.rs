@@ -176,6 +176,8 @@ pub struct TakenKeys {
 /// A recent dictation, for the settings screen.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct RecentDictation {
+    /// The dictation history's own id, for forgetting it.
+    pub id: i64,
     pub text: String,
     pub at_ms: i64,
 }
@@ -828,6 +830,7 @@ fn recent(app: &AppHandle) -> Vec<RecentDictation> {
                         .filter(|t| !t.trim().is_empty())
                         .unwrap_or(entry.transcription_text);
                     (!text.trim().is_empty()).then(|| RecentDictation {
+                        id: entry.id,
                         text,
                         at_ms: entry.timestamp * 1000,
                     })
@@ -836,6 +839,48 @@ fn recent(app: &AppHandle) -> Vec<RecentDictation> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Forgets dictations on this computer: their words and their audio go from
+/// the dictation history, so they do not come back. `None` forgets every
+/// dictation. Returns how many went. Only dictations: files transcribed in
+/// the dictation history are left alone.
+pub async fn forget(app: &AppHandle, ids: Option<Vec<i64>>) -> Result<usize, String> {
+    let history = app
+        .try_state::<Arc<HistoryManager>>()
+        .ok_or("the dictation history is not ready")?;
+    let entries = history
+        .get_history_entries(None, None)
+        .await
+        .map_err(|e| format!("{e:#}"))?
+        .entries;
+    let gone = dictations_to_forget(&entries, ids.as_deref());
+    for id in &gone {
+        history
+            .delete_entry(*id)
+            .await
+            .map_err(|e| format!("{e:#}"))?;
+    }
+    // The words kept for "복사" after a failed paste go with them.
+    if ids.is_none() || !gone.is_empty() {
+        if let Ok(mut last) = LAST_WORDS.lock() {
+            last.clear();
+        }
+    }
+    Ok(gone.len())
+}
+
+/// The dictations among `entries` to forget: those in `ids`, or all.
+fn dictations_to_forget(
+    entries: &[crate::managers::history::HistoryEntry],
+    ids: Option<&[i64]>,
+) -> Vec<i64> {
+    entries
+        .iter()
+        .filter(|entry| entry.source_name.is_none())
+        .filter(|entry| ids.is_none_or(|ids| ids.contains(&entry.id)))
+        .map(|entry| entry.id)
+        .collect()
 }
 
 // ----- keys ------------------------------------------------------------------
@@ -1803,6 +1848,30 @@ mod tests {
             .collect();
         assert_eq!(recommended.len(), 1);
         assert!(DEFAULT_DICTATION_MODEL.contains(recommended[0]));
+    }
+
+    #[test]
+    fn only_dictations_are_forgotten() {
+        let entry = |id: i64, file: Option<&str>| crate::managers::history::HistoryEntry {
+            id,
+            file_name: format!("{id}.wav"),
+            timestamp: id,
+            saved: false,
+            title: String::new(),
+            transcription_text: "말한 것".into(),
+            post_processed_text: None,
+            post_process_prompt: None,
+            post_process_requested: false,
+            source_name: file.map(str::to_string),
+            language: None,
+            language_source: None,
+        };
+        let entries = vec![entry(3, None), entry(2, Some("회의.m4a")), entry(1, None)];
+        assert_eq!(dictations_to_forget(&entries, None), vec![3, 1]);
+        assert_eq!(dictations_to_forget(&entries, Some(&[1])), vec![1]);
+        // A transcribed file is never taken, even when asked for by id.
+        assert!(dictations_to_forget(&entries, Some(&[2])).is_empty());
+        assert!(dictations_to_forget(&entries, Some(&[])).is_empty());
     }
 
     #[test]

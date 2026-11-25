@@ -750,6 +750,9 @@ const ko = {
     keepNone: "아직 받아쓴 글이 없어요.",
     copy: "복사",
     copied: "복사했습니다.",
+    forget: "지우기",
+    forgetAll: "모두 지우기",
+    forgotten: "지웠습니다.",
     errors: {
       shortcut_taken: "그 키는 {{by}}이라 쓸 수 없어요.",
       shortcut_empty: "단축키를 골라 주세요.",

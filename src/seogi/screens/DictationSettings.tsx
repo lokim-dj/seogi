@@ -114,6 +114,23 @@ export default function DictationSettings({
     void look();
   };
 
+  // Gone from the list at once, and from the dictation history for good.
+  const forget = async (ids: number[] | null) => {
+    const before = status;
+    setStatus({
+      ...status,
+      recent: ids ? status.recent.filter((item) => !ids.includes(item.id)) : [],
+    });
+    const result = await commands.seogiForgetDictations(ids);
+    if (result.status === "error") {
+      setStatus(before);
+      onNote(t("failed", { reason: result.error }));
+      return;
+    }
+    onNote(t("dictation.forgotten"));
+    void look();
+  };
+
   const takenBy = (keys: string) =>
     status.taken.find((taken) => keySet(taken.keys) === keySet(keys))?.by;
 
@@ -481,13 +498,23 @@ export default function DictationSettings({
                 {t("dictation.keepHint", { n: dictation.keep })}
               </div>
             </div>
-            <div className="v" />
+            <div className="v">
+              {status.recent.length > 0 ? (
+                <button
+                  type="button"
+                  className="lnk"
+                  onClick={() => void forget(null)}
+                >
+                  {t("dictation.forgetAll")}
+                </button>
+              ) : null}
+            </div>
             <div className="full grid gap-1.5 text-[13.5px]">
               {status.recent.length === 0 ? (
                 <p className="m-0 t3">{t("dictation.keepNone")}</p>
               ) : (
                 status.recent.map((item) => (
-                  <div key={item.at_ms} className="flex items-start gap-3">
+                  <div key={item.id} className="flex items-start gap-3">
                     <span className="t3 shrink-0 tabular-nums">
                       {new Date(item.at_ms).toLocaleTimeString([], {
                         hour: "2-digit",
@@ -507,6 +534,13 @@ export default function DictationSettings({
                       }
                     >
                       {t("dictation.copy")}
+                    </button>
+                    <button
+                      type="button"
+                      className="lnk"
+                      onClick={() => void forget([item.id])}
+                    >
+                      {t("dictation.forget")}
                     </button>
                   </div>
                 ))

@@ -777,6 +777,14 @@ pub fn seogi_copy_last_dictation(app: AppHandle) -> Result<(), String> {
     dictation::copy_last(&app)
 }
 
+/// Forgets dictations from the recent list (by id), or every one with
+/// `None`. They are gone from this computer; returns how many went.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_forget_dictations(app: AppHandle, ids: Option<Vec<i64>>) -> Result<u32, String> {
+    dictation::forget(&app, ids).await.map(|n| n as u32)
+}
+
 /// The floating key's menu, with its two lines in the user's language.
 #[tauri::command]
 #[specta::specta]

@@ -1473,6 +1473,18 @@ async seogiCopyLastDictation() : Promise<Result<null, string>> {
 }
 },
 /**
+ * Forgets dictations from the recent list (by id), or every one with
+ * `None`. They are gone from this computer; returns how many went.
+ */
+async seogiForgetDictations(ids: number[] | null) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_forget_dictations", { ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * The floating key's menu, with its two lines in the user's language.
  */
 async seogiMicMenu(hide: string, settings: string) : Promise<Result<null, string>> {
@@ -2764,7 +2776,11 @@ microphone: string }
 /**
  * A recent dictation, for the settings screen.
  */
-export type RecentDictation = { text: string; at_ms: number }
+export type RecentDictation = { 
+/**
+ * The dictation history's own id, for forgetting it.
+ */
+id: number; text: string; at_ms: number }
 /**
  * A recording started or ended.
  */

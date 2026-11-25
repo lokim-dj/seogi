@@ -898,6 +898,7 @@ pub fn run(cli_args: CliArgs) {
             seogi::commands::seogi_dictation_status,
             seogi::commands::seogi_dictation_toggle,
             seogi::commands::seogi_copy_last_dictation,
+            seogi::commands::seogi_forget_dictations,
             seogi::commands::seogi_mic_menu,
             seogi::commands::seogi_open_typing_permission,
             seogi::commands::seogi_try_notification,
