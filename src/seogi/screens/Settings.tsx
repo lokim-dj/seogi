@@ -1174,6 +1174,9 @@ export default function Settings() {
                     />
                   </div>
                 </div>
+                {config.muted_events.length > 0 ? (
+                  <MutedEvents uids={config.muted_events} />
+                ) : null}
                 <More>
                   <div className="srow !border-t-0">
                     <div>
@@ -1321,6 +1324,63 @@ export default function Settings() {
 }
 
 /** What is rarely changed in a group, folded under "더 보기". */
+/** The events turned off on the home or from a reminder, each with a way
+ *  to turn it back on. An event no longer in the calendars is named so. */
+function MutedEvents({ uids }: { uids: string[] }) {
+  const { t } = useTranslation(NS);
+  const refreshSetup = useSeogi((s) => s.refreshSetup);
+  const refreshToday = useSeogi((s) => s.refreshToday);
+  const [titles, setTitles] = useState<Record<string, string>>({});
+  const key = uids.join("|");
+
+  useEffect(() => {
+    let current = true;
+    // The next three months of the calendars, to put a title to each id.
+    void commands.seogiUpcoming(24 * 90).then((events) => {
+      if (!current) return;
+      const found: Record<string, string> = {};
+      for (const event of events) found[event.uid] ??= event.title;
+      setTitles(found);
+    });
+    return () => {
+      current = false;
+    };
+  }, [key]);
+
+  const unmute = async (uid: string) => {
+    await commands.seogiMuteEvent(uid, false);
+    await Promise.all([refreshSetup(), refreshToday()]);
+  };
+
+  return (
+    <div className="srow">
+      <div>
+        <div className="l">{t("settings.mutedEvents")}</div>
+        <div className="h">{t("settings.mutedEventsHint")}</div>
+      </div>
+      <div className="v" />
+      <div className="full grid gap-1.5 text-[13.5px]">
+        {uids.map((uid) => (
+          <div key={uid} className="flex items-start gap-3">
+            <span
+              className={`flex-1 min-w-0 truncate${titles[uid] ? "" : " t3"}`}
+            >
+              {titles[uid] ?? t("settings.mutedGone")}
+            </span>
+            <button
+              type="button"
+              className="lnk"
+              onClick={() => void unmute(uid)}
+            >
+              {t("settings.unmute")}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function More({ children }: { children: ReactNode }) {
   const { t } = useTranslation(NS);
   return (

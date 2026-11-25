@@ -67,6 +67,89 @@ pub struct Reading {
     pub mentions: Vec<String>,
 }
 
+/// Where the user stands on an event that has people invited to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Standing {
+    /// Nobody is invited: an event the user made for themselves.
+    NoPeople,
+    /// The user organises it, or is invited and has not declined (an
+    /// unanswered or tentative invitation counts: the meeting may still be
+    /// theirs).
+    Mine,
+    /// The user is invited and declined.
+    Declined,
+    /// People are invited and the user is not among them: someone else's
+    /// event in a calendar the user can see.
+    NotInvited,
+}
+
+/// One person on an event, as far as telling the user apart goes.
+#[derive(Debug, Clone, Default)]
+pub struct Person {
+    /// The address, without `mailto:`; may be empty.
+    pub address: String,
+    /// The calendar itself says this is the user.
+    pub me: bool,
+    pub declined: bool,
+    pub organizer: bool,
+}
+
+/// Where the user stands on an event with these people. `me` is the user's
+/// address when it is known; a person also counts as the user when the
+/// calendar marks them so.
+pub fn standing(people: &[Person], me: Option<&str>) -> Standing {
+    if people.is_empty() {
+        return Standing::NoPeople;
+    }
+    let is_me = |person: &&Person| {
+        person.me || me.is_some_and(|me| !me.is_empty() && person.address.eq_ignore_ascii_case(me))
+    };
+    let mine: Vec<&Person> = people.iter().filter(is_me).collect();
+    if mine.is_empty() {
+        Standing::NotInvited
+    } else if mine
+        .iter()
+        .any(|person| person.organizer || !person.declined)
+    {
+        Standing::Mine
+    } else {
+        Standing::Declined
+    }
+}
+
+/// Whether an event is the user's to be reminded of and to name a
+/// recording after. `knows_me` says the calendar told the user apart on at
+/// least one event: without that, nobody looks invited, and every event is
+/// kept rather than all of them hidden.
+pub fn is_mine(standing: Standing, knows_me: bool) -> bool {
+    match standing {
+        Standing::NoPeople | Standing::Mine => true,
+        Standing::Declined => false,
+        Standing::NotInvited => !knows_me,
+    }
+}
+
+/// The calendar's owner as an iCalendar file names it: a calendar app
+/// names a person's main calendar after their address.
+fn owner(ics: &str) -> Option<String> {
+    ics.lines().find_map(|line| {
+        let found = property(line.trim_end_matches('\r'))?;
+        (found.name == "X-WR-CALNAME" && found.value.contains('@'))
+            .then(|| found.value.trim().to_string())
+    })
+}
+
+/// An address from an `ATTENDEE` or `ORGANIZER` value.
+fn address(value: &str) -> String {
+    let value = value.trim();
+    let bare = if value.len() >= 7 && value[..7].eq_ignore_ascii_case("mailto:") {
+        &value[7..]
+    } else {
+        value
+    };
+    bare.trim().to_string()
+}
+
 /// The rules a new user starts with: generic examples of a naming habit,
 /// `[where] who / what`. Users replace them with their own.
 pub fn default_rules() -> Vec<TitleRule> {
@@ -396,6 +479,9 @@ struct Raw {
     title: String,
     location: String,
     attendees: Vec<String>,
+    /// Everyone on the event with their address, for telling the user
+    /// apart.
+    people: Vec<Person>,
     cancelled: bool,
     start: Option<i64>,
     end: Option<i64>,
@@ -485,7 +571,17 @@ fn raw_events(ics: &str) -> Vec<Raw> {
                 if !declined && !name.is_empty() && !name.contains('@') {
                     event.attendees.push(name);
                 }
+                event.people.push(Person {
+                    address: address(found.value),
+                    declined,
+                    ..Person::default()
+                });
             }
+            "ORGANIZER" => event.people.push(Person {
+                address: address(found.value),
+                organizer: true,
+                ..Person::default()
+            }),
             _ => {}
         }
     }
@@ -522,9 +618,18 @@ fn occurrences(raw: &Raw, from_ms: i64, to_ms: i64) -> Result<Vec<i64>> {
 /// The events of an iCalendar text that take place, in part, between
 /// `from_ms` and `to_ms`, earliest first. Repeating events are expanded,
 /// with their exceptions and changed instances. All-day and cancelled
-/// events are left out: nobody records those.
+/// events are left out: nobody records those. So are events that are not
+/// the user's (see [`is_mine`]), when the file names its owner.
 pub fn events_between(ics: &str, from_ms: i64, to_ms: i64) -> Vec<Event> {
+    let me = owner(ics);
     let raws = raw_events(ics);
+    let standings: Vec<Standing> = raws
+        .iter()
+        .map(|raw| standing(&raw.people, me.as_deref()))
+        .collect();
+    let knows_me = standings
+        .iter()
+        .any(|found| matches!(found, Standing::Mine | Standing::Declined));
     // Instances of repeating events that were changed or cancelled.
     let replaced: HashSet<(&str, i64)> = raws
         .iter()
@@ -532,11 +637,13 @@ pub fn events_between(ics: &str, from_ms: i64, to_ms: i64) -> Vec<Event> {
         .collect();
 
     let mut events: Vec<Event> = Vec::new();
-    for raw in &raws {
+    for (raw, found) in raws.iter().zip(standings) {
         let Some(start) = raw.start else {
             continue;
         };
-        if raw.cancelled {
+        // A declined instance of a repeating event still replaces its
+        // occurrence (above), so the occurrence does not come back.
+        if raw.cancelled || !is_mine(found, knows_me) {
             continue;
         }
         let length = raw.end.map_or(60 * 60 * 1_000, |end| (end - start).max(0));
@@ -680,6 +787,130 @@ END:VCALENDAR\r\n";
         assert_eq!(event.location, "회의실A");
         // Whoever declined, or has only an address, is not listed.
         assert_eq!(event.attendees, vec!["박도현"]);
+    }
+
+    fn owned(events: &str) -> String {
+        format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nX-WR-CALNAME:me@example.com\r\n{events}END:VCALENDAR\r\n"
+        )
+    }
+
+    fn event_at(uid: &str, hour: u32, people: &str) -> String {
+        format!(
+            "BEGIN:VEVENT\r\nUID:{uid}\r\nSUMMARY:{uid}\r\n\
+DTSTART;TZID=Asia/Seoul:20261125T{hour:02}0000\r\n\
+DTEND;TZID=Asia/Seoul:20261125T{hour:02}3000\r\n{people}END:VEVENT\r\n"
+        )
+    }
+
+    #[test]
+    fn only_the_users_own_events_are_kept() {
+        let ics = owned(
+            &[
+                event_at(
+                    "declined",
+                    10,
+                    "ORGANIZER:mailto:x@example.com\r\n\
+ATTENDEE;PARTSTAT=DECLINED:mailto:ME@example.com\r\n",
+                ),
+                event_at(
+                    "others",
+                    11,
+                    "ORGANIZER:mailto:x@example.com\r\n\
+ATTENDEE;PARTSTAT=ACCEPTED:mailto:y@example.com\r\n",
+                ),
+                event_at(
+                    "unanswered",
+                    12,
+                    "ORGANIZER:mailto:x@example.com\r\n\
+ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:me@example.com\r\n",
+                ),
+                event_at(
+                    "tentative",
+                    13,
+                    "ATTENDEE;PARTSTAT=TENTATIVE:mailto:me@example.com\r\n",
+                ),
+                event_at(
+                    "organised",
+                    14,
+                    "ORGANIZER:mailto:me@example.com\r\n\
+ATTENDEE;PARTSTAT=ACCEPTED:mailto:y@example.com\r\n",
+                ),
+                event_at("alone", 15, ""),
+            ]
+            .concat(),
+        );
+        let kept: Vec<String> = events_between(&ics, seoul(11, 25, 0, 0), seoul(11, 26, 0, 0))
+            .into_iter()
+            .map(|event| event.uid)
+            .collect();
+        assert_eq!(kept, vec!["unanswered", "tentative", "organised", "alone"]);
+    }
+
+    #[test]
+    fn a_calendar_that_does_not_name_its_owner_keeps_every_event() {
+        let ics = owned(&event_at(
+            "others",
+            11,
+            "ATTENDEE;PARTSTAT=ACCEPTED:mailto:y@example.com\r\n",
+        ))
+        .replace("X-WR-CALNAME:me@example.com", "X-WR-CALNAME:팀 일정");
+        assert_eq!(
+            events_between(&ics, seoul(11, 25, 0, 0), seoul(11, 26, 0, 0)).len(),
+            1
+        );
+        // Named, but the user is on no event: nobody can be told apart.
+        let unknown = owned(&event_at(
+            "others",
+            11,
+            "ATTENDEE;PARTSTAT=ACCEPTED:mailto:y@example.com\r\n",
+        ));
+        assert_eq!(
+            events_between(&unknown, seoul(11, 25, 0, 0), seoul(11, 26, 0, 0)).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_declined_occurrence_of_a_repeating_event_stays_away() {
+        let ics = owned(
+            "BEGIN:VEVENT\r\nUID:daily\r\nSUMMARY:daily\r\n\
+DTSTART;TZID=Asia/Seoul:20261124T090000\r\n\
+DTEND;TZID=Asia/Seoul:20261124T093000\r\n\
+RRULE:FREQ=DAILY;COUNT=3\r\n\
+ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@example.com\r\n\
+END:VEVENT\r\n\
+BEGIN:VEVENT\r\nUID:daily\r\nSUMMARY:daily\r\n\
+RECURRENCE-ID;TZID=Asia/Seoul:20261125T090000\r\n\
+DTSTART;TZID=Asia/Seoul:20261125T090000\r\n\
+DTEND;TZID=Asia/Seoul:20261125T093000\r\n\
+ATTENDEE;PARTSTAT=DECLINED:mailto:me@example.com\r\n\
+END:VEVENT\r\n",
+        );
+        let starts: Vec<i64> = events_between(&ics, seoul(11, 24, 0, 0), seoul(11, 27, 0, 0))
+            .into_iter()
+            .map(|event| event.start_ms)
+            .collect();
+        assert_eq!(starts, vec![seoul(11, 24, 9, 0), seoul(11, 26, 9, 0)]);
+    }
+
+    #[test]
+    fn the_calendar_app_marking_the_user_is_enough() {
+        let me = Person {
+            me: true,
+            declined: true,
+            ..Person::default()
+        };
+        let other = Person {
+            address: "y@example.com".into(),
+            ..Person::default()
+        };
+        assert_eq!(standing(&[other.clone(), me], None), Standing::Declined);
+        assert_eq!(standing(&[other.clone()], None), Standing::NotInvited);
+        assert_eq!(standing(&[], Some("me@example.com")), Standing::NoPeople);
+        assert!(is_mine(Standing::NotInvited, false));
+        assert!(!is_mine(Standing::NotInvited, true));
+        assert!(!is_mine(Standing::Declined, true));
     }
 
     #[test]

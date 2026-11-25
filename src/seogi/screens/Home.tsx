@@ -27,6 +27,7 @@ import PermissionNotice from "../components/PermissionNotice";
 import { ConfirmDelete, busy } from "../components/DeleteMeeting";
 import { NS } from "../i18n";
 import { clock, daysAgo, fullDay, hm, keysShort, longDay } from "../lib/format";
+import { arrange } from "../lib/upcoming";
 import { MICROPHONE_DENIED, useSeogi } from "../store";
 
 const RECORDING_KINDS = [
@@ -191,8 +192,15 @@ function RecordLine({ onNote }: { onNote: (note: string) => void }) {
   const today = useSeogi((s) => s.today);
   const startRecording = useSeogi((s) => s.startRecording);
   const refreshToday = useSeogi((s) => s.refreshToday);
+  const refreshSetup = useSeogi((s) => s.refreshSetup);
   const go = useSeogi((s) => s.go);
+  const recording = useSeogi((s) => s.recording);
   const mac = platform() === "macos";
+  const [menu, setMenu] = useState<{
+    upcoming: Upcoming;
+    x: number;
+    y: number;
+  } | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => void refreshToday(), 60000);
@@ -208,8 +216,36 @@ function RecordLine({ onNote }: { onNote: (note: string) => void }) {
   const hasCalendar =
     (config?.calendar_urls.length ?? 0) > 0 ||
     (config?.mac_calendars.length ?? 0) > 0;
-  const next = today.find((upcoming) => !upcoming.muted);
-  const minutes = next ? Math.round((next.event.start_ms - now) / 60000) : 0;
+  const { main: next, rest, hidden } = arrange(today, now, recording !== null);
+  // "지금 하는 중", "17분 뒤", "2시간 5분 뒤".
+  const when = (start: number) => {
+    const minutes = Math.round((start - now) / 60000);
+    return minutes <= 0
+      ? t("band.going")
+      : minutes < 60
+        ? t("home.inMinutes", { n: minutes })
+        : minutes % 60 === 0
+          ? t("home.inHours", { h: minutes / 60 })
+          : t("home.inHoursMinutes", {
+              h: Math.floor(minutes / 60),
+              m: minutes % 60,
+            });
+  };
+
+  // The right mouse button on an event offers to turn it off; the next one
+  // then takes its place.
+  const menuFor = (upcoming: Upcoming) => (event: React.MouseEvent) => {
+    event.preventDefault();
+    setMenu({ upcoming, x: event.clientX, y: event.clientY });
+  };
+  const mute = async (upcoming: Upcoming) => {
+    setMenu(null);
+    const result = await commands.seogiMuteEvent(upcoming.event.uid, true);
+    if (result.status === "error")
+      onNote(t("failed", { reason: result.error }));
+    // The settings list what is turned off.
+    await Promise.all([refreshToday(), refreshSetup()]);
+  };
 
   return (
     <div className="a-rec">
@@ -237,34 +273,56 @@ function RecordLine({ onNote }: { onNote: (note: string) => void }) {
       {next && later(next.event.start_ms, now) ? (
         // Not today: what is next, to know; it is recorded when it comes.
         <span className="a-next">
-          <span className="t3">
-            {later(next.event.start_ms, now) === 1
-              ? t("home.tomorrow")
-              : longDay(next.event.start_ms, i18n.language)}
-          </span>
-          <span>{`${hm(next.event.start_ms)} ${next.event.title}`}</span>
+          <Mutable onMute={() => void mute(next)}>
+            <span className="grid" onContextMenu={menuFor(next)}>
+              <span className="t3">
+                {later(next.event.start_ms, now) === 1
+                  ? t("home.tomorrow")
+                  : longDay(next.event.start_ms, i18n.language)}
+              </span>
+              <span>{`${hm(next.event.start_ms)} ${next.event.title}`}</span>
+            </span>
+          </Mutable>
         </span>
       ) : next ? (
-        <button
-          type="button"
-          className="a-next p-0 border-0 bg-transparent"
-          title={t("home.recordEvent")}
-          onClick={() => void record(next)}
-        >
-          <span className="t3">
-            {minutes <= 0
-              ? t("band.going")
-              : minutes < 60
-                ? t("home.inMinutes", { n: minutes })
-                : minutes % 60 === 0
-                  ? t("home.inHours", { h: minutes / 60 })
-                  : t("home.inHoursMinutes", {
-                      h: Math.floor(minutes / 60),
-                      m: minutes % 60,
-                    })}
-          </span>
-          <span>{`${hm(next.event.start_ms)} ${next.event.title}`}</span>
-        </button>
+        <span className="a-next">
+          <Mutable onMute={() => void mute(next)}>
+            <button
+              type="button"
+              className="grid text-right p-0 border-0 bg-transparent"
+              title={t("home.recordEvent")}
+              onClick={() => void record(next)}
+              onContextMenu={menuFor(next)}
+            >
+              <span className="t3">{when(next.event.start_ms)}</span>
+              <span>{`${hm(next.event.start_ms)} ${next.event.title}`}</span>
+            </button>
+          </Mutable>
+          {rest.length > 0 ? (
+            // The rest of today, small, one line each.
+            <span className="grid mt-1.5 text-[12px] t3 leading-[1.6]">
+              {rest.map((upcoming) => (
+                <Mutable
+                  key={`${upcoming.event.uid}-${upcoming.event.start_ms}`}
+                  onMute={() => void mute(upcoming)}
+                >
+                  <button
+                    type="button"
+                    className="block max-w-[340px] truncate p-0 border-0 bg-transparent text-right t3"
+                    title={t("home.recordEvent")}
+                    onClick={() => void record(upcoming)}
+                    onContextMenu={menuFor(upcoming)}
+                  >
+                    {`${hm(upcoming.event.start_ms)} · ${upcoming.event.title} · ${when(upcoming.event.start_ms)}`}
+                  </button>
+                </Mutable>
+              ))}
+              {hidden > 0 ? (
+                <span>{t("home.moreEvents", { n: hidden })}</span>
+              ) : null}
+            </span>
+          ) : null}
+        </span>
       ) : (
         <span className="a-next">
           <span className="t3">
@@ -281,6 +339,23 @@ function RecordLine({ onNote }: { onNote: (note: string) => void }) {
           )}
         </span>
       )}
+      {menu ? (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          label={menu.upcoming.event.title}
+          onClose={() => setMenu(null)}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            className={MENU_ITEM}
+            onClick={() => void mute(menu.upcoming)}
+          >
+            {t("banner.mute")}
+          </button>
+        </ContextMenu>
+      ) : null}
     </div>
   );
 }
@@ -487,6 +562,81 @@ function MeetingList({
   );
 }
 
+const MENU_ITEM =
+  "w-full flex items-center justify-between gap-4 h-8 px-3 border-0 rounded-[6px] bg-transparent text-left text-[13.5px] hover:bg-s2";
+
+/** An event's line with a small × that shows on hover and turns it off,
+ *  as the right mouse button's menu does. */
+function Mutable({
+  onMute,
+  children,
+}: {
+  onMute: () => void;
+  children: React.ReactNode;
+}) {
+  const { t } = useTranslation(NS);
+  return (
+    <span className="group relative justify-self-end max-w-full">
+      {children}
+      <button
+        type="button"
+        className="absolute -left-5 top-1/2 -translate-y-1/2 grid place-items-center w-4 h-4 p-0 border-0 bg-transparent t3 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+        aria-label={t("banner.mute")}
+        title={t("banner.mute")}
+        onClick={onMute}
+      >
+        <CloseIcon className="w-3 h-3" />
+      </button>
+    </span>
+  );
+}
+
+/** A small menu at the pointer, closed by Escape or a click elsewhere. */
+function ContextMenu({
+  x,
+  y,
+  label,
+  onClose,
+  children,
+}: {
+  x: number;
+  y: number;
+  label: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  useEffect(() => {
+    const away = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", away);
+    return () => window.removeEventListener("keydown", away);
+  }, [onClose]);
+  return (
+    <div
+      className="fixed inset-0 z-20"
+      onClick={onClose}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+    >
+      <div
+        role="menu"
+        aria-label={label}
+        className="fixed w-[220px] p-1.5 rounded-[10px] bg-s1 shadow-[0_8px_24px_var(--sh)]"
+        style={{
+          left: Math.min(x, window.innerWidth - 230),
+          top: Math.min(y, window.innerHeight - 100),
+        }}
+        onClick={(event) => event.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 /** The menu a meeting's line opens with the right mouse button. */
 function RowMenu({
   x,
@@ -504,50 +654,33 @@ function RowMenu({
   onDelete: () => void;
 }) {
   const { t } = useTranslation(NS);
-  useEffect(() => {
-    const away = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", away);
-    return () => window.removeEventListener("keydown", away);
-  }, [onClose]);
-  const item =
-    "w-full flex items-center justify-between gap-4 h-8 px-3 border-0 rounded-[6px] bg-transparent text-left text-[13.5px] hover:bg-s2";
   return (
-    <div
-      className="fixed inset-0 z-20"
-      onClick={onClose}
-      onContextMenu={(event) => {
-        event.preventDefault();
-        onClose();
-      }}
+    <ContextMenu
+      x={x}
+      y={y}
+      label={meeting.title || t("untitled")}
+      onClose={onClose}
     >
-      <div
-        role="menu"
-        aria-label={meeting.title || t("untitled")}
-        className="fixed w-[220px] p-1.5 rounded-[10px] bg-s1 shadow-[0_8px_24px_var(--sh)]"
-        style={{
-          left: Math.min(x, window.innerWidth - 230),
-          top: Math.min(y, window.innerHeight - 100),
-        }}
-        onClick={(event) => event.stopPropagation()}
+      <button
+        type="button"
+        role="menuitem"
+        className={MENU_ITEM}
+        onClick={onOpen}
       >
-        <button type="button" role="menuitem" className={item} onClick={onOpen}>
-          {t("trash.open")}
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          className={item}
-          onClick={onDelete}
-        >
-          <span>{t("trash.menu")}</span>
-          {busy(meeting) ? (
-            <span className="text-[12px] t3">{t("trash.busyShort")}</span>
-          ) : null}
-        </button>
-      </div>
-    </div>
+        {t("trash.open")}
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className={MENU_ITEM}
+        onClick={onDelete}
+      >
+        <span>{t("trash.menu")}</span>
+        {busy(meeting) ? (
+          <span className="text-[12px] t3">{t("trash.busyShort")}</span>
+        ) : null}
+      </button>
+    </ContextMenu>
   );
 }
 
