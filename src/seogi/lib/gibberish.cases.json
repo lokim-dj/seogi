@@ -1,0 +1,35 @@
+[
+  { "text": "euch com", "korean": true, "gibberish": true },
+  { "text": "이십 compartements", "korean": true, "gibberish": true },
+  { "text": "Привет", "korean": true, "gibberish": true },
+  { "text": "아itzнако跟�yer 미안", "korean": true, "gibberish": true },
+  { "text": "Thank you for watching", "korean": true, "gibberish": true },
+  { "text": "Thank you for watching!", "korean": false, "gibberish": true },
+  { "text": "you you you you you you", "korean": false, "gibberish": true },
+  {
+    "text": "This is the final layout we agreed on.",
+    "korean": true,
+    "gibberish": false
+  },
+  {
+    "text": "This is the final layout we agreed on.",
+    "korean": false,
+    "gibberish": false
+  },
+  {
+    "text": "Can we move the island closer to the window?",
+    "korean": true,
+    "gibberish": false
+  },
+  { "text": "okay sure", "korean": true, "gibberish": false },
+  { "text": "euch com", "korean": false, "gibberish": false },
+  { "text": "Привет", "korean": false, "gibberish": false },
+  { "text": "반갑다 Sharon", "korean": true, "gibberish": false },
+  { "text": "LED 3000K 매립등으로 할게요", "korean": true, "gibberish": false },
+  { "text": "BLUM 서랍으로 넣겠습니다", "korean": true, "gibberish": false },
+  { "text": "OK", "korean": true, "gibberish": false },
+  { "text": "네 좋습니다", "korean": true, "gibberish": false },
+  { "text": "3m에 48만 원", "korean": true, "gibberish": false },
+  { "text": "SMC 천장은 물에 약해요", "korean": true, "gibberish": false },
+  { "text": "네 네 네 네", "korean": true, "gibberish": false }
+]

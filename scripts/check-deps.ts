@@ -19,51 +19,12 @@ type Finding = {
 };
 
 // High or critical advisories already looked at. Each says why it may stay for
-// now; remove the line once the package is upgraded (the check says when a
-// line no longer matches anything). A new advisory never goes here just to
-// turn the check green: upgrade first, and list it only with a real reason.
-const buildOnly =
-  "build or lint tool only (eslint, vite, tailwind, babel, fonts): runs on the developer's computer and in CI, not in the installed app; upgrade in its own PR";
-const KNOWN: Record<string, string> = {
-  // npm, all reached only through devDependencies or the build (vite).
-  "GHSA-3jxr-9vmj-r5cp": buildOnly, // brace-expansion
-  "GHSA-6j4f-fj2g-mc7p": buildOnly, // brace-expansion
-  "GHSA-mh99-v99m-4gvg": buildOnly, // brace-expansion
-  "GHSA-qhr7-859c-m2p7": buildOnly, // brace-expansion
-  "GHSA-rgw5-rvv9-x895": buildOnly, // brace-expansion
-  "GHSA-73wf-gq98-2v4g": buildOnly, // browserslist
-  "GHSA-c83g-rgw3-j3cx": buildOnly, // browserslist
-  "GHSA-25h7-pfq9-p65f": buildOnly, // flatted
-  "GHSA-rf6f-7fwh-wjgh": buildOnly, // flatted
-  "GHSA-2883-xcg3-v3hh": buildOnly, // js-yaml
-  "GHSA-r5fr-rjxr-66jc": buildOnly, // lodash
-  "GHSA-23c5-xmqv-rm74": buildOnly, // minimatch
-  "GHSA-3ppc-4f35-3m26": buildOnly, // minimatch
-  "GHSA-7r86-cg39-jmmj": buildOnly, // minimatch
-  "GHSA-28wg-ghj8-5hjv": buildOnly, // nanoid (postcss)
-  "GHSA-2v37-7h3g-55p8": buildOnly, // nanoid (postcss)
-  "GHSA-xwg4-73v4-xw9w": buildOnly, // nanoid (postcss)
-  "GHSA-c2c7-rcm5-vvqj": buildOnly, // picomatch
-  "GHSA-6g55-p6wh-862q": buildOnly, // postcss
-  "GHSA-r28c-9q8g-f849": buildOnly, // postcss
-  "GHSA-mw96-cpmx-2vgc": buildOnly, // rollup
-  "GHSA-68fv-2mgg-jv7q": buildOnly, // source-map-js
-  "GHSA-587h-7wmj-h5pm": buildOnly, // vite (dev server)
-  "GHSA-p9ff-h696-f583": buildOnly, // vite (dev server)
-  "GHSA-mrhx-c7xc-m3w5":
-    "zod is listed in package.json but nothing imports it, so it is not in the app's bundle; drop or upgrade it in its own PR",
-  // Rust.
-  "RUSTSEC-2026-0194":
-    "quick-xml through plist (tauri): reads the app's own property lists, not files from outside; upgrade with tauri in its own PR",
-  "RUSTSEC-2026-0195":
-    "quick-xml through plist (tauri): reads the app's own property lists, not files from outside; upgrade with tauri in its own PR",
-  "RUSTSEC-2026-0367":
-    "zip through tauri-plugin-updater: unpacks only an update whose signature has already been checked against Seogi's key; upgrade the updater in its own PR",
-  "RUSTSEC-2026-0369":
-    "zip through tauri-plugin-updater: unpacks only an update whose signature has already been checked against Seogi's key; upgrade the updater in its own PR",
-  "RUSTSEC-2026-0429":
-    "zip through tauri-plugin-updater: unpacks only an update whose signature has already been checked against Seogi's key; upgrade the updater in its own PR",
-};
+// now: the fixed version does not exist yet, or the part that pulls it in has
+// not moved to it, with the date that was last checked. Remove the line once
+// the package is upgraded (the check says when a line no longer matches
+// anything). A new advisory never goes here just to turn the check green:
+// upgrade first, and list it only with a real reason.
+const KNOWN: Record<string, string> = {};
 
 /** CVSS 3.x base score of a vector string, or undefined for anything else. */
 export function cvss3Score(vector: string): number | undefined {

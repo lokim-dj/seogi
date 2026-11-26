@@ -1865,6 +1865,7 @@ impl Secretary {
             marks_ms: &meeting.marks_ms,
             mark_notes: &meeting.mark_notes,
             people: &people,
+            customer: &meeting.customer,
             recorded_on: &recorded_on,
             context: &context,
             feedback_rules: &feedback_rules,

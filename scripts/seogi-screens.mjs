@@ -25,6 +25,8 @@ const screens = [
   ["banner-starting", 700, 140, false],
   ["banner-ready", 344, 190, false],
   ["home", 920, 700, true, "home-narrow"],
+  ["card", 1280, 980, false],
+  ["card-empty", 1280, 980, false],
 ];
 
 mkdirSync(out, { recursive: true });

@@ -146,9 +146,14 @@ pub(crate) fn show_main_window(app: &AppHandle) {
 /// back (`RunEvent::Reopen`); the menu bar icon only shows the recording
 /// state. Must sit between `build()` and `run()`, where the initial policy is
 /// set before launch.
+///
+/// A headless run (`--seogi-*`, `--transcribe-file`, the lists) has no window
+/// and is often started several at a time by scripts such as `eval/`: it is
+/// an accessory process, so it never puts an icon in the Dock.
 #[cfg(target_os = "macos")]
 fn apply_startup_activation_policy(app: &mut tauri::App, headless_mode: bool) {
     if headless_mode {
+        app.set_activation_policy(tauri::ActivationPolicy::Accessory);
         return;
     }
     app.set_activation_policy(tauri::ActivationPolicy::Regular);
@@ -928,6 +933,8 @@ pub fn run(cli_args: CliArgs) {
             seogi::commands::seogi_open_login_items,
             seogi::commands::seogi_try_notification,
             seogi::commands::seogi_reveal,
+            seogi::commands::seogi_save_summary_card,
+            seogi::commands::seogi_copy_image,
             seogi::commands::seogi_open_trash,
             seogi::commands::seogi_try_summary,
             seogi::commands::seogi_key_models,
@@ -1215,7 +1222,7 @@ pub fn run(cli_args: CliArgs) {
             {
                 let _ = main_window.with_webview(|webview| unsafe {
                     use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
-                    use windows::core::Interface;
+                    use windows_core::Interface;
 
                     let result = webview
                         .controller()
