@@ -18,17 +18,36 @@ class DriveApiTest {
         }
     }
 
-    @Test fun findsTheAppFolder() {
-        val http = Fake(HttpResponse(200, emptyMap(), """{"files":[{"id":"F1"}]}"""))
-        assertEquals("F1", DriveApi(http).ensureFolder("t"))
-        assertTrue(http.sent[0].second.contains("trashed"))
+    private fun decoded(url: String) = java.net.URLDecoder.decode(url, "UTF-8")
+
+    /** Another device of the same account already made it: find it by the marker, oldest first. */
+    @Test fun findsTheMarkedFolderNotByName() {
+        val http = Fake(HttpResponse(200, emptyMap(), """{"files":[{"id":"OLDEST"},{"id":"NEWER"}]}"""))
+        assertEquals("OLDEST", DriveApi(http).ensureFolder("t"))
+        val url = decoded(http.sent[0].second)
+        assertTrue(url, url.contains("appProperties has { key='seogi' and value='recordings-root' }"))
+        assertTrue(url.contains("trashed = false"))
+        assertTrue(url.contains("mimeType = 'application/vnd.google-apps.folder'"))
+        assertTrue(url.contains("orderBy=createdTime"))
+        assertTrue(!url.contains("name ="))
         assertEquals("Bearer t", http.sent[0].third["Authorization"])
     }
 
-    @Test fun makesTheFolderWhenThereIsNone() {
-        val http = Fake(HttpResponse(200, emptyMap(), """{"files":[]}"""), HttpResponse(200, emptyMap(), """{"id":"F2"}"""))
+    private class Recording(vararg answers: HttpResponse) : Http {
+        val queue = answers.toMutableList()
+        var lastBody: String? = null
+        override fun send(method: String, url: String, headers: Map<String, String>, body: ByteArray?): HttpResponse {
+            if (method == "POST") lastBody = body?.decodeToString()
+            return queue.removeAt(0)
+        }
+    }
+
+    @Test fun makesTheFolderWithTheMarkerWhenThereIsNone() {
+        val http = Recording(HttpResponse(200, emptyMap(), """{"files":[]}"""), HttpResponse(200, emptyMap(), """{"id":"F2"}"""))
         assertEquals("F2", DriveApi(http).ensureFolder("t"))
-        assertEquals("POST", http.sent[1].first)
+        val body = http.lastBody!!
+        assertTrue(body, body.contains("\"appProperties\":{\"seogi\":\"recordings-root\"}"))
+        assertTrue(body.contains("서기 폰 녹음"))
     }
 
     @Test fun sessionAddressComesFromLocation() {
@@ -62,14 +81,16 @@ class DriveApiTest {
     @Test fun folderIsUsableOnlyWhenThereAndNotTrashed() {
         val folder = "application/vnd.google-apps.folder"
         val http = Fake(
-            HttpResponse(200, emptyMap(), """{"id":"F","trashed":false,"mimeType":"$folder"}"""),
-            HttpResponse(200, emptyMap(), """{"id":"F","trashed":true,"mimeType":"$folder"}"""),
+            HttpResponse(200, emptyMap(), """{"id":"F","trashed":false,"mimeType":"$folder","appProperties":{"seogi":"recordings-root"}}"""),
+            HttpResponse(200, emptyMap(), """{"id":"F","trashed":true,"mimeType":"$folder","appProperties":{"seogi":"recordings-root"}}"""),
             HttpResponse(404, emptyMap(), "not found"),
+            HttpResponse(200, emptyMap(), """{"id":"F","trashed":false,"mimeType":"$folder"}"""),
         )
         val d = DriveApi(http)
         assertTrue(d.folderUsable("t", "F"))
-        assertEquals(false, d.folderUsable("t", "F"))
-        assertEquals(false, d.folderUsable("t", "F"))
+        assertEquals(false, d.folderUsable("t", "F")) // trashed
+        assertEquals(false, d.folderUsable("t", "F")) // gone
+        assertEquals(false, d.folderUsable("t", "F")) // same name, no marker
         assertTrue(http.sent[0].second.contains("trashed"))
     }
 }

@@ -97,3 +97,7 @@
 - [ ] `.github/workflows/check.yml` 에 `android` 작업: JDK 17, `./gradlew testDebugUnitTest assembleDebug`(키스토어 없이).
 - [ ] `docs/privacy.md` 한국어 + 영어.
 - [ ] `./gradlew assembleDebug bundleRelease` 성공, 폰이 연결돼 있으면 설치해 녹음 → 저장 확인.
+
+## 드라이브 폴더 규칙 (폰 · 맥 · 윈도우 공통, 2단계에서도 지킬 것)
+
+같은 구글 계정으로 연결한 기기는 녹음 폴더 하나를 함께 쓴다. 폴더는 이름이 아니라 표식으로 찾는다. 앱이 폴더를 만들 때 `appProperties` 에 `seogi=recordings-root` 를 붙인다. 연결할 때는 먼저 `appProperties has { key='seogi' and value='recordings-root' } and mimeType = 'application/vnd.google-apps.folder' and trashed = false` 로 찾고(`orderBy=createdTime`), 여러 개면 가장 오래된 것을 쓴다. 하나도 없을 때만 `서기 폰 녹음` 을 표식과 함께 만든다. 이름만 같고 표식이 없는 폴더는 쓰지 않는다. 저장해 둔 폴더 ID 는 올리기마다(한 번의 실행에 한 번) 있는지 · 폴더인지 · 휴지통이 아닌지 · 표식이 있는지 확인하고, 아니면 위 순서로 다시 찾거나 만든다. 이때 반쯤 올린 녹음은 새 폴더에서 처음부터 올리고, 이미 다 올린 녹음은 사용자가 지운 것이므로 다시 올리지 않는다. 표식은 `drive.file` 범위에서 같은 클라우드 프로젝트의 앱끼리만 보이는 것으로 본다(구글 Picker 문서가 `drive.file` 에 쓰는 앱 ID 를 클라우드 프로젝트 번호로 정의). 그래서 맥 · 윈도우 클라이언트도 같은 프로젝트에 만든다. 서로 다른 클라이언트끼리 실제로 보이는지는 두 번째 기기가 생기면 실측한다.

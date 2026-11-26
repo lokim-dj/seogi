@@ -27,7 +27,7 @@ sealed interface UploadStatus {
 interface Drive {
     /** The app-made `서기 폰 녹음` folder; made when there is none. */
     fun ensureFolder(token: String): String
-    /** The saved folder still exists, is a folder, and is not in the trash. */
+    /** The saved folder still exists, is a marked folder, and is not in the trash. */
     fun folderUsable(token: String, folderId: String): Boolean
     fun uploadSmall(token: String, folderId: String, name: String, mime: String, bytes: ByteArray): String
     /** Opens a resumable upload; returns the session address. */
@@ -41,27 +41,37 @@ interface Drive {
 class DriveApi(private val http: Http = UrlConnectionHttp) : Drive {
     private val json = Json { ignoreUnknownKeys = true }
 
+    /**
+     * Finds the recordings folder by its marker, not by its name, so the
+     * phone, the Mac and Windows signed in to one account share one folder:
+     * `appProperties seogi=recordings-root`, a folder, not trashed; the oldest
+     * when there are several. A folder that only has the same name is never
+     * used. Makes one, with the marker, only when there is none.
+     */
     override fun ensureFolder(token: String): String {
-        val q = "name = '$FOLDER_NAME' and mimeType = '$FOLDER_MIME' and trashed = false"
-        val found = call("GET", "$API/files?spaces=drive&fields=files(id)&q=${enc(q)}", token)
+        val q = "appProperties has { key='$MARK_KEY' and value='$MARK_VALUE' } and " +
+            "mimeType = '$FOLDER_MIME' and trashed = false"
+        val found = call("GET", "$API/files?spaces=drive&orderBy=createdTime&fields=files(id,createdTime)&q=${enc(q)}", token)
         val files = json.parseToJsonElement(found.body).jsonObject["files"]?.jsonArray ?: JsonArray(emptyList())
         files.firstOrNull()?.let { return it.jsonObject["id"]!!.jsonPrimitive.content }
         val body = buildJsonObject {
             put("name", FOLDER_NAME)
             put("mimeType", FOLDER_MIME)
+            put("appProperties", buildJsonObject { put(MARK_KEY, MARK_VALUE) })
         }.toString().toByteArray()
         val made = call("POST", "$API/files?fields=id", token, mapOf("Content-Type" to JSON_UTF8), body)
         return idOf(made.body)
     }
 
     override fun folderUsable(token: String, folderId: String): Boolean {
-        val r = http.send("GET", "$API/files/${enc(folderId)}?fields=id,trashed,mimeType", auth(token), null)
+        val r = http.send("GET", "$API/files/${enc(folderId)}?fields=id,trashed,mimeType,appProperties", auth(token), null)
         if (r.code == 404) return false
         if (r.code !in 200..299) throw DriveHttpException(r.code, r.body.take(200))
         val o = json.parseToJsonElement(r.body).jsonObject
         val trashed = o["trashed"]?.jsonPrimitive?.content == "true"
         val isFolder = o["mimeType"]?.jsonPrimitive?.content == FOLDER_MIME
-        return isFolder && !trashed
+        val marked = (o["appProperties"] as? JsonObject)?.get(MARK_KEY)?.jsonPrimitive?.content == MARK_VALUE
+        return isFolder && !trashed && marked
     }
 
     override fun uploadSmall(token: String, folderId: String, name: String, mime: String, bytes: ByteArray): String {
@@ -128,6 +138,9 @@ class DriveApi(private val http: Http = UrlConnectionHttp) : Drive {
     companion object {
         const val FOLDER_NAME = "서기 폰 녹음"
         const val FOLDER_MIME = "application/vnd.google-apps.folder"
+        /** The marker every Seogi app looks for (Android, and the Mac and Windows app). */
+        const val MARK_KEY = "seogi"
+        const val MARK_VALUE = "recordings-root"
         const val SCOPE = "https://www.googleapis.com/auth/drive.file"
         private const val API = "https://www.googleapis.com/drive/v3"
         private const val UPLOAD = "https://www.googleapis.com/upload/drive/v3"
