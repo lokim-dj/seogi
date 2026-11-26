@@ -762,7 +762,8 @@ impl Secretary {
 
     /// Names a speaker in the transcript: throughout, from a moment on, or
     /// in one stretch (see [`NameScope`]). Tasks given to the speaker's old
-    /// name in that part follow the person; the minutes are not written
+    /// name in that part follow the person, except one resting on a line
+    /// someone still called the old name says; the minutes are not written
     /// again.
     pub fn name_speaker(
         &self,
@@ -781,17 +782,7 @@ impl Secretary {
         let (old, from, to) = transcript
             .name_speaker(speaker, name, scope, from_ms, to_ms)
             .ok_or_else(|| anyhow!("there is no speaker {speaker}, or no name"))?;
-        let name = name.trim().to_string();
-        for minutes in &mut meeting.minutes {
-            for section in &mut minutes.sections {
-                for item in &mut section.entries {
-                    let at = item.sources.first().map_or(0, |source| source.ms);
-                    if item.owner == old && (from..to).contains(&at) {
-                        item.owner = name.clone();
-                    }
-                }
-            }
-        }
+        owners_follow(&mut meeting, &old, name.trim(), from, to);
         self.save(&meeting, &folder)
     }
 
@@ -2797,6 +2788,36 @@ pub fn tidy_names(names: Vec<String>) -> Vec<String> {
     kept
 }
 
+/// After a naming in the transcript that covered `from..to` (`old` was the
+/// speaker's name before it), the tasks given to `old` in that part are
+/// given to `name`. A task stays with `old` when the line it rests on is
+/// said by someone still called `old`: that line was moved to that person
+/// (#34), so the task is theirs.
+fn owners_follow(meeting: &mut Meeting, old: &str, name: &str, from: u64, to: u64) {
+    let transcript = meeting.transcript.as_ref();
+    let said_by_old = |at: u64| {
+        transcript.is_some_and(|t| {
+            t.segments
+                .iter()
+                .rev()
+                .find(|segment| segment.start_ms <= at)
+                .and_then(|line| t.speakers.iter().find(|s| s.id == line.speaker))
+                .is_some_and(|speaker| speaker.name == old)
+        })
+    };
+    for minutes in &mut meeting.minutes {
+        for section in &mut minutes.sections {
+            for item in &mut section.entries {
+                let at = item.sources.first().map(|source| source.ms);
+                let in_part = (from..to).contains(&at.unwrap_or(0));
+                if item.owner == old && in_part && !at.is_some_and(said_by_old) {
+                    item.owner = name.to_string();
+                }
+            }
+        }
+    }
+}
+
 /// One task of the minutes as a naming keeps it: which task (its text and
 /// the moment it rests on) and who was given it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -3059,6 +3080,109 @@ mod tests {
         refused(&|m| {
             m.minutes[0].sections[0].entries[1].owner = "박도현 소장".into();
         });
+    }
+
+    /// #34: a line answered with the speaker's own name is moved to a
+    /// speaker of its own, then the speaker is named someone else. The task
+    /// resting on the moved line stays with the person it was moved to;
+    /// the speaker's other tasks follow the new name.
+    #[test]
+    fn a_task_on_a_moved_line_stays_when_the_speaker_is_named_again() {
+        use crate::seogi::minutes::{Entry, Minutes, MinutesSection, Source};
+        use crate::seogi::templates::SectionKind;
+        use crate::seogi::transcript::{Segment, Transcript};
+        let task = |owner: &str, ms: u64| Entry {
+            text: format!("일 {ms}"),
+            owner: owner.into(),
+            due: String::new(),
+            sources: vec![Source {
+                ms,
+                quote: "말".into(),
+            }],
+            reasons: vec![],
+            done: false,
+            faint: false,
+        };
+        let mut meeting = Meeting::new(0, store::Origin::Recorded, "녹음.wav");
+        meeting.transcript = Some(Transcript {
+            segments: [(0, 2), (1_000, 2), (2_000, 1)]
+                .iter()
+                .map(|&(start_ms, speaker)| Segment {
+                    start_ms,
+                    end_ms: start_ms + 900,
+                    speaker,
+                    text: "말".into(),
+                    ..Default::default()
+                })
+                .collect(),
+            speakers: vec![
+                Speaker {
+                    id: 1,
+                    name: "화자 1".into(),
+                },
+                Speaker {
+                    id: 2,
+                    name: "지우".into(),
+                },
+            ],
+            ..Default::default()
+        });
+        meeting.minutes = vec![Minutes {
+            template_id: "consult".into(),
+            template_name: "상담".into(),
+            title: String::new(),
+            summary: String::new(),
+            story: vec![],
+            feedback: None,
+            sections: vec![MinutesSection {
+                key: "our_tasks".into(),
+                title: "우리 숙제".into(),
+                kind: SectionKind::Actions,
+                entries: vec![task("지우", 0), task("지우", 1_000), task("지우", 2_000)],
+            }],
+            verified: 0,
+            to_check: 0,
+            dropped: 0,
+            not_rechecked: false,
+            written_by: String::new(),
+        }];
+        // As the card does it: the line answered "지우" is moved first, then
+        // the speaker is named "하린" throughout.
+        let name = |meeting: &mut Meeting, name: &str, scope, from_ms, to_ms| {
+            let (old, from, to) = meeting
+                .transcript
+                .as_mut()
+                .unwrap()
+                .name_speaker(2, name, scope, from_ms, to_ms)
+                .unwrap();
+            owners_follow(meeting, &old, name, from, to);
+        };
+        name(&mut meeting, "지우", NameScope::Here, 0, 1_000);
+        name(&mut meeting, "하린", NameScope::All, 0, 0);
+        let owners: Vec<&str> = meeting.minutes[0].sections[0]
+            .entries
+            .iter()
+            .map(|entry| entry.owner.as_str())
+            .collect();
+        // The moved line's task stays; the speaker's own follows; a task
+        // given to "지우" on someone else's line follows as before.
+        assert_eq!(owners, ["지우", "하린", "하린"]);
+        let transcript = meeting.transcript.as_ref().unwrap();
+        let said_by = |ms: u64| {
+            let line = transcript
+                .segments
+                .iter()
+                .find(|s| s.start_ms == ms)
+                .unwrap();
+            let who = transcript
+                .speakers
+                .iter()
+                .find(|s| s.id == line.speaker)
+                .unwrap();
+            who.name.clone()
+        };
+        assert_eq!(said_by(0), "지우");
+        assert_eq!(said_by(1_000), "하린");
     }
 
     #[test]
