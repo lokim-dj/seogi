@@ -159,6 +159,19 @@ fn apply_startup_activation_policy(app: &mut tauri::App, headless_mode: bool) {
     app.set_activation_policy(tauri::ActivationPolicy::Regular);
 }
 
+/// The app's context, under the development identifier in a debug build
+/// even when it was built without `tauri.dev.conf.json` (`cargo run`, a
+/// plain `tauri dev`): the data folder, the single-instance lock and the
+/// permissions `reset_macos_permission` resets all follow it, so a debug
+/// build never touches the installed app's.
+fn context() -> tauri::Context<tauri::Wry> {
+    let mut context = tauri::generate_context!();
+    if cfg!(debug_assertions) {
+        context.config_mut().identifier = brand::DEV_IDENTIFIER.to_string();
+    }
+    context
+}
+
 #[allow(unused_variables)]
 fn should_force_show_permissions_window(app: &AppHandle) -> bool {
     #[cfg(target_os = "windows")]
@@ -1340,7 +1353,7 @@ pub fn run(cli_args: CliArgs) {
             _ => {}
         })
         .invoke_handler(invoke_handler)
-        .build(tauri::generate_context!())
+        .build(context())
         .expect("error while building tauri application");
 
     // Must sit between build() and run(): see the doc comment.
@@ -1373,4 +1386,17 @@ pub fn run(cli_args: CliArgs) {
         // could block quitting behind a hung model load.
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod context_tests {
+    /// Paths, the single-instance lock and permission resets all read the
+    /// context's identifier, so a debug build must carry the development one.
+    #[test]
+    fn a_debug_build_runs_under_the_development_identifier() {
+        assert_eq!(
+            super::context().config().identifier,
+            super::brand::DEV_IDENTIFIER
+        );
+    }
 }
