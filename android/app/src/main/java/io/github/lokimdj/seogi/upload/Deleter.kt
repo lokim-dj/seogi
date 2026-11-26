@@ -2,6 +2,7 @@ package io.github.lokimdj.seogi.upload
 
 import io.github.lokimdj.seogi.data.Recording
 import io.github.lokimdj.seogi.data.RecordingStore
+import io.github.lokimdj.seogi.data.Sidecar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -18,6 +19,8 @@ class Deleter(
     private val tokens: suspend () -> TokenResult,
     private val currentAccount: () -> String?,
     private val deleteOnPhone: (Recording) -> PhoneResult,
+    /** The `서기 폰 녹음` folder uploads went to, when known. */
+    private val folderId: () -> String? = { null },
 ) {
     enum class PhoneResult { DELETED, ALREADY_GONE, FAILED }
     enum class DriveResult {
@@ -63,11 +66,16 @@ class Deleter(
         return Result(phoneDeleted, driveResult, other, listRemoved)
     }
 
-    private suspend fun drivePart(r: Recording, trashInDrive: Boolean): DriveResult {
+    private suspend fun drivePart(given: Recording, trashInDrive: Boolean): DriveResult {
+        // The list line may know files the copy taken at "지우기" did not.
+        val r = store.get(given.id) ?: given
         val ids = listOfNotNull(r.driveFileId, r.sidecarFileId).toMutableList()
         val session = r.sessionUri?.takeIf { r.driveFileId == null }
-        if (ids.isEmpty() && session == null) return DriveResult.NOT_UPLOADED
-        val token = (tokens() as? TokenResult.Ok)?.token ?: return if (trashInDrive) DriveResult.FAILED else DriveResult.LEFT_IN_DRIVE
+        val folder = folderId()?.takeIf { trashInDrive }
+        val known = ids.isNotEmpty() || session != null
+        if (!known && folder == null) return DriveResult.NOT_UPLOADED
+        val token = (tokens() as? TokenResult.Ok)?.token
+            ?: return if (!known) DriveResult.NOT_UPLOADED else if (trashInDrive) DriveResult.FAILED else DriveResult.LEFT_IN_DRIVE
         return try {
             withContext(Dispatchers.IO) {
                 if (session != null) {
@@ -77,6 +85,17 @@ class Deleter(
                         is UploadStatus.Incomplete -> drive.cancelSession(session)
                         UploadStatus.Expired -> Unit
                     }
+                }
+                if (folder != null) {
+                    // Every file in the folder that belongs to this recording, also ones the
+                    // list lost track of (a second sidecar from a retry), goes with it.
+                    val found = try {
+                        drive.findByName(token, folder, listOf(r.fileName, Sidecar.fileName(r.fileName)))
+                    } catch (e: Exception) {
+                        // Nothing was known to be in Drive: a failed look does not make it a failure.
+                        if (known) throw e else emptyList()
+                    }
+                    found.filter { belongs(it, r) }.forEach { if (it.id !in ids) ids += it.id }
                 }
                 when {
                     ids.isEmpty() -> DriveResult.NOT_UPLOADED
@@ -91,5 +110,30 @@ class Deleter(
         } catch (e: Exception) {
             DriveResult.FAILED
         }
+    }
+
+    /**
+     * A file found by name is this recording's when it carries this
+     * recording's id, or (uploaded before files carried one) when it is the
+     * sidecar made after the recording ended, or audio whose SHA-256 Drive
+     * reports as this recording's.
+     */
+    private fun belongs(f: DriveFile, r: Recording): Boolean {
+        if (f.recordingId != null) return f.recordingId == r.id
+        return when (f.name) {
+            Sidecar.fileName(r.fileName) -> f.isOf(r)
+            r.fileName -> r.sha256.isNotEmpty() && f.sha256.equals(r.sha256, ignoreCase = true)
+            else -> false
+        }
+    }
+
+    companion object {
+        /**
+         * Whether the delete question offers the Drive trash: when the list
+         * knows a Drive file, or an upload went to a known folder, which may
+         * hold a file the list lost track of (a sidecar whose answer was lost).
+         */
+        fun offerDriveTrash(r: Recording, folderId: String?): Boolean =
+            r.driveFileId != null || r.sidecarFileId != null || r.sessionUri != null || folderId != null
     }
 }

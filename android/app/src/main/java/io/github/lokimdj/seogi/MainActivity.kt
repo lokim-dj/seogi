@@ -405,7 +405,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         deleteTarget?.let { r ->
-            val uploaded = r.driveFileId != null || r.sidecarFileId != null
+            val uploaded = Deleter.offerDriveTrash(r, app.settings.driveFolderId)
             ConfirmDialog(
                 title = stringResource(R.string.delete_title),
                 body = stringResource(R.string.delete_body),

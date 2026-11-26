@@ -85,6 +85,7 @@ class SeogiApp : Application() {
                 }
             }
         },
+        folderId = { settings.driveFolderId },
     )
 
     /**

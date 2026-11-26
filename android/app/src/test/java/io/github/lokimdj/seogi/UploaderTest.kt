@@ -6,6 +6,7 @@ import io.github.lokimdj.seogi.data.UploadError
 import io.github.lokimdj.seogi.data.UploadState
 import io.github.lokimdj.seogi.upload.AudioSource
 import io.github.lokimdj.seogi.upload.Drive
+import io.github.lokimdj.seogi.upload.DriveFile
 import io.github.lokimdj.seogi.upload.DriveHttpException
 import io.github.lokimdj.seogi.upload.TokenResult
 import io.github.lokimdj.seogi.upload.UploadStatus
@@ -41,14 +42,28 @@ class UploaderTest {
         val parents = mutableListOf<String>()
         override fun ensureFolder(token: String): String { folderCalls++; return "F$folderCalls".also { usable += it } }
         override fun folderUsable(token: String, folderId: String): Boolean { usableChecks++; return folderId in usable }
-        override fun uploadSmall(token: String, folderId: String, name: String, mime: String, bytes: ByteArray): String {
+        /** Small files in Drive: id to (folder, file). */
+        val files = linkedMapOf<String, Pair<String, DriveFile>>()
+        val updated = mutableListOf<String>()
+        val trashed = mutableListOf<String>()
+        /** Drive makes the file, then the answer is lost this many times. */
+        var lostAnswers = 0
+        override fun uploadSmall(token: String, folderId: String, name: String, mime: String, bytes: ByteArray, recordingId: String?): String {
             if (unauthorizedCalls > 0) { unauthorizedCalls--; throw DriveHttpException(401, "") }
             small += name
             parents += folderId
-            return "J${small.size}"
+            val id = "J${small.size}"
+            files[id] = folderId to DriveFile(id, name, recordingId = recordingId)
+            if (lostAnswers > 0) { lostAnswers--; throw IOException("answer lost") }
+            return id
         }
-        override fun startSession(token: String, folderId: String, name: String, mime: String, size: Long): String {
+        override fun updateSmall(token: String, fileId: String, mime: String, bytes: ByteArray) { updated += fileId }
+        override fun findByName(token: String, folderId: String, names: List<String>): List<DriveFile> =
+            files.values.filter { (folder, f) -> folder == folderId && f.name in names && f.id !in trashed }.map { it.second }
+        val sessionRecordings = mutableListOf<String?>()
+        override fun startSession(token: String, folderId: String, name: String, mime: String, size: Long, recordingId: String?): String {
             sessions++
+            sessionRecordings += recordingId
             parents += folderId
             return "s$sessions".also { received[it] = ByteArrayOutputStream() }
         }
@@ -64,7 +79,7 @@ class UploaderTest {
             return if (out.size().toLong() == size) UploadStatus.Complete("A-$session") else UploadStatus.Incomplete(out.size().toLong())
         }
         override fun email(token: String) = null
-        override fun trash(token: String, fileId: String) = true
+        override fun trash(token: String, fileId: String): Boolean { trashed += fileId; return true }
         override fun cancelSession(session: String) {}
     }
 
@@ -285,5 +300,58 @@ class UploaderTest {
             folder = Folder(), device = "Phone X", appVersion = "0.1.0", chunkSize = 1024, account = "me@example.com",
         ).runAll()
         assertEquals("me@example.com", s.get("a")!!.account)
+    }
+
+    /** The sidecar was made but its answer was lost: the next try reuses it, never makes a second. */
+    @Test fun aSidecarWhoseAnswerWasLostIsReusedNotDoubled() = runTest {
+        val s = store().apply { upsert(recording("a")) }
+        val d = FakeDrive().apply { lostAnswers = 1 }
+        val folder = Folder()
+        assertEquals(Uploader.Outcome.RETRY, uploader(s, d, folder = folder).runAll())
+        assertEquals(null, s.get("a")!!.sidecarFileId)
+        assertEquals(Uploader.Outcome.DONE, uploader(s, d, folder = folder).runAll())
+        assertEquals(listOf("a.json"), d.small)
+        assertEquals(listOf("J1"), d.updated)
+        assertEquals("J1", s.get("a")!!.sidecarFileId)
+        assertEquals(UploadState.UPLOADED, s.get("a")!!.upload)
+    }
+
+    /** The list forgot the sidecar's id (another sign-in): the one in the folder is reused. */
+    @Test fun aSidecarAlreadyInTheFolderIsReusedAndExtraCopiesTrashed() = runTest {
+        val s = store().apply { upsert(recording("a")) }
+        val d = FakeDrive().apply {
+            usable += "KEEP"
+            // Made before this recording ended: another, older recording's with the same name.
+            files["BEFORE"] = "KEEP" to DriveFile("BEFORE", "a.json", createdMs = 2_000)
+            files["OLD1"] = "KEEP" to DriveFile("OLD1", "a.json", createdMs = 70_000)
+            files["OLD2"] = "KEEP" to DriveFile("OLD2", "a.json", recordingId = "a")
+            files["OTHER"] = "KEEP" to DriveFile("OTHER", "a.json", recordingId = "someone-else")
+        }
+        assertEquals(Uploader.Outcome.DONE, uploader(s, d, folder = Folder("KEEP")).runAll())
+        assertEquals(emptyList<String>(), d.small)
+        assertEquals(listOf("OLD1"), d.updated)
+        assertEquals(listOf("OLD2"), d.trashed)
+        assertEquals("OLD1", s.get("a")!!.sidecarFileId)
+    }
+
+    /** An id-less sidecar made before this recording ended is another recording's: a new one is made. */
+    @Test fun anOlderRecordingsSidecarWithTheSameNameIsLeftAlone() = runTest {
+        val s = store().apply { upsert(recording("a")) }
+        val d = FakeDrive().apply {
+            usable += "KEEP"
+            files["BEFORE"] = "KEEP" to DriveFile("BEFORE", "a.json", createdMs = 2_000)
+        }
+        uploader(s, d, folder = Folder("KEEP")).runAll()
+        assertEquals(listOf("a.json"), d.small)
+        assertEquals(emptyList<String>(), d.updated)
+        assertEquals(emptyList<String>(), d.trashed)
+    }
+
+    @Test fun eachUploadCarriesItsRecording() = runTest {
+        val s = store().apply { upsert(recording("a")) }
+        val d = FakeDrive()
+        uploader(s, d).runAll()
+        assertEquals("a", d.files.getValue("J1").second.recordingId)
+        assertEquals(listOf<String?>("a"), d.sessionRecordings)
     }
 }
