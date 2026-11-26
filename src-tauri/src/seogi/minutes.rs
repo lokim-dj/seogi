@@ -1399,7 +1399,7 @@ const DOUBTS_NOT_TOLD: [CheckReason; 7] = [
 ];
 
 /// The most pairs of entries put to the model as possibly disagreeing.
-const MOST_CLASHES: usize = 12;
+const MOST_CLASHES: usize = 20;
 
 /// Finds entries that may say different things about the same matter and
 /// asks the model, for each pair, which stands: the later word when it
@@ -2553,10 +2553,11 @@ fn owners_by_name(
         };
         let name = transcript.speaker_name(line.speaker);
         let named = !name.starts_with("화자") && !super::facts::is_customer(&name, customer);
-        let squeezed: String = line.text.chars().filter(|c| !c.is_whitespace()).collect();
-        let first_person = ["제가", "내가", "저는제가"]
-            .iter()
-            .any(|word| squeezed.contains(word));
+        // "제가" or "내가" as a word of its own, not inside "안내가".
+        let first_person = line
+            .text
+            .split(|c: char| !c.is_alphanumeric())
+            .any(|word| word == "제가" || word == "내가");
         if named && first_person {
             entry.owner = name;
         }
@@ -2639,6 +2640,9 @@ fn keep_checks(template: &Template, entries: &mut Vec<(String, Entry)>, most: us
             .any(|r| matches!(r, CheckReason::WeakSupport | CheckReason::OtherSubject))
         {
             gone.insert(at);
+        } else if entry.reasons.iter().any(|r| MUST_BE_HEARD.contains(r)) {
+            // Said two ways, or an amount no one says so: shown faintly it
+            // would read as fact, so it stays to be heard past the limit.
         } else {
             entry.reasons.clear();
             entry.faint = true;
@@ -2652,6 +2656,14 @@ fn keep_checks(template: &Template, entries: &mut Vec<(String, Entry)>, most: us
     });
     gone.len() as u32
 }
+
+/// Doubts never turned into a faint line by the limit on checks: the entry
+/// as written may be plainly wrong.
+const MUST_BE_HEARD: [CheckReason; 3] = [
+    CheckReason::Conflicting,
+    CheckReason::UnitOdd,
+    CheckReason::SumsDisagree,
+];
 
 fn push_reason(entry: &mut Entry, reason: CheckReason) {
     if !entry.reasons.contains(&reason) {

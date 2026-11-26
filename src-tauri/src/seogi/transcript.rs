@@ -95,7 +95,7 @@ impl Transcript {
             if let Some(entry) = self.speakers.iter_mut().find(|s| s.id == speaker) {
                 entry.name = name;
             }
-            self.merge_same_names();
+            self.merge_same_names(false);
             return Some((old, 0, u64::MAX));
         }
         let (from, to) = match scope {
@@ -130,15 +130,32 @@ impl Transcript {
     /// Makes speakers with the same name one speaker: the speaker model
     /// heard one person as two, and the name says they are one (the minutes
     /// found it said to both, or the user gave it). The lines go to the
-    /// first of them. Default names ("화자 3") are never the same person.
+    /// first of them. Default names ("화자 3") are never the same person;
+    /// with `people_only`, neither are roles ("고객", "남편"), which two
+    /// people can share: only the user merges those, by naming them so.
     /// Returns the pairs (merged, into).
-    pub fn merge_same_names(&mut self) -> Vec<(u32, u32)> {
+    pub fn merge_same_names(&mut self, people_only: bool) -> Vec<(u32, u32)> {
+        const ROLES: [&str; 12] = [
+            "고객",
+            "손님",
+            "남편",
+            "아내",
+            "부인",
+            "사모님",
+            "사장님",
+            "직원",
+            "담당",
+            "상담",
+            "우리",
+            "저희",
+        ];
         let mut merged: Vec<(u32, u32)> = Vec::new();
         let mut kept: Vec<Speaker> = Vec::new();
         for speaker in std::mem::take(&mut self.speakers) {
             let default = speaker.name.trim().is_empty()
                 || speaker.name == Self::default_speaker_name(speaker.id)
-                || speaker.name.starts_with("화자");
+                || speaker.name.starts_with("화자")
+                || (people_only && ROLES.iter().any(|role| speaker.name.contains(role)));
             match kept
                 .iter()
                 .find(|other| !default && other.name == speaker.name)
@@ -508,8 +525,15 @@ mod tests {
         // Two that only have default names stay apart.
         let mut plain = spoken(&lines);
         plain.speakers[1].name = "화자 1".into();
-        assert!(plain.merge_same_names().is_empty());
+        assert!(plain.merge_same_names(true).is_empty());
         assert_eq!(plain.speakers.len(), 2);
+
+        // Two given the same role by the minutes may be two people.
+        let mut couple = spoken(&lines);
+        couple.speakers[0].name = "고객".into();
+        couple.speakers[1].name = "고객".into();
+        assert!(couple.merge_same_names(true).is_empty());
+        assert_eq!(couple.merge_same_names(false), [(2, 1)]);
     }
 
     fn segment(start_ms: u64, end_ms: u64, speaker: u32, text: &str) -> Segment {

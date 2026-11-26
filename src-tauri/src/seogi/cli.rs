@@ -195,7 +195,7 @@ fn run_inner(app: &AppHandle, args: &CliArgs) -> Result<(), Failure> {
             speaker.name = name.clone();
         }
     }
-    named.merge_same_names();
+    named.merge_same_names(true);
     let header = match &meeting {
         Some(meeting) => Header {
             transcribed_by: transcript.model.clone(),

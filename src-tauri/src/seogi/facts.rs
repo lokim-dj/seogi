@@ -31,6 +31,17 @@ const FAREWELLS: &[&str] = &[
     "또뵙",
 ];
 
+/// Words of a promise for later: said after a farewell, the meeting is not
+/// over yet.
+const PROMISES: &[&str] = &[
+    "드릴게요",
+    "드리겠습니다",
+    "하겠습니다",
+    "할게요",
+    "보내드",
+    "정리하면",
+];
+
 /// The farewell must come in the last part of the recording: after this
 /// share of it.
 const END_AFTER_SHARE: f64 = 0.6;
@@ -87,6 +98,14 @@ pub fn meeting_end(transcript: &Transcript) -> Option<u64> {
         *before.entry(segment.speaker).or_default() += ms;
         spoken += ms;
     }
+    // A promise after the farewell ("정리하면 제가 금요일까지 보내드릴게요")
+    // is still the meeting.
+    if tail.iter().any(|s| {
+        let text = squeezed(&s.text);
+        PROMISES.iter().any(|word| text.contains(word))
+    }) {
+        return None;
+    }
     let after: HashSet<u32> = tail.iter().map(|s| s.speaker).collect();
     let someone_left = before.iter().any(|(speaker, ms)| {
         *speaker != 0 && *ms as f64 >= LEFT_SHARE * spoken as f64 && !after.contains(speaker)
@@ -106,8 +125,6 @@ const ELSEWHERE: &[&str] = &[
     "그집은",
     "지난번현장",
     "예전현장",
-    "전에했던",
-    "전에한",
     "옆집",
     "사례",
     "우리사무실",
@@ -293,8 +310,15 @@ pub fn clashes(said: &[Said<'_>], open: &str, most: usize) -> Vec<(usize, usize,
             }
         }
     }
-    // The pairs that share the most first; an entry in one pair at most.
-    found.sort_by_key(|&(_, _, _, shared)| std::cmp::Reverse(shared));
+    // Something settled called open first (the costliest to get wrong),
+    // then different numbers; within each, the pairs that share the most.
+    // An entry in one pair at most.
+    let rank = |clash: Clash| match clash {
+        Clash::SettledAndOpen => 0,
+        Clash::Numbers => 1,
+        Clash::Alike => 2,
+    };
+    found.sort_by_key(|&(_, _, clash, shared)| (rank(clash), std::cmp::Reverse(shared)));
     let mut used: HashSet<usize> = HashSet::new();
     let mut pairs = Vec::new();
     for (x, y, clash, _) in found {
@@ -525,6 +549,11 @@ mod tests {
         lines.push((1, "그리고 하나 더 있습니다."));
         lines.push((2, "네 말씀하세요."));
         assert_eq!(meeting_end(&talk(&lines)), None);
+        // A promise after a thanks is still the meeting.
+        let mut promised: Vec<(u32, &str)> = lines[..16].to_vec();
+        promised.push((2, "네 감사합니다."));
+        promised.push((1, "정리하면 제가 금요일까지 도면 보내드릴게요."));
+        assert_eq!(meeting_end(&talk(&promised)), None);
         // A recording that ends with the farewell has nothing after it.
         lines.push((1, "감사합니다. 들어가세요."));
         assert_eq!(meeting_end(&talk(&lines)), None);

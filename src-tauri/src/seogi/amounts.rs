@@ -97,10 +97,18 @@ fn chain(text: &str, start: usize) -> (f64, usize, bool) {
         let bare = caps.get(3).is_some();
         let sub_unit = caps.get(2).or(caps.get(3)).map_or("", |m| m.as_str());
         let big_unit = caps.get(4).map_or("", |m| m.as_str());
-        // A bare 천 or 백 goes on a chain, never starts one; a plain number
-        // after a chain is a number of its own ("3m에 48만").
+        // A bare 천 or 백 goes on a chain, never starts one, and is no
+        // number when a word goes on after it ("2억, 천장 포함"); a plain
+        // number after a chain is a number of its own ("3m에 48만").
         if (first && bare) || (!first && sub_unit.is_empty() && big_unit.is_empty()) {
             break;
+        }
+        if bare && big_unit.is_empty() {
+            const AFTER: &str = "원만이을은에으로정쯤가까짜대선";
+            let next = text[pos + whole.as_str().trim_end().len()..].chars().next();
+            if next.is_some_and(|c| ('가'..='힣').contains(&c) && !AFTER.contains(c)) {
+                break;
+            }
         }
         let written = caps.get(1).map_or("1", |m| m.as_str()).replace(',', "");
         let Ok(number) = written.parse::<f64>() else {
@@ -471,6 +479,8 @@ mod tests {
         assert_eq!(values("814만 원이 늘고"), [8_140_000.0]);
         // A ceiling is not a thousand.
         assert!(values("천장은 새로").is_empty());
+        assert_eq!(values("견적 2억 천장 포함"), [200_000_000.0]);
+        assert_eq!(values("2억 천이 나왔다"), [210_000_000.0]);
     }
 
     #[test]
