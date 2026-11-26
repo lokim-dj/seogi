@@ -4,6 +4,7 @@
 //! its commands and listens to its events, so the screens can be replaced
 //! without touching what happens to a recording.
 
+pub mod amounts;
 pub mod app;
 pub mod app_menu;
 pub mod ask;
@@ -18,6 +19,7 @@ pub mod diarize;
 pub mod dictation;
 pub mod documents;
 pub mod evidence;
+pub mod facts;
 pub mod feedback;
 pub mod focus;
 pub mod llm;

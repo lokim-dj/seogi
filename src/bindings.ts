@@ -2037,7 +2037,31 @@ export type CheckReason =
 /**
  * The checker could not be asked about it.
  */
-"unchecked"
+"unchecked" | 
+/**
+ * Something else said about the same matter disagrees with it, and
+ * which stands could not be told.
+ */
+"conflicting" | 
+/**
+ * The words it rests on may be about another site or person (a past
+ * case, the speaker's own home), not this meeting's.
+ */
+"other_subject" | 
+/**
+ * An amount in it, or in the words it rests on, is written in a way no
+ * one says it: a big unit twice ("1억 5천억"), five digits before 만.
+ */
+"unit_odd" | 
+/**
+ * A change it states does not add up with the amounts said for it.
+ */
+"sums_disagree" | 
+/**
+ * It was said after the meeting seems to have ended (after the
+ * farewells, once someone had left): it may be chat, or another call.
+ */
+"after_the_end"
 /**
  * Script applied to Mandarin and Cantonese output. Traditional carries its region
  * (Taiwan vs Hong Kong forms, e.g. 裡/裏) rather than guessing it.

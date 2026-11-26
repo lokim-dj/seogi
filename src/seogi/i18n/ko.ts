@@ -118,6 +118,9 @@ const ko = {
     pickFirst: "이름을 고르세요",
     cancel: "닫기",
     followHint: "회의록에서 이 사람에게 맡긴 할 일의 담당도 함께 바뀝니다.",
+    samePerson:
+      "'{{name}}'와 같은 사람일까요? 두 쪽이 서로 말을 주고받은 적이 거의 없어요.",
+    merge: "'{{name}}'(으)로 합치기",
   },
   feedback: {
     talkMore: "말하기 자세히",
@@ -329,6 +332,11 @@ const ko = {
       said_differently: "말한 내용과 조금 다르게 적혔어요",
       numbers_differ: "금액이나 숫자가 다르게 나왔어요",
       unchecked: "기계가 맞춰 보지 못했어요",
+      conflicting: "앞뒤에 다른 말이 있어요. 어느 쪽인지 들어 보세요",
+      other_subject: "다른 현장이나 다른 사람 이야기일 수 있어요",
+      unit_odd: "금액 단위가 이상해요. 받아쓰기가 잘못 들었을 수 있어요",
+      sums_disagree: "금액 계산이 앞뒤로 맞지 않아요",
+      after_the_end: "회의가 끝난 뒤에 나온 말일 수 있어요",
       unsure_speech: "받아쓰기가 흐릿했던 대목입니다",
       overlapping_speech: "두 사람 말이 겹친 대목입니다",
       number_not_in_source: "숫자가 근거가 된 말에 없습니다",
@@ -357,6 +365,13 @@ const ko = {
     showMinutesFile: "회의록 파일 보기",
     showRecording: "원본 녹음 보기",
     thisIsMinutes: "회의록",
+    noiseLine:
+      "받아쓰기가 잘못 들은 것 같은 줄이라 흐리게 보여요. 회의록에는 쓰지 않았어요.",
+    customer: "고객",
+    startedLate:
+      "녹음이 일정보다 {{n}}분 늦게 시작됐어요. 그 앞의 이야기는 회의록에 없어요.",
+    startedMidTalk:
+      "녹음이 대화 중간부터 시작된 것 같아요. 그 앞의 이야기는 회의록에 없어요.",
     noTasksPlain: "이 회의에서 나온 할 일은 없어요.",
     nothingToTell:
       "짧거나 말이 적어서 정리할 이야기가 없었어요. 받아쓴 글은 아래 '자세히'에 있어요.",

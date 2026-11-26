@@ -40,12 +40,29 @@ import { ConfirmDelete, busy } from "../components/DeleteMeeting";
 import { NS } from "../i18n";
 import { clock, fullDay, hm, hms, isoDay, shortModel } from "../lib/format";
 import { joinPath, usePlayer, type Player } from "../lib/player";
-import { sampleLines, shareBar, speakerTones } from "../lib/speakers";
+import {
+  maybeSamePerson,
+  sampleLines,
+  shareBar,
+  speakerTones,
+} from "../lib/speakers";
 import { taskLine, titleNeeded } from "../lib/tasks";
+import { lateMinutes, startsMidTalk } from "../lib/opening";
+import { isGibberish, koreanMeeting } from "../lib/gibberish";
 import { Mark } from "../components/Mark";
 import { useSeogi, type Jump } from "../store";
 
 const bare = (text: string) => text.replace(/[\s.,!?'"「」…·]/g, "");
+
+/** Whom and where the meeting is about, in one line: "고객 이서진 · 장소
+ *  한빛아파트 103동". Empty when neither is known. */
+function headLine(meeting: Meeting, t: (key: string) => string): string {
+  const parts: string[] = [];
+  if (meeting.customer)
+    parts.push(`${t("minutes.customer")} ${meeting.customer}`);
+  if (meeting.place) parts.push(`${t("minutes.place")} ${meeting.place}`);
+  return parts.join(" · ");
+}
 
 /** The people of a meeting, whose names a task line may leave out. */
 const peopleOf = (meeting: Meeting) => [
@@ -73,6 +90,8 @@ export default function Minutes({ id }: { id: string }) {
 
   const copyTasks = async () => {
     const groups = tasks.filter((section) => section.entries.length > 0);
+    // Whom and where it is about, so the list makes sense pasted anywhere.
+    const head = meeting ? headLine(meeting, t) : "";
     const lines = groups.flatMap((section) => [
       ...(titleNeeded(section, groups.length) ? [`${section.title}:`] : []),
       ...section.entries.map((entry) => {
@@ -88,7 +107,9 @@ export default function Minutes({ id }: { id: string }) {
         return `- [${entry.done ? "x" : " "}] ${owner}${text}${mark} – ${due}${at}`;
       }),
     ]);
-    await navigator.clipboard.writeText(lines.join("\n"));
+    await navigator.clipboard.writeText(
+      (head ? [head, ...lines] : lines).join("\n"),
+    );
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);
   };
@@ -534,6 +555,11 @@ function Sheet({
 
   const start = meeting.started_at_ms;
   const end = start + meeting.duration_ms;
+  const late = lateMinutes(meeting);
+  // Only for a consultation: colleagues and memos often start straight in.
+  const midTalk =
+    (!!meeting.customer?.trim() || meeting.template_id === "consult") &&
+    startsMidTalk(meeting.transcript?.segments ?? []);
   const setDone = async (section: string, index: number, done: boolean) => {
     await commands.seogiSetActionDone(meeting.id, section, index, done);
     await refreshDetail();
@@ -555,6 +581,16 @@ function Sheet({
           <span>{length(meeting.duration_ms)}</span>
         ) : null}
       </div>
+      {meeting.customer || meeting.place ? (
+        <div className="mt-1 text-[13.5px] t2">{headLine(meeting, t)}</div>
+      ) : null}
+      {late > 0 || midTalk ? (
+        <p className="mt-1.5 mb-0 text-[13px] t3">
+          {late > 0
+            ? t("minutes.startedLate", { n: late })
+            : t("minutes.startedMidTalk")}
+        </p>
+      ) : null}
       <div data-found={spot?.at === "people" ? "" : undefined}>
         <PeopleLine
           meeting={meeting}
@@ -1327,6 +1363,14 @@ function NameSpeakers({
   );
   const quietOne =
     isUnnamed(current.name) && (share[current.id] ?? 0) < QUIET_SHARE;
+  // One person the speaker model may have heard as two: offered, never done.
+  const sameId = maybeSamePerson(
+    current.id,
+    speakers,
+    meeting.transcript.segments.map((line) => line.speaker),
+    isUnnamed,
+  );
+  const same = speakers.find((s) => s.id === sameId);
   const noPeople = (meeting.people ?? []).length === 0;
   return (
     <section
@@ -1398,6 +1442,20 @@ function NameSpeakers({
           </li>
         ))}
       </ul>
+      {same ? (
+        <div className="mb-3 text-[13.5px]">
+          <span className="t2">
+            {t("names.samePerson", { name: same.name })}
+          </span>{" "}
+          <button
+            type="button"
+            className="lnk"
+            onClick={() => void give(same.name, null)}
+          >
+            {t("names.merge", { name: same.name })}
+          </button>
+        </div>
+      ) : null}
       <div className="mb-1.5 font-medium">{t("names.whoSaid")}</div>
       <NamePicker
         meeting={meeting}
@@ -1514,6 +1572,12 @@ function Transcript({
   );
   // Each speaker's tone, by number: a new name keeps it.
   const tones = useMemo(() => tonesOf(transcript), [transcript]);
+  // A line the speech model made up is shown faintly; the minutes did not
+  // rest on it. Stray foreign letters count only in a Korean meeting.
+  const korean = useMemo(
+    () => koreanMeeting(transcript?.segments ?? []),
+    [transcript],
+  );
   const nowIndex = lines.findIndex(
     (line, index) =>
       player.timeMs >= line.startMs &&
@@ -1559,6 +1623,7 @@ function Transcript({
         // The same speaker going on after a pause: the mark is left out,
         // the name kept quiet (pressing it still names this line).
         const goingOn = index > 0 && lines[index - 1].speaker === line.speaker;
+        const noise = isGibberish(line.text, korean);
         return (
           <div
             key={line.startMs}
@@ -1630,9 +1695,10 @@ function Transcript({
               />
             ) : null}
             <p
+              title={noise ? t("minutes.noiseLine") : undefined}
               className={`mt-1 mb-0 text-[14.5px] leading-[1.7] ${
                 on ? "font-medium" : ""
-              } ${line.unsure ? "underline decoration-dotted decoration-[var(--t3)] underline-offset-4" : ""}`}
+              } ${noise ? "t3 opacity-60" : ""} ${line.unsure ? "underline decoration-dotted decoration-[var(--t3)] underline-offset-4" : ""}`}
             >
               {index === foundIndex ? (
                 <Marked text={line.text} words={words} />

@@ -20,6 +20,16 @@
 //! 5. **Verify.** The model is shown each task and decision beside the lines
 //!    it cites and asked whether those lines say it.
 //!
+//! 5b. **Reconcile.** Entries that may say different things about the same
+//!    matter (a size said twice, a choice changed, something settled and
+//!    then called open) are put to the model together with what was said
+//!    around them: the later word stands, a question asked about something
+//!    settled does not unsettle it, and what cannot be told goes to "확인
+//!    필요" as said both ways. What comes after the meeting ended (chat
+//!    once the customer left) and a fact that rests on someone else's story
+//!    (another site, the speaker's own home) are marked for a look by
+//!    machine before that, in [`super::facts`].
+//!
 //! 6. **Tasks.** The tasks are read together once more: what is no promise
 //!    (something done already, or said in passing) goes, the same promise
 //!    told twice becomes one with every time it was said, and each gets who
@@ -129,6 +139,20 @@ pub enum CheckReason {
     NumbersDiffer,
     /// The checker could not be asked about it.
     Unchecked,
+    /// Something else said about the same matter disagrees with it, and
+    /// which stands could not be told.
+    Conflicting,
+    /// The words it rests on may be about another site or person (a past
+    /// case, the speaker's own home), not this meeting's.
+    OtherSubject,
+    /// An amount in it, or in the words it rests on, is written in a way no
+    /// one says it: a big unit twice ("1억 5천억"), five digits before 만.
+    UnitOdd,
+    /// A change it states does not add up with the amounts said for it.
+    SumsDisagree,
+    /// It was said after the meeting seems to have ended (after the
+    /// farewells, once someone had left): it may be chat, or another call.
+    AfterTheEnd,
 }
 
 impl CheckReason {
@@ -146,6 +170,11 @@ impl CheckReason {
             CheckReason::SaidDifferently => "말한 내용과 조금 다름",
             CheckReason::NumbersDiffer => "금액이나 숫자가 다르게 나옴",
             CheckReason::Unchecked => "기계가 맞춰 보지 못함",
+            CheckReason::Conflicting => "앞뒤에 다른 말이 있음",
+            CheckReason::OtherSubject => "이 회의 이야기인지 분명하지 않음",
+            CheckReason::UnitOdd => "금액 단위가 이상함",
+            CheckReason::SumsDisagree => "금액 계산이 맞지 않음",
+            CheckReason::AfterTheEnd => "회의가 끝난 뒤의 말일 수 있음",
         }
     }
 }
@@ -235,6 +264,8 @@ pub struct Input<'a> {
     pub mark_notes: &'a [String],
     /// Attendees or other names known beforehand.
     pub people: &'a [String],
+    /// The customer the meeting is about, when known; empty otherwise.
+    pub customer: &'a str,
     /// When the recording was made, for the model to read dates against:
     /// `2026-11-24 화요일`. Empty when unknown.
     pub recorded_on: &'a str,
@@ -285,11 +316,31 @@ pub fn write(
             speaker.name = name.clone();
         }
     }
+    // Lines the speech model made up (a broken character, a line it is
+    // known to invent, foreign scraps in a Korean meeting) are not something
+    // anyone said: nothing rests on them. The transcript itself keeps them.
+    let korean = super::facts::korean_meeting(transcript);
+    {
+        let heard = named.segments.len();
+        named
+            .segments
+            .retain(|segment| !super::facts::is_gibberish(&segment.text, korean));
+        if named.segments.is_empty() {
+            named.segments = transcript.segments.clone();
+        } else if named.segments.len() < heard {
+            info!(
+                "Left {} noise lines out of the minutes",
+                heard - named.segments.len()
+            );
+        }
+    }
     let index = Index::new(&named);
+    // What is said after the meeting seems to have ended is marked.
+    let end_ms = super::facts::meeting_end(&named);
     progress(0.1);
 
     // 2. Extract, 3. check by machine.
-    let windows = windows(&named, input.marks_ms, input.mark_notes);
+    let windows = windows(&named, input.marks_ms, input.mark_notes, end_ms);
     let total = windows.len();
     let (answers, finished) = in_rounds(
         &windows,
@@ -305,7 +356,16 @@ pub fn write(
     for answer in answers {
         for raw in answer? {
             match check_item(raw, template, &index, &named) {
-                Some(item) => items.push(item),
+                Some(mut item) => {
+                    // Said after the farewells: it may be chat once the
+                    // customer left, or it may be one more word of the
+                    // meeting. Not stated as fact, not thrown away either.
+                    if after_the_end(&item, &index, end_ms) {
+                        push_reason(&mut item.entry, CheckReason::AfterTheEnd);
+                    }
+                    mark_elsewhere(&mut item, template, &index, &named, input.customer);
+                    items.push(item);
+                }
                 None => dropped += 1,
             }
         }
@@ -324,7 +384,8 @@ pub fn write(
     if stop() {
         return Ok(None);
     }
-    let composed = compose(input, template, items, &overview.title);
+    let mut composed = compose(items);
+    mark_sums(&mut composed.entries);
     progress(0.85);
 
     // 5. Verify.
@@ -345,17 +406,33 @@ pub fn write(
     };
     dropped += unbacked;
 
+    // 5b. Reconcile what disagrees: the later word stands.
+    if stop() {
+        return Ok(None);
+    }
+    dropped += reconcile(input, template, &mut entries, &index, &named);
+
     // 6. Tasks: one per promise, with who does it.
     if stop() {
         return Ok(None);
     }
     // The story is told from everything checked, light tasks included:
     // what is too small for the task list still belongs to how it went.
+    // What may not have been said so, or may be someone else's, is not
+    // told as fact: it waits in "확인 필요".
     let told: Vec<(String, Entry)> = entries
         .iter()
-        .filter(|(_, entry)| !entry.reasons.contains(&CheckReason::WeakSupport))
+        .filter(|(_, entry)| !entry.reasons.iter().any(|r| DOUBTS_NOT_TOLD.contains(r)))
         .cloned()
         .collect();
+    let summary = if told.is_empty() {
+        String::new()
+    } else {
+        summarize(input, template, &told, &overview.title).unwrap_or_else(|e| {
+            warn!("Could not write the summary line ({e:#}); leaving it out");
+            String::new()
+        })
+    };
     let mut people: Vec<String> = input.people.to_vec();
     for speaker in &named.speakers {
         if !speaker.name.starts_with("화자") && !people.contains(&speaker.name) {
@@ -365,6 +442,7 @@ pub fn write(
     if let Err(e) = tidy_tasks(input, template, &mut entries, &named, &people) {
         warn!("Could not tidy the tasks ({e:#}); keeping them as they were");
     }
+    owners_by_name(template, &mut entries, &named, input.customer);
     dropped += keep_checks(template, &mut entries, MOST_CHECKS);
 
     // 7. The story of the meeting, from what is left.
@@ -435,7 +513,7 @@ pub fn write(
         template_id: template.id.clone(),
         template_name: template.name.clone(),
         title: overview.title,
-        summary: composed.summary,
+        summary,
         story,
         feedback,
         sections,
@@ -602,9 +680,17 @@ struct Line {
     text: String,
 }
 
-/// The transcript as lines `[hh:mm:ss] name: text`, with the marks in place,
-/// cut into windows.
-fn windows(transcript: &Transcript, marks_ms: &[u64], mark_notes: &[String]) -> Vec<Vec<Line>> {
+/// The line put where the meeting ended, when the recording goes on after.
+const AFTER_THE_END: &str = "[회의 끝: 여기부터는 회의가 끝난 뒤의 말일 수 있습니다]";
+
+/// The transcript as lines `[hh:mm:ss] name: text`, with the marks in place
+/// and, at `end_ms`, the line saying the meeting is over; cut into windows.
+fn windows(
+    transcript: &Transcript,
+    marks_ms: &[u64],
+    mark_notes: &[String],
+    end_ms: Option<u64>,
+) -> Vec<Vec<Line>> {
     // A mark as the model reads it, with the note written beside it if any.
     let mut marks: Vec<(u64, String)> = marks_ms
         .iter()
@@ -623,7 +709,15 @@ fn windows(transcript: &Transcript, marks_ms: &[u64], mark_notes: &[String]) -> 
     let mut marks = marks.into_iter().peekable();
 
     let mut lines: Vec<Line> = Vec::new();
+    let mut ended = false;
     for paragraph in transcript.paragraphs() {
+        if !ended && end_ms.is_some_and(|end| paragraph.start_ms >= end) {
+            ended = true;
+            lines.push(Line {
+                ms: None,
+                text: AFTER_THE_END.to_string(),
+            });
+        }
         while marks
             .peek()
             .is_some_and(|(mark, _)| *mark <= paragraph.start_ms)
@@ -801,10 +895,13 @@ const BASE_RULES: &str = "\
 4. due(기한)는 기한이 말로 나왔을 때만, 말한 그대로 적습니다(예: \"금요일까지\", \"다음 주 화요일\"). 없으면 빈 문자열로 둡니다.
 5. \"검토해 볼게요\", \"생각해 볼게요\", \"일단\", \"아마\", \"견적을 보고 결정할게요\"처럼 확정하지 않은 말은 결정도 할 일도 아닙니다. section을 open으로 합니다.
 6. 숫자, 날짜, 금액, 치수, 이름은 받아쓴 글에 나온 그대로 적습니다.
-7. 인사, 맞장구, 잡담은 뽑지 않습니다.
+7. 인사, 맞장구, 잡담은 뽑지 않습니다. [회의 끝 …] 줄 뒤의 말은 고객이 나간 뒤의 잡담이나 다른 통화일 수 있습니다. 이 회의의 결정이나 할 일이 분명한 것만 뽑고, 다른 현장·다른 고객 이야기는 뽑지 않습니다.
 8. [중요 표시 …] 줄은 녹음한 사람이 그 순간을 중요하다고 표시한 것입니다. 그 앞뒤의 말은 빠뜨리지 않습니다. \"메모:\"가 붙어 있으면 왜 표시했는지 적은 것입니다.
 9. text는 회의록에 그대로 실을 수 있는 한 문장으로, 군더더기 없이 씁니다.
-10. 할 일 갈래(갈래 목록에 '할 일 갈래'라고 붙은 것)의 text는 '무엇을 하기' 꼴의 짧은 할 일로 씁니다. 예: \"신발장 도면을 다시 그려 보내기\", \"냉장고 크기 재서 알려 주기\". 담당과 기한은 text에 넣지 않고 owner와 due에 적습니다. '~함', '~하기로 했다', '~했습니다'로 끝내지 않습니다.";
+10. 할 일 갈래(갈래 목록에 '할 일 갈래'라고 붙은 것)의 text는 '무엇을 하기' 꼴의 짧은 할 일로 씁니다. 예: \"신발장 도면을 다시 그려 보내기\", \"냉장고 크기 재서 알려 주기\". 담당과 기한은 text에 넣지 않고 owner와 due에 적습니다. '~함', '~하기로 했다', '~했습니다'로 끝내지 않습니다.
+11. 같은 것을 두고 앞뒤 말이 다르면(예산을 바꿈, 색을 바꿈) 마지막에 정한 말을 따릅니다. 앞의 말은 결정·사실로 뽑지 않고, 꼭 남길 때는 '처음에는 ~였다가 ~로 바꿈'처럼 바뀐 것을 text에 밝힙니다.
+12. 이미 정한 것을 나중에 다시 묻거나 다른 안을 물어본 것만으로는 '아직 안 정한 것'이 아닙니다. '다시 생각해 보겠다', '보류하자'처럼 분명히 되돌린 경우만 open으로 합니다.
+13. 누구 이야기인지 봅니다. 우리 회사가 했던 다른 현장, 다른 고객, 말하는 사람 자신의 집이나 사무실 이야기(예: \"예전에 한 현장은 40평대였어요\", \"제 집은 꼭대기 층이라\")는 이 회의의 고객·현장 사실(현장, 예산, 요청, 결정)로 옮기지 않습니다. 꼭 적어야 하면 text에 '다른 현장 사례'처럼 누구 이야기인지 밝힙니다.";
 
 struct Overview {
     template_id: String,
@@ -1195,14 +1292,23 @@ fn check_item(
         reasons.push(CheckReason::OverlappingSpeech);
     }
 
-    // Every number the item states must be in the lines around its quote.
-    let evidence = digits_of(&index.text_around(&lines, 2));
+    // Every number the item states must be in the lines around its quote,
+    // as the same digits or the same value however said ("아홉 평" is 9평).
     let stated = format!("{} {}", raw.text, raw.due);
-    if numbers_in(&stated)
-        .iter()
-        .any(|number| !evidence.contains(number.as_str()))
-    {
+    if !super::amounts::backed(&stated, &index.text_around(&lines, 2)) {
         reasons.push(CheckReason::NumberNotInSource);
+    }
+    // An amount no one says that way, in the item or in the words it copies
+    // ("1억 5천억", "80,900만원"): the speech model may have misheard it.
+    let quoted = index.text_around(&lines, 0);
+    if super::amounts::odd_units(&raw.text)
+        || (!numbers_in(&raw.text).is_empty() && super::amounts::odd_units(&quoted))
+    {
+        reasons.push(CheckReason::UnitOdd);
+    }
+    // The same rate said with another value close by ("자당 20", "자당 25만").
+    if super::amounts::rates_differ(&raw.text, &index.text_around(&lines, 3)) {
+        reasons.push(CheckReason::NumbersDiffer);
     }
 
     // An owner is a person: a name the recording has, never a speaker label.
@@ -1240,6 +1346,243 @@ fn check_item(
         },
         lines,
     })
+}
+
+/// Marks the entries whose changes of an amount do not add up: one says it
+/// went from A to B, another (or the same) by C, near B − A but not it.
+fn mark_sums(entries: &mut [(String, Entry)]) {
+    let texts: Vec<&str> = entries.iter().map(|(_, e)| e.text.as_str()).collect();
+    for at in super::amounts::sums_disagree(&texts) {
+        push_reason(&mut entries[at].1, CheckReason::SumsDisagree);
+    }
+}
+
+/// Whether everything an item rests on was said after the meeting ended.
+fn after_the_end(item: &Item, index: &Index<'_>, end_ms: Option<u64>) -> bool {
+    end_ms.is_some_and(|end| index.segments[*item.lines.start()].start_ms >= end)
+}
+
+/// Marks a fact or a choice whose words talk about another site or person
+/// (a past case, the speaker's own home): it may be someone else's story
+/// moved onto this meeting's customer. Tasks are not marked: who does them
+/// is checked on its own.
+fn mark_elsewhere(
+    item: &mut Item,
+    template: &Template,
+    index: &Index<'_>,
+    transcript: &Transcript,
+    customer: &str,
+) {
+    if template
+        .section(&item.section)
+        .is_some_and(|section| section.kind == SectionKind::Actions)
+    {
+        return;
+    }
+    let cited = &index.segments[item.lines.clone()];
+    let words: Vec<&str> = cited.iter().map(|line| line.text.as_str()).collect();
+    let names: Vec<String> = cited
+        .iter()
+        .map(|line| transcript.speaker_name(line.speaker))
+        .collect();
+    // A meeting with a customer: one is named, or the template has their
+    // side.
+    let has_customer = !customer.trim().is_empty() || template.section("customer_tasks").is_some();
+    let who = super::facts::who_said(&names, customer, has_customer);
+    if super::facts::about_someone_else(&item.entry.text, &words.join(" "), who) {
+        push_reason(&mut item.entry, CheckReason::OtherSubject);
+    }
+}
+
+/// Doubts that keep an entry out of the story and the summary: it may not
+/// have been said so, may be someone else's, or carries a number that may
+/// be wrong; stating it there would undo the "확인 필요" beside it.
+const DOUBTS_NOT_TOLD: [CheckReason; 8] = [
+    CheckReason::AfterTheEnd,
+    CheckReason::WeakSupport,
+    CheckReason::Conflicting,
+    CheckReason::OtherSubject,
+    CheckReason::NumberNotInSource,
+    CheckReason::NumbersDiffer,
+    CheckReason::UnitOdd,
+    CheckReason::SumsDisagree,
+];
+
+/// The most pairs of entries put to the model as possibly disagreeing.
+const MOST_CLASHES: usize = 20;
+
+/// Finds entries that may say different things about the same matter and
+/// asks the model, for each pair, which stands: the later word when it
+/// changed what was said before; the earlier when the later only asked
+/// about it again; both when they are about different things. A pair it
+/// cannot settle is marked for a look on both sides; one it could not be
+/// asked about is left as written. Returns how many entries were left out.
+fn reconcile(
+    input: &Input<'_>,
+    template: &Template,
+    entries: &mut Vec<(String, Entry)>,
+    index: &Index<'_>,
+    transcript: &Transcript,
+) -> u32 {
+    // Facts and choices; tasks are read together later.
+    let candidates: Vec<usize> = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, (key, _))| {
+            template
+                .section(key)
+                .is_some_and(|section| section.kind != SectionKind::Actions)
+        })
+        .map(|(at, _)| at)
+        .collect();
+    let said: Vec<super::facts::Said<'_>> = candidates
+        .iter()
+        .map(|&at| super::facts::Said {
+            section: entries[at].0.as_str(),
+            text: entries[at].1.text.as_str(),
+            ms: entries[at].1.sources.first().map_or(0, |s| s.ms),
+        })
+        .collect();
+    let pairs: Vec<(usize, usize, super::facts::Clash)> =
+        super::facts::clashes(&said, OPEN_SECTION, MOST_CLASHES)
+            .into_iter()
+            .map(|(x, y, clash)| (candidates[x], candidates[y], clash))
+            .collect();
+    if pairs.is_empty() {
+        return 0;
+    }
+
+    // What was said around an entry, and a little after: a later word may
+    // be the one that settles it.
+    let around = |entry: &Entry, after: usize| -> String {
+        let ms = entry.sources.last().map_or(0, |s| s.ms);
+        let at = index
+            .segments
+            .iter()
+            .position(|segment| segment.start_ms >= ms)
+            .unwrap_or(0);
+        let first = at.saturating_sub(1);
+        let last = (at + after).min(index.segments.len() - 1);
+        index.segments[first..=last]
+            .iter()
+            .map(|segment| {
+                format!(
+                    "[{}] {}: {}\n",
+                    clock(segment.start_ms),
+                    transcript.speaker_name(segment.speaker),
+                    segment.text
+                )
+            })
+            .collect()
+    };
+    let section_title = |key: &str| {
+        template
+            .section(key)
+            .map_or(key.to_string(), |s| s.title.clone())
+    };
+    let listing: String = pairs
+        .iter()
+        .enumerate()
+        .map(|(number, &(a, b, _))| {
+            let (ka, ea) = &entries[a];
+            let (kb, eb) = &entries[b];
+            format!(
+                "### {}\n먼저 나온 것 [{}] {}\n{}나중에 나온 것 [{}] {}\n{}\n",
+                number + 1,
+                section_title(ka),
+                ea.text,
+                around(ea, 2),
+                section_title(kb),
+                eb.text,
+                around(eb, 4),
+            )
+        })
+        .collect();
+    let system = "당신은 회의록을 검수하는 사람입니다. 회의록에 실릴 항목 가운데 같은 것을 두고 서로 다르게 말하는 것 같은 두 항목이 번호별로, 녹음의 그 대목과 함께 주어집니다. 대목에 적힌 말만 보고 판정합니다.\n\n\
+         verdict:\n\
+         - later: 나중 말이 앞의 말을 바꿨다(예산을 올림, 색을 바꿈, 다시 생각해 보겠다고 분명히 되돌림). 나중 것만 남깁니다.\n\
+         - earlier: 앞에서 정한 것이 그대로다. 나중 것은 다시 물어보거나 다른 안을 물어본 것일 뿐 바꾸지 않았거나, 나중 것이 다른 사람·다른 현장 이야기다. 앞의 것만 남깁니다.\n\
+         - both: 서로 다른 것에 관한 말이라 둘 다 맞다.\n\
+         - unclear: 어느 쪽이 맞는지 대목만으로는 알 수 없다.\n\n\
+         모든 번호에 대해 하나씩 답합니다.";
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "results": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "integer" },
+                        "verdict": { "type": "string", "enum": ["later", "earlier", "both", "unclear"] }
+                    },
+                    "required": ["id", "verdict"],
+                    "additionalProperties": false
+                }
+            }
+        },
+        "required": ["results"],
+        "additionalProperties": false
+    });
+    let verdicts: BTreeMap<usize, String> = match ask_again(input, system, &listing, &schema) {
+        Ok(answer) => answer
+            .get("results")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|result| {
+                Some((
+                    result.get("id")?.as_u64()? as usize,
+                    result.get("verdict")?.as_str()?.to_string(),
+                ))
+            })
+            .collect(),
+        Err(e) => {
+            warn!(
+                "Could not ask which of {} pairs stands ({e:#}); marking them for a look",
+                pairs.len()
+            );
+            BTreeMap::new()
+        }
+    };
+    apply_reconciled(entries, &pairs, &verdicts)
+}
+
+/// Makes the verdicts so: the entry that does not stand goes, and a pair
+/// found unsettled is marked on both sides. Returns how many went.
+fn apply_reconciled(
+    entries: &mut Vec<(String, Entry)>,
+    pairs: &[(usize, usize, super::facts::Clash)],
+    verdicts: &BTreeMap<usize, String>,
+) -> u32 {
+    let mut gone: HashSet<usize> = HashSet::new();
+    for (number, &(earlier, later, _)) in pairs.iter().enumerate() {
+        match verdicts.get(&(number + 1)).map(String::as_str) {
+            Some("later") => {
+                gone.insert(earlier);
+            }
+            Some("earlier") => {
+                gone.insert(later);
+            }
+            // Not to be told from the words: said both ways, so a person
+            // hears it.
+            Some("unclear") => {
+                push_reason(&mut entries[earlier].1, CheckReason::Conflicting);
+                push_reason(&mut entries[later].1, CheckReason::Conflicting);
+            }
+            // Both stand, or the checker gave no answer for it (or could not
+            // be asked): the pair may well not disagree, so it is left as
+            // written rather than marked on a guess.
+            _ => {}
+        }
+    }
+    let mut at = 0;
+    entries.retain(|_| {
+        let keep = !gone.contains(&at);
+        at += 1;
+        keep
+    });
+    gone.len() as u32
 }
 
 /// The runs of digits in `text`, with grouping commas removed: `4,500` → `4500`.
@@ -1306,14 +1649,13 @@ fn same_thing(a: &Item, b: &Item) -> bool {
 }
 
 struct Composed {
-    summary: String,
     /// `(section key, entry)` in the order of the recording.
     entries: Vec<(String, Entry)>,
 }
 
-/// Merges the items that say the same thing and has the model write the
-/// summary. If the model cannot, the minutes go out without one.
-fn compose(input: &Input<'_>, template: &Template, items: Vec<Item>, title: &str) -> Composed {
+/// Merges the items that say the same thing. The summary is written later,
+/// from what is left once everything is checked.
+fn compose(items: Vec<Item>) -> Composed {
     let mut merged: Vec<Item> = Vec::new();
     for item in items {
         match merged.iter_mut().find(|kept| same_thing(kept, &item)) {
@@ -1339,23 +1681,17 @@ fn compose(input: &Input<'_>, template: &Template, items: Vec<Item>, title: &str
         }
     }
     merged.sort_by_key(|item| item.entry.sources.first().map_or(0, |source| source.ms));
-
-    let summary = if merged.is_empty() {
-        String::new()
-    } else {
-        summarize(input, template, &merged, title).unwrap_or_else(|e| {
-            warn!("Could not write the summary line ({e:#}); leaving it out");
-            String::new()
-        })
-    };
     Composed {
-        summary,
         entries: merged
             .into_iter()
             .map(|item| (item.section, item.entry))
             .collect(),
     }
 }
+
+/// The section of the site's facts (address, size, floor), which the checker
+/// reads beside their lines like tasks and decisions.
+const SITE_SECTION: &str = "site";
 
 /// Whether an entry in `section` states a commitment: a task, or something
 /// decided. Notes on what was discussed do not.
@@ -1369,21 +1705,19 @@ fn commits(template: &Template, section: &str) -> bool {
 /// The items as the summary's writer reads them. All of them when they fit;
 /// for a long meeting, the tasks and decisions first and then what room is
 /// left, because more than a model reads is cut off without a word.
-fn summary_listing(template: &Template, items: &[Item]) -> String {
-    let line = |item: &Item| {
+fn summary_listing(template: &Template, items: &[(String, Entry)]) -> String {
+    let line = |(key, entry): &(String, Entry)| {
         let section = template
-            .section(&item.section)
-            .map_or(item.section.as_str(), |section| section.title.as_str());
-        format!("- [{section}] {}\n", item.entry.text)
+            .section(key)
+            .map_or(key.as_str(), |section| section.title.as_str());
+        format!("- [{section}] {}\n", entry.text)
     };
     let whole: String = items.iter().map(line).collect();
     if whole.chars().count() <= SUMMARY_CHARS {
         return whole;
     }
-    let first = items.iter().filter(|item| commits(template, &item.section));
-    let rest = items
-        .iter()
-        .filter(|item| !commits(template, &item.section));
+    let first = items.iter().filter(|(key, _)| commits(template, key));
+    let rest = items.iter().filter(|(key, _)| !commits(template, key));
     let mut listing = String::new();
     let mut used = 0;
     for item in first.chain(rest) {
@@ -1403,7 +1737,7 @@ fn summary_listing(template: &Template, items: &[Item]) -> String {
 fn summarize(
     input: &Input<'_>,
     template: &Template,
-    items: &[Item],
+    items: &[(String, Entry)],
     title: &str,
 ) -> Result<String> {
     let listing = summary_listing(template, items);
@@ -1739,6 +2073,7 @@ fn apply_verdicts(
                                 "decided" => CheckReason::NotSettled,
                                 "differs" => CheckReason::SaidDifferently,
                                 "number" => CheckReason::NumbersDiffer,
+                                "subject" => CheckReason::OtherSubject,
                                 _ => CheckReason::WeakSupport,
                             },
                         ),
@@ -1772,11 +2107,12 @@ fn verify(
     cancelled: &AtomicBool,
 ) -> Option<u32> {
     // What states a commitment: tasks, and anything in a section named as
-    // decided. Notes on what was discussed are not put to the question.
+    // decided; and the site, which is easily taken from someone else's
+    // story. Notes on what was discussed are not put to the question.
     let targets: Vec<usize> = entries
         .iter()
         .enumerate()
-        .filter(|(_, (key, _))| commits(template, key))
+        .filter(|(_, (key, _))| commits(template, key) || key == SITE_SECTION)
         .map(|(i, _)| i)
         .collect();
     if targets.is_empty() {
@@ -1826,7 +2162,8 @@ fn verify(
          - unsupported: 대목에 그런 말이 없다.\n\
          owner_stated: 주장에 담당이 적혀 있다면, 그 사람이 맡는다는 것이 대목에서 분명한가. 담당이 없으면 true.\n\
          due_stated: 주장에 기한이 적혀 있다면, 그 기한이 대목에 나오는가. 기한이 없으면 true.\n\
-         doubt: partly일 때 무엇이 분명하지 않은지 하나를 고릅니다. who(누가 할지 말이 없음), when(기한이 말에 없음), decided(정한 것인지 이야기만 한 것인지 분명하지 않음), differs(말한 내용과 조금 다르게 적혔음), number(금액이나 숫자가 다르게 나옴), other(그 밖). supported나 unsupported면 none.\n\n\
+         doubt: partly일 때 무엇이 분명하지 않은지 하나를 고릅니다. who(누가 할지 말이 없음), when(기한이 말에 없음), decided(정한 것인지 이야기만 한 것인지 분명하지 않음), differs(말한 내용과 조금 다르게 적혔음), number(금액이나 숫자가 다르게 나옴), subject(다른 현장·다른 사람·말하는 사람 자기 집 이야기를 이 회의 고객의 일처럼 적었을 수 있음), other(그 밖). supported나 unsupported면 none.\n\
+         대목이 다른 현장이나 말하는 사람 자신의 집 이야기인데 주장이 이 회의 고객의 사실로 적혀 있으면 unsupported입니다.\n\n\
          모든 번호에 대해 하나씩 답합니다.";
     let schema = json!({
         "type": "object",
@@ -1840,7 +2177,7 @@ fn verify(
                         "verdict": { "type": "string", "enum": ["supported", "partly", "unsupported"] },
                         "owner_stated": { "type": "boolean" },
                         "due_stated": { "type": "boolean" },
-                        "doubt": { "type": "string", "enum": ["none", "who", "when", "decided", "differs", "number", "other"] }
+                        "doubt": { "type": "string", "enum": ["none", "who", "when", "decided", "differs", "number", "subject", "other"] }
                     },
                     "required": ["id", "verdict", "owner_stated", "due_stated", "doubt"],
                     "additionalProperties": false
@@ -1955,11 +2292,23 @@ fn tidy_tasks(
                 line.push_str(&format!(" / 기한: {}", entry.due));
             }
             if let Some(source) = entry.sources.first() {
-                let speaker = transcript
+                let at = transcript
                     .segments
                     .iter()
-                    .find(|segment| segment.start_ms == source.ms)
-                    .map(|segment| transcript.speaker_name(segment.speaker))
+                    .position(|segment| segment.start_ms == source.ms);
+                // The line before, where someone may have handed it over.
+                if let Some(before) = at
+                    .and_then(|at| at.checked_sub(1))
+                    .and_then(|at| transcript.segments.get(at))
+                {
+                    line.push_str(&format!(
+                        "\n   (앞 줄) {}: {}",
+                        transcript.speaker_name(before.speaker),
+                        before.text
+                    ));
+                }
+                let speaker = at
+                    .map(|at| transcript.speaker_name(transcript.segments[at].speaker))
                     .unwrap_or_default();
                 line.push_str(&format!(
                     "\n   [{}] {speaker}: 「{}」",
@@ -1974,7 +2323,7 @@ fn tidy_tasks(
     let system = "당신은 회의록의 할 일 목록을 다듬는 서기입니다. 녹음에서 뽑은 할 일 후보가 번호와 함께, 근거가 된 말과 그 말을 한 사람과 같이 주어집니다.\n\n\
          1. promise: 회의가 끝난 뒤 누군가 실제로 해야 하는 약속이면 true입니다. 회의 중에 이미 한 일이나 하고 있는 일을 묘사한 것(예: \"상담 중에 견적서를 쓰고 있음\", \"가전 자리를 반영해 제안함\"), 지나가며 한 말, 일반적인 설명, 가벼운 안내나 권유(예: \"사례 영상을 참고해 달라\", \"편하게 연락 달라\")는 false입니다. 할 일은 적을수록 좋습니다. 한두 시간 회의에서 남는 할 일은 보통 다섯에서 열 개입니다.\n\
          2. 같은 약속이 여러 번 나왔으면 한 묶음(ids)으로 모읍니다. 묶음의 첫 번호는 그 약속을 가장 잘 적은 것으로 합니다. 비슷해 보여도 다른 일이면 따로 둡니다.\n\
-         3. owner: 그 일을 할 사람을 owners 목록에서만 고릅니다. 근거가 된 말을 한 사람이 \"제가 하겠습니다\"라고 했으면 그 사람입니다. 사람을 알 수 없으면 약속한 쪽(목록에 있는 '우리(상담 담당)'이나 '고객')을 고르고, 그것도 알 수 없으면 빈 문자열로 둡니다.\n\
+         3. owner: 그 일을 할 사람을 owners 목록에서만 고르고, 사람 이름을 먼저 봅니다. 근거가 된 말을 한 사람이 이름으로 적혀 있고 \"제가 하겠습니다\"처럼 자기가 하겠다고 했으면 그 사람입니다. 다른 사람이 이름을 대며 맡긴 말(\"그건 박 소장님이 봐 주실 거예요\")이 바로 앞에 있으면 그 사람입니다. 그렇게 사람을 알 수 없을 때만 약속한 쪽(목록에 있는 '우리(상담 담당)'이나 '고객')을 고르고, 그것도 알 수 없으면 빈 문자열로 둡니다.\n\
          4. weight: 3은 돈·일정·계약·고객의 결정에 바로 걸린 약속, 2는 누군가 실제로 해야 하는 작업, 1은 가벼운 안내·추천·참고 자료 보내기입니다.\n\
          5. 회의 중에 이미 끝낸 일(\"링크를 전달함\", \"도면을 고침\", \"사이즈를 확인함\", \"추천함\")은 앞으로 할 약속이 아니므로 promise를 false로 합니다.\n\
          6. 모든 번호가 정확히 한 묶음에 들어가야 합니다. 새 내용을 지어내지 않습니다.";
@@ -2176,6 +2525,88 @@ fn apply_task_groups(
     });
 }
 
+/// How a promise of one's own deed ends: "할게요", "보내드리겠습니다".
+const OWN_DEEDS: &[&str] = &[
+    "할게요",
+    "하겠습니다",
+    "드릴게요",
+    "드리겠습니다",
+    "보낼게요",
+    "보내겠습니다",
+    "볼게요",
+    "보겠습니다",
+    "갈게요",
+    "가겠습니다",
+    "챙길게요",
+    "챙기겠습니다",
+    "줄게요",
+    "주겠습니다",
+    "올게요",
+    "오겠습니다",
+];
+
+/// Someone else named as the doer in the same line.
+const OTHER_DOERS: &[&str] = &["님이", "님께서", "님한테", "님께", "씨가", "씨한테", "분이"];
+
+/// Gives tasks to people by name where the recording says who: a task the
+/// customer's side promised goes to the customer by name when the meeting
+/// has one, and one left to our side (or to no one) goes to the speaker who
+/// promised their own deed in the first person ("제가 보내드릴게요"), when
+/// that speaker is named, is not the customer, and the line names no one
+/// else as the doer. Nothing is guessed: without such words
+/// the side stays.
+fn owners_by_name(
+    template: &Template,
+    entries: &mut [(String, Entry)],
+    transcript: &Transcript,
+    customer: &str,
+) {
+    let customer = customer.trim();
+    for (key, entry) in entries.iter_mut() {
+        if !template
+            .section(key)
+            .is_some_and(|section| section.kind == SectionKind::Actions)
+        {
+            continue;
+        }
+        let side = side_of(key);
+        if side == Some("고객") {
+            if entry.owner == "고객" && !customer.is_empty() {
+                entry.owner = customer.to_string();
+            }
+            continue;
+        }
+        if !(entry.owner.is_empty() || side.is_some_and(|side| entry.owner == side)) {
+            continue;
+        }
+        let Some(source) = entry.sources.first() else {
+            continue;
+        };
+        let Some(line) = transcript
+            .segments
+            .iter()
+            .find(|segment| segment.start_ms == source.ms)
+        else {
+            continue;
+        };
+        let name = transcript.speaker_name(line.speaker);
+        let named = !name.starts_with("화자") && !super::facts::is_customer(&name, customer);
+        // "제가" or "내가" as a word of its own, not inside "안내가".
+        let first_person = line
+            .text
+            .split(|c: char| !c.is_alphanumeric())
+            .any(|word| word == "제가" || word == "내가");
+        // The speaker's own deed for later ("제가 … 보낼게요"), and no one
+        // else named as the one who does it ("소장님이 봐 주실 거예요").
+        let squeezed: String = line.text.chars().filter(|c| !c.is_whitespace()).collect();
+        let own_deed = OWN_DEEDS.iter().any(|end| squeezed.contains(end));
+        let someone_else = OTHER_DOERS.iter().any(|word| squeezed.contains(word));
+        if named && first_person && own_deed && !someone_else {
+            entry.owner = name;
+        }
+    }
+}
+
 /// How much an entry matters to be checked: tasks and decisions, money and
 /// dates first.
 fn weight(template: &Template, key: &str, entry: &Entry) -> u32 {
@@ -2194,8 +2625,23 @@ fn weight(template: &Template, key: &str, entry: &Entry) -> u32 {
     if !numbers_in(&entry.text).is_empty() {
         weight += 2;
     }
-    if entry.reasons.contains(&CheckReason::NumberNotInSource) {
+    if entry.reasons.iter().any(|r| {
+        matches!(
+            r,
+            CheckReason::NumberNotInSource | CheckReason::UnitOdd | CheckReason::SumsDisagree
+        )
+    }) {
         weight += 2;
+    }
+    // Said both ways, maybe someone else's, or maybe after the meeting:
+    // what a person most needs to hear before relying on the minutes.
+    if entry.reasons.iter().any(|r| {
+        matches!(
+            r,
+            CheckReason::Conflicting | CheckReason::OtherSubject | CheckReason::AfterTheEnd
+        )
+    }) {
+        weight += 3;
     }
     if entry.reasons.iter().any(|reason| {
         matches!(
@@ -2232,8 +2678,15 @@ fn keep_checks(template: &Template, entries: &mut Vec<(String, Entry)>, most: us
     let mut gone: HashSet<usize> = HashSet::new();
     for &(at, _, _) in doubted.iter().skip(most) {
         let entry = &mut entries[at].1;
-        if entry.reasons.contains(&CheckReason::WeakSupport) {
+        if entry
+            .reasons
+            .iter()
+            .any(|r| matches!(r, CheckReason::WeakSupport | CheckReason::OtherSubject))
+        {
             gone.insert(at);
+        } else if entry.reasons.iter().any(|r| MUST_BE_HEARD.contains(r)) {
+            // Said two ways, or an amount no one says so: shown faintly it
+            // would read as fact, so it stays to be heard past the limit.
         } else {
             entry.reasons.clear();
             entry.faint = true;
@@ -2247,6 +2700,15 @@ fn keep_checks(template: &Template, entries: &mut Vec<(String, Entry)>, most: us
     });
     gone.len() as u32
 }
+
+/// Doubts never turned into a faint line by the limit on checks: the entry
+/// as written may be plainly wrong.
+const MUST_BE_HEARD: [CheckReason; 4] = [
+    CheckReason::AfterTheEnd,
+    CheckReason::Conflicting,
+    CheckReason::UnitOdd,
+    CheckReason::SumsDisagree,
+];
 
 fn push_reason(entry: &mut Entry, reason: CheckReason) {
     if !entry.reasons.contains(&reason) {
@@ -2756,7 +3218,7 @@ mod tests {
                 &"자재와 일정에 대해서 계속 이야기를 이어 갑니다. ".repeat(6),
             ));
         }
-        let windows = windows(&transcript, &[12_000], &[]);
+        let windows = windows(&transcript, &[12_000], &[], None);
         assert!(windows.len() > 1);
         let (text, starts) = numbered(&windows[0]);
         // The mark sits between the lines it fell between, and has no number.
@@ -3003,7 +3465,10 @@ mod tests {
             item(&note, "창호 견적을 두 곳에서 받아 보았다", 1, 1_000),
             item(&actions, "도면을 금요일까지 보낸다", 2, 2_000),
         ];
-        let listing = summary_listing(&template, &short);
+        let pairs = |items: Vec<Item>| -> Vec<(String, Entry)> {
+            items.into_iter().map(|i| (i.section, i.entry)).collect()
+        };
+        let listing = summary_listing(&template, &pairs(short));
         assert!(listing.find("창호 견적").unwrap() < listing.find("도면을").unwrap());
 
         // A long one is cut to what a model reads, the tasks kept.
@@ -3018,7 +3483,7 @@ mod tests {
             })
             .collect();
         long.push(item(&actions, "도면을 금요일까지 보낸다", 400, 400_000));
-        let listing = summary_listing(&template, &long);
+        let listing = summary_listing(&template, &pairs(long));
         assert!(listing.chars().count() <= SUMMARY_CHARS);
         assert!(listing.starts_with("- ["));
         assert!(listing
@@ -3067,5 +3532,304 @@ mod tests {
             assert!(answer.is_err());
             assert_eq!(calls, 1, "{hopeless}");
         }
+    }
+
+    #[test]
+    fn the_later_word_stands_and_an_unsettled_pair_is_marked_both_ways() {
+        use crate::seogi::facts::Clash;
+        let mut entries = vec![
+            (
+                "budget".to_string(),
+                task("예산은 4,000만 원", "", "", 1_000, vec![]),
+            ),
+            (
+                "budget".to_string(),
+                task("예산은 5,000만 원", "", "", 9_000, vec![]),
+            ),
+            (
+                "decisions".to_string(),
+                task("방은 4개로 유지", "", "", 2_000, vec![]),
+            ),
+            (
+                "open".to_string(),
+                task("방 개수는 아직 미정", "", "", 8_000, vec![]),
+            ),
+            (
+                "site".to_string(),
+                task("현장은 32평", "", "", 3_000, vec![]),
+            ),
+            (
+                "site".to_string(),
+                task("현장은 58평", "", "", 7_000, vec![]),
+            ),
+        ];
+        let pairs = vec![
+            (0, 1, Clash::Numbers),
+            (2, 3, Clash::SettledAndOpen),
+            (4, 5, Clash::Numbers),
+        ];
+        // The budget was raised; the rooms were only asked about again; the
+        // size could not be told.
+        let verdicts: BTreeMap<usize, String> = [
+            (1, "later".to_string()),
+            (2, "earlier".to_string()),
+            (3, "unclear".to_string()),
+        ]
+        .into();
+        let gone = apply_reconciled(&mut entries, &pairs, &verdicts);
+        assert_eq!(gone, 2);
+        let texts: Vec<&str> = entries.iter().map(|(_, e)| e.text.as_str()).collect();
+        assert_eq!(
+            texts,
+            [
+                "예산은 5,000만 원",
+                "방은 4개로 유지",
+                "현장은 32평",
+                "현장은 58평"
+            ]
+        );
+        assert_eq!(entries[2].1.reasons, [CheckReason::Conflicting]);
+        assert_eq!(entries[3].1.reasons, [CheckReason::Conflicting]);
+        assert!(entries[0].1.reasons.is_empty());
+    }
+
+    #[test]
+    fn what_is_said_after_the_meeting_ended_is_marked_for_a_look() {
+        let transcript = transcript();
+        let index = Index::new(&transcript);
+        let template = built_in().remove(1);
+        let windows = windows(&transcript, &[], &[], Some(16_000));
+        let text: Vec<&str> = windows[0].iter().map(|l| l.text.as_str()).collect();
+        assert_eq!(text[3], AFTER_THE_END);
+        let item = check_item(
+            raw(
+                "open",
+                "신발장은 고민 중",
+                "",
+                "",
+                "00:00:16",
+                "신발장이 줄어드는 건 조금 고민되네요",
+            ),
+            &template,
+            &index,
+            &transcript,
+        )
+        .unwrap();
+        assert!(after_the_end(&item, &index, Some(16_000)));
+        assert!(!after_the_end(&item, &index, Some(20_000)));
+        assert!(!after_the_end(&item, &index, None));
+    }
+
+    #[test]
+    fn a_fact_from_the_speakers_own_home_is_marked_but_the_customers_is_not() {
+        let mut transcript = transcript();
+        transcript
+            .segments
+            .push(line(21_000, 1, "우리 집은 고층이라 진동이 있어요."));
+        transcript
+            .segments
+            .push(line(26_000, 2, "저희 집은 32평이고 3층이에요."));
+        transcript.speakers[1].name = "고객".into();
+        let index = Index::new(&transcript);
+        let template = built_in().remove(1);
+        let check = |text: &str, ts: &str, quote: &str| {
+            let mut item = check_item(
+                raw("site", text, "", "", ts, quote),
+                &template,
+                &index,
+                &transcript,
+            )
+            .unwrap();
+            mark_elsewhere(&mut item, &template, &index, &transcript, "");
+            item.entry.reasons
+        };
+        assert_eq!(
+            check(
+                "현장은 고층이다",
+                "00:00:21",
+                "우리 집은 고층이라 진동이 있어요"
+            ),
+            [CheckReason::OtherSubject]
+        );
+        assert!(check(
+            "현장은 32평 3층이다",
+            "00:00:26",
+            "저희 집은 32평이고 3층이에요"
+        )
+        .is_empty());
+
+        // The customer left as "화자 2", or no speakers told apart at all:
+        // who said "저희 집" is not known, so it is not doubted.
+        for (id, name) in [(2, "화자 2"), (0, "화자")] {
+            let mut unknown = transcript.clone();
+            unknown.speakers.retain(|s| s.id != 2);
+            if id == 2 {
+                unknown.speakers.push(Speaker {
+                    id: 2,
+                    name: name.into(),
+                });
+            }
+            for segment in &mut unknown.segments {
+                segment.speaker = if id == 0 { 0 } else { segment.speaker };
+            }
+            let index = Index::new(&unknown);
+            let mut item = check_item(
+                raw(
+                    "site",
+                    "현장은 32평 3층이다",
+                    "",
+                    "",
+                    "00:00:26",
+                    "저희 집은 32평이고 3층이에요",
+                ),
+                &template,
+                &index,
+                &unknown,
+            )
+            .unwrap();
+            mark_elsewhere(&mut item, &template, &index, &unknown, "이서진");
+            assert!(item.entry.reasons.is_empty(), "{name}");
+        }
+    }
+
+    #[test]
+    fn numbers_are_compared_as_values_and_odd_amounts_are_marked() {
+        let mut transcript = transcript();
+        transcript
+            .segments
+            .push(line(21_000, 1, "천장은 아홉 평 정도 새로 합니다."));
+        transcript.segments.push(line(
+            26_000,
+            1,
+            "시공비까지 하면 80,900만원 정도 더 올라갈 수 있습니다.",
+        ));
+        transcript.segments.push(line(
+            31_000,
+            1,
+            "복도 끝은 자당 20 기준이고 서재도 여기도 자당 25만 원입니다.",
+        ));
+        let index = Index::new(&transcript);
+        let template = built_in().remove(1);
+        let reasons = |text: &str, ts: &str, quote: &str| {
+            check_item(
+                raw("materials", text, "", "", ts, quote),
+                &template,
+                &index,
+                &transcript,
+            )
+            .unwrap()
+            .entry
+            .reasons
+        };
+        // Said in words, written in digits: the same number.
+        assert!(reasons(
+            "천장 9평을 새로 한다",
+            "00:00:21",
+            "천장은 아홉 평 정도 새로 합니다"
+        )
+        .is_empty());
+        assert_eq!(
+            reasons(
+                "시공비까지 80,900만원 더 든다",
+                "00:00:26",
+                "80,900만원 정도 더 올라갈 수"
+            ),
+            [CheckReason::UnitOdd]
+        );
+        assert_eq!(
+            reasons(
+                "복도 끝 수납장은 자당 20",
+                "00:00:31",
+                "복도 끝은 자당 20 기준이고"
+            ),
+            [CheckReason::NumbersDiffer]
+        );
+        let mut entries = vec![
+            (
+                "budget".to_string(),
+                task(
+                    "견적이 1억 5천에서 2억 1천으로 올랐다",
+                    "",
+                    "",
+                    1_000,
+                    vec![],
+                ),
+            ),
+            (
+                "budget".to_string(),
+                task("5,100만 원 늘었다", "", "", 2_000, vec![]),
+            ),
+        ];
+        mark_sums(&mut entries);
+        assert_eq!(entries[0].1.reasons, [CheckReason::SumsDisagree]);
+        assert_eq!(entries[1].1.reasons, [CheckReason::SumsDisagree]);
+    }
+
+    #[test]
+    fn a_task_goes_to_the_person_who_promised_it_by_name() {
+        let template = consult();
+        let mut transcript = transcript();
+        transcript
+            .segments
+            .push(line(21_000, 2, "제가 집에 가서 냉장고 치수를 재 볼게요."));
+        transcript
+            .segments
+            .push(line(26_000, 1, "저희가 견적은 다음 주에 드리겠습니다."));
+        let mut entries = vec![
+            (
+                "our_tasks".to_string(),
+                task(
+                    "신발장 도면 다시 그려 보내기",
+                    "우리(상담 담당)",
+                    "",
+                    11_000,
+                    vec![],
+                ),
+            ),
+            (
+                "customer_tasks".to_string(),
+                task("냉장고 치수 재기", "고객", "", 21_000, vec![]),
+            ),
+            (
+                "our_tasks".to_string(),
+                task("견적 보내기", "우리(상담 담당)", "", 26_000, vec![]),
+            ),
+        ];
+        // Line 11 s is the named designer's own "보내드리겠습니다" without
+        // "제가": the side stays; "저희가" is the company, not a person.
+        owners_by_name(&template, &mut entries, &transcript, "이서진");
+        assert_eq!(entries[0].1.owner, "우리(상담 담당)");
+        assert_eq!(entries[1].1.owner, "이서진");
+        assert_eq!(entries[2].1.owner, "우리(상담 담당)");
+
+        transcript.segments[2].text =
+            "네, 중문은 제가 신발장 도면을 다시 그려서 보내드리겠습니다.".into();
+        owners_by_name(&template, &mut entries, &transcript, "이서진");
+        assert_eq!(entries[0].1.owner, "김서윤 실장");
+
+        // "제가" with someone else as the doer is not the speaker's task.
+        entries[0].1.owner = "우리(상담 담당)".into();
+        transcript.segments[2].text =
+            "제가 확인해 보니 그건 박도현 소장님이 보내 주실 거예요.".into();
+        owners_by_name(&template, &mut entries, &transcript, "이서진");
+        assert_eq!(entries[0].1.owner, "우리(상담 담당)");
+    }
+
+    #[test]
+    fn a_pair_the_checker_could_not_be_asked_about_is_left_as_written() {
+        use crate::seogi::facts::Clash;
+        let mut entries = vec![
+            (
+                "site".to_string(),
+                task("현장은 32평", "", "", 3_000, vec![]),
+            ),
+            (
+                "site".to_string(),
+                task("현장은 58평", "", "", 7_000, vec![]),
+            ),
+        ];
+        let gone = apply_reconciled(&mut entries, &[(0, 1, Clash::Numbers)], &BTreeMap::new());
+        assert_eq!(gone, 0);
+        assert!(entries.iter().all(|(_, e)| e.reasons.is_empty()));
     }
 }

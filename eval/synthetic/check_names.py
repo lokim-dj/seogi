@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Checks that the invented names in the practice scripts are nobody's.
 
-The scripts under eval/synthetic/scripts are public. Their people, sites and
+The scripts under eval/synthetic/scripts and the scenes under
+eval/synthetic/minutes are public. Their people, sites and
 companies are made up, and a made-up name must not happen to be a real one
 from your own records. If you keep a private vocabulary on this computer
 (see the README: a folder with vocabulary.json, never in this repository),
@@ -35,6 +36,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SCRIPTS = HERE / "scripts"
+# The minutes scenes (eval/minutes.py) are made up the same way.
+SCENES = HERE / "minutes"
 
 # Categories whose entries are names of real people, places or companies.
 NAME_CATEGORIES = {"직원", "고객", "현장", "업체", "staff", "customer", "site", "vendor", "person"}
@@ -103,7 +106,7 @@ def main() -> None:
         print("no private vocabulary on this computer; nothing to compare the names against")
         return
     names, people = load_names(vocab)
-    scripts = args.scripts or sorted(SCRIPTS.glob("*.txt"))
+    scripts = args.scripts or sorted(SCRIPTS.glob("*.txt")) + sorted(SCENES.glob("*.txt"))
     bad = False
     for script in scripts:
         found = collisions(script, names, people)
