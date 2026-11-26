@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.lokimdj.seogi.BuildConfig
 import io.github.lokimdj.seogi.R
 
@@ -22,6 +23,7 @@ fun SettingsScreen(
     calendar: Boolean,
     onBack: () -> Unit,
     onLogin: () -> Unit,
+    loginMessage: String?,
     onWifiOnly: (Boolean) -> Unit,
     onCalendar: () -> Unit,
     onPrivacy: () -> Unit,
@@ -38,6 +40,9 @@ fun SettingsScreen(
                 (if (account != null) account.ifEmpty { "Google" } + " · " else "") + stringResource(R.string.set_account_why),
                 done = false, onClick = onLogin,
             )
+            if (loginMessage != null) {
+                T(loginMessage, size = 12.5.sp, color = pal.rt, modifier = Modifier.padding(bottom = 12.dp))
+            }
             Hairline()
             StepLine(
                 stringResource(R.string.wifi_only), stringResource(if (wifiOnly) R.string.on else R.string.off),

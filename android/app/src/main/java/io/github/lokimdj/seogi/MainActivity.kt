@@ -1,6 +1,7 @@
 package io.github.lokimdj.seogi
 
 import android.Manifest
+import android.accounts.AccountManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -35,6 +36,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.lifecycleScope
 import com.google.android.gms.auth.api.identity.AuthorizationResult
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.CommonStatusCodes
 import io.github.lokimdj.seogi.data.Recording
 import io.github.lokimdj.seogi.data.UploadError
 import io.github.lokimdj.seogi.data.UploadState
@@ -66,12 +69,27 @@ class MainActivity : ComponentActivity() {
     private val app get() = application as SeogiApp
     private var pickedEmail: String? = null
 
+    /** Why the last sign-in did not work, shown in red until the next try. */
+    private var loginMessage by mutableStateOf<String?>(null)
+
     private val consent = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
+        if (res.resultCode != RESULT_OK) {
+            // Back from Google's screen without a grant: cancelled, or Google
+            // blocked this account (the consent screen is still in testing).
+            loginFailed(getString(R.string.login_not_finished))
+            return@registerForActivityResult
+        }
         try {
             onAuthorized(GoogleAuth.resultFromIntent(this, res.data))
         } catch (e: Exception) {
-            Toast.makeText(this, R.string.login_failed, Toast.LENGTH_LONG).show()
+            loginFailed(loginErrorText(e))
         }
+    }
+
+    /** Android's own account chooser, so "다른 계정" really offers the other accounts. */
+    private val chooseAccount = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        val name = res.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
+        if (res.resultCode == RESULT_OK && name != null) authorizeFor(name)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -83,10 +101,29 @@ class MainActivity : ComponentActivity() {
 
     /** Sign in for Drive (`drive.file`); the consent screen only when Google needs it. */
     private fun login() {
+        lifecycleScope.launch { authorizeFor(GoogleAuth.pickAccount(this@MainActivity)) }
+    }
+
+    /**
+     * "다른 계정": without asking for a specific account Google quietly hands
+     * back the one already approved, so nothing seemed to happen. Ask Android
+     * which account first, then authorise that one.
+     */
+    private fun switchAccount() {
+        val intent = AccountManager.newChooseAccountIntent(null, null, arrayOf("com.google"), null, null, null, null)
+        try {
+            chooseAccount.launch(intent)
+        } catch (e: Exception) {
+            login()
+        }
+    }
+
+    private fun authorizeFor(email: String?) {
+        pickedEmail = email
+        loginMessage = null
         lifecycleScope.launch {
-            pickedEmail = GoogleAuth.pickAccount(this@MainActivity)
             try {
-                val r = GoogleAuth.authorize(this@MainActivity, pickedEmail)
+                val r = GoogleAuth.authorize(this@MainActivity, email)
                 val pending = r.pendingIntent
                 if (r.hasResolution() && pending != null) {
                     consent.launch(IntentSenderRequest.Builder(pending.intentSender).build())
@@ -94,8 +131,24 @@ class MainActivity : ComponentActivity() {
                     onAuthorized(r)
                 }
             } catch (e: Exception) {
-                Toast.makeText(this@MainActivity, R.string.login_failed, Toast.LENGTH_LONG).show()
+                loginFailed(loginErrorText(e))
             }
+        }
+    }
+
+    private fun loginFailed(text: String) {
+        loginMessage = text
+        Toast.makeText(this, text, Toast.LENGTH_LONG).show()
+    }
+
+    private fun loginErrorText(e: Exception): String {
+        val code = (e as? ApiException)?.statusCode
+        return when (code) {
+            CommonStatusCodes.CANCELED -> getString(R.string.login_not_finished)
+            CommonStatusCodes.NETWORK_ERROR -> getString(R.string.login_offline)
+            CommonStatusCodes.DEVELOPER_ERROR -> getString(R.string.login_app_setup, code)
+            null -> getString(R.string.login_failed)
+            else -> getString(R.string.login_failed_code, getString(R.string.login_failed), code)
         }
     }
 
@@ -107,6 +160,10 @@ class MainActivity : ComponentActivity() {
                 ?: withContext(Dispatchers.IO) { runCatching { DriveApi().email(token) }.getOrNull() }
             val before = app.settings.email.value
             app.settings.setEmail(email ?: "")
+            loginMessage = null
+            if (!email.isNullOrEmpty()) {
+                Toast.makeText(this@MainActivity, getString(R.string.login_done, email), Toast.LENGTH_SHORT).show()
+            }
             val switched = before != null && before != (email ?: "")
             if (switched) {
                 // Another account: half-done uploads belong to the old Drive; start them over.
@@ -227,6 +284,7 @@ class MainActivity : ComponentActivity() {
                     onNotifications = { request(Manifest.permission.POST_NOTIFICATIONS) },
                     onCalendar = { request(Manifest.permission.READ_CALENDAR) },
                     onLogin = ::login,
+                    loginMessage = loginMessage,
                     onStart = {
                         settings.onboarded = true
                         screen = Screen.HOME
@@ -279,7 +337,8 @@ class MainActivity : ComponentActivity() {
                     wifiOnly = wifiOnly,
                     calendar = perms.calendar,
                     onBack = { screen = Screen.HOME },
-                    onLogin = ::login,
+                    onLogin = { if (account == null) login() else switchAccount() },
+                    loginMessage = loginMessage,
                     onWifiOnly = ::setWifiOnly,
                     onCalendar = { request(Manifest.permission.READ_CALENDAR) },
                     onPrivacy = { open(PRIVACY_URL) },

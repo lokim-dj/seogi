@@ -34,6 +34,7 @@ fun OnboardingScreen(
     onNotifications: () -> Unit,
     onCalendar: () -> Unit,
     onLogin: () -> Unit,
+    loginMessage: String?,
     onStart: () -> Unit,
 ) {
     val signedIn = account != null
@@ -67,6 +68,9 @@ fun OnboardingScreen(
                 if (signedIn) account!!.ifEmpty { stringResource(R.string.allowed) } else stringResource(R.string.login),
                 stringResource(R.string.onb_drive_why), signedIn, onLogin,
             )
+            if (loginMessage != null) {
+                T(loginMessage, size = 12.5.sp, color = pal.rt, modifier = Modifier.padding(bottom = 12.dp))
+            }
             Hairline()
             T(
                 stringResource(R.string.onb_dictation_later), size = 11.5.sp, color = pal.t3, medium = true,
