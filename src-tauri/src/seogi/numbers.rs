@@ -304,6 +304,50 @@ const PERCENT_BEFORE: &[&str] = &[
     "대충", "얼추",
 ];
 
+/// The starts of words after "프로" that make it an amount.
+const PERCENT_AFTER: &[&str] = &[
+    "정도",
+    "쯤",
+    "가량",
+    "이상",
+    "이하",
+    "미만",
+    "초과",
+    "넘게",
+    "넘어",
+    "넘는",
+    "넘었",
+    "할인",
+    "인상",
+    "인하",
+    "올라",
+    "올랐",
+    "올려",
+    "올린",
+    "내렸",
+    "내려",
+    "내린",
+    "떨어",
+    "늘었",
+    "늘어",
+    "늘려",
+    "줄었",
+    "줄어",
+    "줄여",
+    "남았",
+    "남아",
+    "남은",
+    "빠졌",
+    "빠져",
+    "확실",
+    "증가",
+    "감소",
+    "차이",
+    "수수료",
+    "이자",
+    "금리",
+];
+
 /// Times of day, before a number of o'clock ("오후 한 시").
 const TIMES_OF_DAY: &[&str] = &["오전", "오후", "새벽", "아침", "저녁", "밤", "낮"];
 
@@ -767,7 +811,7 @@ fn spaced(
         let Some((unit, unit_len)) = unit_then_end(unit_letters) else {
             continue;
         };
-        if !fits(&number, unit) || (unit.word == "프로" && !plain_before(chars, words, i)) {
+        if !fits(&number, unit) || !unsure_units_clear(chars, words, i, unit_word, unit, &number) {
             continue;
         }
         // "삼십 일 차" (thirtieth day, or 31st?) and "오십 대 오십" (a ratio):
@@ -801,6 +845,42 @@ fn spaced(
         });
     }
     None
+}
+
+/// The units that are only sometimes a number's: what is around them must
+/// say so.
+/// - "프로" is percent only with nothing before that can be a name
+///   (`plain_before`) and an amount's word after it ("이십 프로가 남았어요",
+///   not "십오 프로가 제일 좋아요" or "오 프로가 먼저 쳤어요").
+/// - A lone 구 before 층 also means old or a district ("신 구 층 갈등",
+///   "강남 구 층"), so it needs `plain_before` too.
+/// - A lone 세 before 번 after a 번 left in words ("두 번 세 번", "한 번,
+///   세 번") stays in words with it.
+fn unsure_units_clear(
+    chars: &[char],
+    words: &[Word],
+    i: usize,
+    unit_word: usize,
+    unit: &Unit,
+    number: &Spoken,
+) -> bool {
+    match unit.word {
+        "프로" => plain_before(chars, words, i) && amount_after(chars, words, unit_word),
+        "층" if number.lone == Some('구') => plain_before(chars, words, i),
+        "번" if number.lone.is_some() => {
+            i == 0 || letters(chars, &words[i - 1]).first() != Some(&'번')
+        }
+        _ => true,
+    }
+}
+
+/// The word after the unit's word says an amount: "정도", "할인", "올랐어요".
+fn amount_after(chars: &[char], words: &[Word], unit_word: usize) -> bool {
+    if words[unit_word].closed || unit_word + 1 >= words.len() {
+        return false;
+    }
+    let next: String = letters(chars, &words[unit_word + 1]).iter().collect();
+    PERCENT_AFTER.iter().any(|stem| next.starts_with(stem))
 }
 
 /// Nothing before the number at `i` can be a product name: it starts the
@@ -889,7 +969,7 @@ fn attached(chars: &[char], words: &[Word], i: usize) -> Option<Found> {
         // "오십도 안 남았어요": 도 written on is "even", not degrees.
         if unit.word == "도"
             || !fits(&number, unit)
-            || (unit.word == "프로" && !plain_before(chars, words, i))
+            || !unsure_units_clear(chars, words, i, i, unit, &number)
         {
             continue;
         }
@@ -1136,6 +1216,8 @@ mod tests {
         ("세 번이나 말했어요", "3번이나 말했어요"),
         ("세 번 넘게 물어봤어요", "3번 넘게 물어봤어요"),
         ("구 층에 살아요", "9층에 살아요"),
+        ("저는 구 층에 살아요", "저는 9층에 살아요"),
+        ("수수료가 삼 프로 정도예요", "수수료가 3% 정도예요"),
         ("삼 점 오 퍼센트 올랐어요", "3.5% 올랐어요"),
         ("영 점 오 킬로 줄었어요", "0.5킬로 줄었어요"),
         ("삼 년 동안 다녔어요", "3년 동안 다녔어요"),
@@ -1250,6 +1332,24 @@ mod tests {
         "두 세 번",
         "한 세 번 정도",
         "구 층간 소음 기준",
+        "신 구 층 갈등",
+        "강남 구 층",
+        "두 번 세 번 말했어요",
+        "한 번 두 번 세 번",
+        "한 번, 세 번",
+        "저는 십오 프로 샀어요",
+        "아이폰은 십오 프로가 제일 좋아요",
+        "이번에 십육 프로 나왔어요",
+        "십오 프로 맥스 샀어요",
+        "이번에는 십칠 프로 맥스로 바꿨어요",
+        "폰은 십오 프로 써요",
+        "오 프로가 먼저 쳤어요",
+        "백 프로가 그랬어요",
+        "구 프로는 어때요",
+        "삼 프로 티비 봤어요",
+        "이십 프로.",
+        "폰은 십오 프로 늘 써요",
+        "가격이 십 프로 올해 기준",
         "총 세대 수는",
         "세대 간 갈등",
         "최대 오차는",
