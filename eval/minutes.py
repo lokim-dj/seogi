@@ -30,6 +30,15 @@ what the minutes should do, in comment lines:
                                    one-line summary, `*` every section
     # trap-num: …                  the same, for a wrong number
     # trap-quote: 정규식            no entry may rest on a line saying this
+    # check: 정규식                 a number that disagrees with another said in
+                                   the meeting: some entry marked for a look
+                                   for its numbers should say or quote this
+    # calm: 정규식                  numbers that agree: no entry saying or
+                                   quoting this may be marked for its numbers
+                                   disagreeing (a false alarm)
+
+A trap's sections may also name `feedback`: the points of the consultation
+feedback.
 
 For every scene it reports:
     tasks      expected tasks found / expected (tasks listed)
@@ -39,6 +48,10 @@ For every scene it reports:
     caught     traps that were marked for a look rather than left out
     expect     entries that should be there and are
     checks     entries marked for a look (확인 필요) in all
+    nums       number disagreements caught / `check` lines, and false alarms
+               (`calm` lines marked)
+    told       story sentences and feedback points the checker softened or
+               left out, of those it read (from the run's log)
     header     the customer's name in the head of 회의록.md, and the note
                that the recording started late or in the middle, when due
 
@@ -70,7 +83,7 @@ STARTED_AT_MS = 1793595600000
 def parse_scene(path: Path) -> dict:
     scene: dict = {"name": path.stem, "turns": [], "tasks": [], "expect": [], "traps": [],
                    "people": [], "customer": "", "place": "", "template": "", "late": 0,
-                   "midstart": False}
+                   "midstart": False, "check": [], "calm": []}
     lines = path.read_text(encoding="utf-8").splitlines()
     script: list[str] = []
     for raw in lines:
@@ -108,6 +121,8 @@ def parse_scene(path: Path) -> dict:
             scene["traps"].append({"kind": "num" if key == "trap-num" else "fact",
                                    "sections": split_sections(parts[0]),
                                    "pattern": parts[1], "unless": unless})
+        elif key in ("check", "calm"):
+            scene[key].append(value)
         elif key == "trap-quote":
             scene["traps"].append({"kind": "quote", "sections": ["*"], "pattern": value, "unless": ""})
     for line in script:
@@ -159,6 +174,24 @@ def flagged(entry: dict) -> bool:
     return bool(entry.get("reasons"))
 
 
+# The reasons that say an entry's numbers disagree with others said.
+NUMBER_REASONS = {"numbers_differ", "sums_disagree"}
+
+
+def told_counts(out: Path) -> tuple[int, int, int]:
+    """Story sentences and feedback points read by the checker, softened, and
+    left out, from the log line the minutes write."""
+    log = out / "stderr.log"
+    if not log.exists():
+        return 0, 0, 0
+    found = re.findall(r"Checked the story and feedback: (\d+) read, (\d+) softened, (\d+) left out",
+                       log.read_text(encoding="utf-8", errors="replace"))
+    if not found:
+        return 0, 0, 0
+    read, softened, gone = found[-1]
+    return int(read), int(softened), int(gone)
+
+
 def score(scene: dict, out: Path) -> dict:
     data = json.loads((out / "minutes.json").read_text(encoding="utf-8"))
     minutes = data["minutes"]
@@ -184,10 +217,12 @@ def score(scene: dict, out: Path) -> dict:
               for key, e in entries]
     stated += [("story", part["text"], False, "") for part in minutes.get("story", [])]
     stated += [("summary", minutes.get("summary", ""), False, "")]
+    for kind, points in (minutes.get("feedback") or {}).items():
+        stated += [("feedback", point["text"], False, "") for point in points or []]
 
     def in_sections(key: str, sections: list[str]) -> bool:
         if "*" in sections:
-            return key not in ("story", "summary") or key in sections
+            return key not in ("story", "summary", "feedback") or key in sections
         return key in sections
 
     leaked = {"fact": 0, "num": 0, "quote": 0}
@@ -219,6 +254,14 @@ def score(scene: dict, out: Path) -> dict:
         1 for want in scene["expect"]
         if any(in_sections(key, want["sections"]) and re.search(want["pattern"], text)
                for key, text, _, _ in stated))
+    def said_or_quoted(entry: dict, pattern: str) -> bool:
+        quotes = " ".join(s["quote"] for s in entry.get("sources", []))
+        return bool(re.search(pattern, entry["text"]) or re.search(pattern, quotes))
+
+    numeric = [e for _, e in entries if NUMBER_REASONS & set(e.get("reasons", []))]
+    nums_caught = sum(1 for pattern in scene["check"] if any(said_or_quoted(e, pattern) for e in numeric))
+    nums_false = sum(1 for pattern in scene["calm"] if any(said_or_quoted(e, pattern) for e in numeric))
+    told_read, told_soft, told_gone = told_counts(out)
     head = "\n".join(markdown.splitlines()[:12])
     header_wanted = header_right = 0
     if scene["customer"]:
@@ -238,6 +281,8 @@ def score(scene: dict, out: Path) -> dict:
         "checks": sum(1 for _, e in entries if flagged(e)),
         "entries": len(entries),
         "header_right": header_right, "header_wanted": header_wanted,
+        "nums_caught": nums_caught, "nums": len(scene["check"]), "nums_false": nums_false,
+        "told_read": told_read, "told_softened": told_soft, "told_gone": told_gone,
         "leaks": leaks,
     }
 
@@ -252,6 +297,7 @@ def run_scene(binary: Path, scene: dict, llm: str, work: Path, data_dir: Path) -
     started = time.time()
     env = {**__import__("os").environ, "SEOGI_DATA_DIR": str(data_dir)}
     done = subprocess.run(command, capture_output=True, text=True, env=env)
+    (folder / "stderr.log").write_text(done.stderr, encoding="utf-8")
     if done.returncode != 0:
         reason = (done.stderr.strip().splitlines() or ["failed"])[-1][:200]
         return {"scene": scene["name"], "error": reason}
@@ -304,15 +350,16 @@ def main() -> None:
 
 
 def print_table(rows: list[dict]) -> None:
-    print("| scene | tasks | owners | traps leaked | numbers leaked | caught | expect | checks | header |")
-    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    print("| scene | tasks | owners | traps leaked | numbers leaked | caught | expect | checks | header "
+          "| nums caught (false) | told softened+out/read | s |")
+    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     sums: dict[str, int] = {}
     for r in rows:
         if "error" in r:
-            print(f"| {r['scene']} | failed: {r['error']} | | | | | | | |")
+            print(f"| {r['scene']} | failed: {r['error']} | | | | | | | | | | |")
             continue
         for key, value in r.items():
-            if isinstance(value, int) and key != "seconds":
+            if isinstance(value, int):
                 sums[key] = sums.get(key, 0) + value
         print(row_text(r["scene"], r))
     if sums:
@@ -323,7 +370,10 @@ def row_text(name: str, r: dict) -> str:
     return (f"| {name} | {r['tasks_found']}/{r['tasks_wanted']} ({r['tasks_listed']}) "
             f"| {r['owners_right']}/{r['owners_wanted']} | {r['traps_leaked']}/{r['traps']} "
             f"| {r['numbers_leaked']}/{r['numbers']} | {r['caught']} | {r['expect_found']}/{r['expect']} "
-            f"| {r['checks']}/{r['entries']} | {r['header_right']}/{r['header_wanted']} |")
+            f"| {r['checks']}/{r['entries']} | {r['header_right']}/{r['header_wanted']} "
+            f"| {r.get('nums_caught', 0)}/{r.get('nums', 0)} ({r.get('nums_false', 0)}) "
+            f"| {r.get('told_softened', 0)}+{r.get('told_gone', 0)}/{r.get('told_read', 0)} "
+            f"| {r.get('seconds', '')} |")
 
 
 if __name__ == "__main__":

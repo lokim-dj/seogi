@@ -4,7 +4,9 @@
 //!
 //! It is written by the model that writes minutes, from the checked entries
 //! only, and every point names the entries it rests on; a point that names
-//! none is left out. The tone is plain: no praise or blame beyond what the
+//! none is left out. Each point is then checked against the transcript lines
+//! around those entries (`claims.rs`): one the lines do not say is left out,
+//! one they say less strongly is softened. The tone is plain: no praise or blame beyond what the
 //! recording shows. What a company counts as a good consultation is its
 //! own, in a rules file in the user's data folder; the one here is an
 //! example.
@@ -147,7 +149,9 @@ pub fn read(answer: &Value, entries: &[(&str, &Entry)]) -> Feedback {
                 }
                 sources.sort_by_key(|source| source.ms);
                 sources.dedup_by_key(|source| source.ms);
-                sources.truncate(POINT_TIMES);
+                // Every place it rests on is kept for the check against the
+                // recording; `trim_times` leaves the few that are shown.
+                sources.truncate(super::claims::CLAIM_PLACES);
                 Some(Point { text, sources })
             })
             .take(POINTS)
@@ -159,6 +163,22 @@ pub fn read(answer: &Value, entries: &[(&str, &Entry)]) -> Feedback {
         missed_questions: points("missed_questions"),
         hesitations: points("hesitations"),
         next_time: points("next_time"),
+    }
+}
+
+/// Leaves the few times shown with each point, once the points have been
+/// checked against the lines around all of them.
+pub fn trim_times(feedback: &mut Feedback) {
+    for points in [
+        &mut feedback.good,
+        &mut feedback.improve,
+        &mut feedback.missed_questions,
+        &mut feedback.hesitations,
+        &mut feedback.next_time,
+    ] {
+        for point in points.iter_mut() {
+            point.sources.truncate(POINT_TIMES);
+        }
     }
 }
 

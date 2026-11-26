@@ -417,6 +417,13 @@ pub fn write(
     let (gone, not_rechecked) = reconcile(input, template, &mut entries, &index, &named);
     dropped += gone;
 
+    // 5c. Numbers said in the meeting that disagree with each other: both
+    // places are put to the person; no number is changed.
+    let disagreeing = mark_disagreements(template, &mut entries, &named, end_ms);
+    if disagreeing > 0 {
+        info!("Numbers that disagree with each other: {disagreeing}");
+    }
+
     // 6. Tasks: one per promise, with who does it.
     if stop() {
         return Ok(None);
@@ -448,15 +455,14 @@ pub fn write(
         warn!("Could not tidy the tasks ({e:#}); keeping them as they were");
     }
     owners_by_name(template, &mut entries, &named, input.customer);
-    dropped += keep_checks(template, &mut entries, MOST_CHECKS);
 
     // 7. The story of the meeting, from what is left.
     if stop() {
         return Ok(None);
     }
-    let story = tell(input, template, &told, &overview.title).unwrap_or_else(|e| {
+    let mut story = tell(input, template, &told, &overview.title).unwrap_or_else(|e| {
         warn!("Could not write the story ({e:#}); leaving it out");
-        Vec::new()
+        Story::default()
     });
 
     // 8. Feedback on the conversation, for a consultation.
@@ -495,6 +501,34 @@ pub fn write(
     } else {
         None
     };
+
+    // 9. The story and the feedback, checked against the recording: what
+    // the lines do not say is not told.
+    let mut feedback = feedback;
+    if !stop() {
+        let started = std::time::Instant::now();
+        let checked = check_told(
+            input,
+            &named,
+            &mut story,
+            feedback.as_mut(),
+            &mut entries,
+            &told,
+            cancelled,
+        );
+        info!(
+            "Checked the story and feedback: {} read, {} softened, {} left out, in {:.0}s",
+            checked.read,
+            checked.softened,
+            checked.gone,
+            started.elapsed().as_secs_f32()
+        );
+    }
+    if let Some(feedback) = feedback.as_mut() {
+        super::feedback::trim_times(feedback);
+    }
+    let story = story.finish();
+    dropped += keep_checks(template, &mut entries, MOST_CHECKS);
     progress(1.0);
 
     let mut sections: Vec<MinutesSection> = Vec::new();
@@ -1801,15 +1835,16 @@ const STORY_TIMES: usize = 3;
 /// The story of the meeting in a few parts, each a heading and a paragraph
 /// written from the checked entries. Every sentence names the entries it
 /// rests on; one that names none, or states a number they do not have, is
-/// left out, and so is a part left with no sentence.
+/// left out, and so is a part left with no sentence. The sentences are then
+/// checked against the recording (`check_told`).
 fn tell(
     input: &Input<'_>,
     template: &Template,
     entries: &[(String, Entry)],
     title: &str,
-) -> Result<Vec<StoryPart>> {
+) -> Result<Story> {
     if entries.is_empty() {
-        return Ok(Vec::new());
+        return Ok(Story::default());
     }
     // In the order they were said; tasks and decisions are kept first when
     // not all fit.
@@ -1892,13 +1927,56 @@ fn tell(
     });
     let answer = ask_again(input, system, &user, &schema)?;
     let cited: Vec<&Entry> = chosen.iter().map(|&at| &entries[at].1).collect();
-    Ok(read_story(&answer, &cited))
+    Ok(Story {
+        parts: draft_story(&answer, &cited),
+        cited: cited.into_iter().cloned().collect(),
+    })
+}
+
+/// A sentence of the story and the entries it rests on (positions in
+/// `Story::cited`).
+#[derive(Debug, Clone)]
+struct Sentence {
+    text: String,
+    backing: Vec<usize>,
+}
+
+/// A part of the story before its sentences are checked.
+#[derive(Debug, Clone)]
+struct Draft {
+    title: String,
+    sentences: Vec<Sentence>,
+}
+
+/// The story as written, before its sentences are checked against the
+/// recording, with the entries its sentences rest on.
+#[derive(Debug, Clone, Default)]
+struct Story {
+    parts: Vec<Draft>,
+    cited: Vec<Entry>,
+}
+
+impl Story {
+    /// The parts as the minutes keep them: those with a sentence left, with
+    /// the times their sentences rest on.
+    fn finish(self) -> Vec<StoryPart> {
+        let cited: Vec<&Entry> = self.cited.iter().collect();
+        finish_story(self.parts, &cited)
+    }
 }
 
 /// The parts of a story answer that rest on `cited` (the entries by their
 /// number, from 1).
+#[cfg(test)]
 fn read_story(answer: &Value, cited: &[&Entry]) -> Vec<StoryPart> {
-    let mut parts: Vec<StoryPart> = Vec::new();
+    finish_story(draft_story(answer, cited), cited)
+}
+
+/// The sentences of a story answer that rest on `cited` (the entries by
+/// their number, from 1): one that names none, or states a number they and
+/// their quotes do not have, is left out.
+fn draft_story(answer: &Value, cited: &[&Entry]) -> Vec<Draft> {
+    let mut parts: Vec<Draft> = Vec::new();
     for part in answer
         .get("parts")
         .and_then(Value::as_array)
@@ -1911,8 +1989,7 @@ fn read_story(answer: &Value, cited: &[&Entry]) -> Vec<StoryPart> {
             .unwrap_or_default()
             .trim()
             .to_string();
-        let mut sentences: Vec<String> = Vec::new();
-        let mut sources: Vec<Source> = Vec::new();
+        let mut sentences: Vec<Sentence> = Vec::new();
         for sentence in part
             .get("sentences")
             .and_then(Value::as_array)
@@ -1925,22 +2002,24 @@ fn read_story(answer: &Value, cited: &[&Entry]) -> Vec<StoryPart> {
                 .unwrap_or_default()
                 .trim()
                 .to_string();
-            let backing: Vec<&Entry> = sentence
+            let mut backing: Vec<usize> = sentence
                 .get("items")
                 .and_then(Value::as_array)
                 .into_iter()
                 .flatten()
                 .filter_map(Value::as_u64)
                 .filter_map(|n| (n as usize).checked_sub(1))
-                .filter_map(|at| cited.get(at).copied())
+                .filter(|&at| at < cited.len())
                 .collect();
+            backing.dedup();
             if text.is_empty() || backing.is_empty() {
                 continue;
             }
             // A number its entries and their quotes do not have was made up.
             let known: String = backing
                 .iter()
-                .map(|entry| {
+                .map(|&at| {
+                    let entry = cited[at];
                     let quotes: Vec<&str> =
                         entry.sources.iter().map(|s| s.quote.as_str()).collect();
                     format!("{} {}", entry.text, quotes.join(" "))
@@ -1954,20 +2033,36 @@ fn read_story(answer: &Value, cited: &[&Entry]) -> Vec<StoryPart> {
             {
                 continue;
             }
-            for entry in backing {
-                if let Some(source) = entry.sources.first() {
-                    if !sources.iter().any(|s| s.ms == source.ms) {
-                        sources.push(source.clone());
-                    }
-                }
-            }
-            sentences.push(text);
+            sentences.push(Sentence { text, backing });
         }
         if sentences.is_empty() {
             continue;
         }
+        parts.push(Draft { title, sentences });
+        if parts.len() >= STORY_PARTS {
+            break;
+        }
+    }
+    parts
+}
+
+/// The parts that still have a sentence, each with the first, the middle and
+/// the last place its sentences rest on.
+fn finish_story(parts: Vec<Draft>, cited: &[&Entry]) -> Vec<StoryPart> {
+    let mut out: Vec<StoryPart> = Vec::new();
+    for part in parts {
+        if part.sentences.is_empty() {
+            continue;
+        }
+        let mut sources: Vec<Source> = Vec::new();
+        for &at in part.sentences.iter().flat_map(|s| &s.backing) {
+            if let Some(source) = cited.get(at).and_then(|entry| entry.sources.first()) {
+                if !sources.iter().any(|s| s.ms == source.ms) {
+                    sources.push(source.clone());
+                }
+            }
+        }
         sources.sort_by_key(|source| source.ms);
-        // The first, the middle and the last place it rests on.
         if sources.len() > STORY_TIMES {
             let last = sources.len() - 1;
             sources = vec![
@@ -1976,16 +2071,365 @@ fn read_story(answer: &Value, cited: &[&Entry]) -> Vec<StoryPart> {
                 sources[last].clone(),
             ];
         }
-        parts.push(StoryPart {
-            title,
-            text: sentences.join(" "),
+        let text: Vec<String> = part.sentences.into_iter().map(|s| s.text).collect();
+        out.push(StoryPart {
+            title: part.title,
+            text: text.join(" "),
             sources,
         });
-        if parts.len() >= STORY_PARTS {
-            break;
+    }
+    out
+}
+
+/// What the check of the story and the feedback did.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct ToldChecked {
+    /// Claims the checker answered for.
+    read: usize,
+    softened: usize,
+    gone: usize,
+}
+
+/// Where a claim put to the checker is: a story sentence (part, sentence)
+/// or a feedback point (kind, point).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ToldPlace {
+    Story(usize, usize),
+    Point(usize, usize),
+}
+
+/// Every sentence of the story and every point of the feedback as a claim,
+/// with the entries it rests on and the transcript lines around the places
+/// they were said, and where each is. A feedback point keeps only the times
+/// of its entries: they are found again among `told` by their first time.
+fn told_claims(
+    transcript: &Transcript,
+    story: &Story,
+    feedback: Option<&super::feedback::Feedback>,
+    told: &[(String, Entry)],
+) -> (Vec<super::claims::Claim>, Vec<ToldPlace>) {
+    use super::claims::{lines_around, Claim};
+    let mut claims: Vec<Claim> = Vec::new();
+    let mut places: Vec<ToldPlace> = Vec::new();
+    for (p, part) in story.parts.iter().enumerate() {
+        for (s, sentence) in part.sentences.iter().enumerate() {
+            let mut times: Vec<u64> = Vec::new();
+            for &at in &sentence.backing {
+                for source in &story.cited[at].sources {
+                    if !times.contains(&source.ms) {
+                        times.push(source.ms);
+                    }
+                }
+            }
+            claims.push(Claim {
+                text: sentence.text.clone(),
+                items: sentence
+                    .backing
+                    .iter()
+                    .map(|&at| story.cited[at].text.clone())
+                    .collect(),
+                lines: lines_around(transcript, &times),
+            });
+            places.push(ToldPlace::Story(p, s));
         }
     }
-    parts
+    if let Some(feedback) = feedback {
+        for (k, points) in feedback_kinds(feedback).iter().enumerate() {
+            for (n, point) in points.iter().enumerate() {
+                let times: Vec<u64> = point.sources.iter().map(|s| s.ms).collect();
+                let items: Vec<String> = told
+                    .iter()
+                    .filter(|(_, entry)| {
+                        entry
+                            .sources
+                            .first()
+                            .is_some_and(|source| times.contains(&source.ms))
+                    })
+                    .map(|(_, entry)| entry.text.clone())
+                    .collect();
+                claims.push(Claim {
+                    text: point.text.clone(),
+                    items,
+                    lines: lines_around(transcript, &times),
+                });
+                places.push(ToldPlace::Point(k, n));
+            }
+        }
+    }
+    (claims, places)
+}
+
+/// Puts every sentence of the story and every point of the feedback to the
+/// checker beside the transcript lines it rests on (see `claims`), and
+/// applies what it said (`apply_told`). A checker that cannot be asked
+/// leaves the rest as written.
+fn check_told(
+    input: &Input<'_>,
+    transcript: &Transcript,
+    story: &mut Story,
+    feedback: Option<&mut super::feedback::Feedback>,
+    entries: &mut [(String, Entry)],
+    told: &[(String, Entry)],
+    cancelled: &AtomicBool,
+) -> ToldChecked {
+    use super::claims::{self, Judgement};
+
+    let (claims_list, places) = told_claims(transcript, story, feedback.as_deref(), told);
+    if claims_list.is_empty() {
+        return ToldChecked::default();
+    }
+    let batches = claims::batches(&claims_list);
+    let schema = claims::schema();
+    let unreachable = AtomicBool::new(false);
+    let (answers, _) = in_rounds(
+        &batches,
+        input.provider.at_once(),
+        &|_, batch: &Vec<usize>| {
+            if unreachable.load(Ordering::Acquire) {
+                return None;
+            }
+            let user = claims::request(&claims_list, batch);
+            match ask_again(input, claims::SYSTEM, &user, &schema) {
+                Ok(answer) => Some(claims::read(&answer, &claims_list, batch)),
+                Err(e) => {
+                    warn!(
+                        "Could not check {} story and feedback lines ({e:#}); leaving them as written",
+                        batch.len()
+                    );
+                    if !format!("{e:#}").contains("JSON") {
+                        unreachable.store(true, Ordering::Release);
+                    }
+                    None
+                }
+            }
+        },
+        &|_| !cancelled.load(Ordering::Acquire),
+    );
+    let mut judged: BTreeMap<usize, Judgement> = BTreeMap::new();
+    for answer in answers.into_iter().flatten() {
+        judged.extend(answer);
+    }
+    apply_told(story, feedback, entries, &places, &judged, told)
+}
+
+/// Applies the checker's judgements (by position in `places`): what the
+/// lines say stays; what they say less strongly is softened; what they do
+/// not say is left out. When the words that went too far are already in an
+/// entry a sentence or point rests on, that entry was written too strongly
+/// as well and is marked for a look. `told` is what the feedback was
+/// written from; an entry is found again by any time it was said at and the
+/// words, since tasks may have been tidied since.
+fn apply_told(
+    story: &mut Story,
+    mut feedback: Option<&mut super::feedback::Feedback>,
+    entries: &mut [(String, Entry)],
+    places: &[ToldPlace],
+    judged: &BTreeMap<usize, super::claims::Judgement>,
+    told: &[(String, Entry)],
+) -> ToldChecked {
+    use super::claims::{self, Judgement};
+
+    let mut done = ToldChecked {
+        read: judged.len(),
+        ..ToldChecked::default()
+    };
+    // Where entries that said too much themselves were said, and the words.
+    let mut too_strong: Vec<(u64, String)> = Vec::new();
+    let mut gone_sentences: Vec<(usize, usize)> = Vec::new();
+    let mut gone_points: Vec<(usize, usize)> = Vec::new();
+    for (&at, judgement) in judged {
+        let (Some(&place), false) = (places.get(at), *judgement == Judgement::Keep) else {
+            continue;
+        };
+        let softer = match judgement {
+            Judgement::Soften { text, .. } => Some(text.clone()),
+            _ => None,
+        };
+        match place {
+            ToldPlace::Story(p, s) => {
+                let sentence = &mut story.parts[p].sentences[s];
+                for &backing in &sentence.backing {
+                    let entry = &story.cited[backing];
+                    if claims::says(&entry.text, judgement.beyond()) {
+                        for source in &entry.sources {
+                            too_strong.push((source.ms, judgement.beyond().to_string()));
+                        }
+                    }
+                }
+                match softer {
+                    Some(text) => sentence.text = text,
+                    None => gone_sentences.push((p, s)),
+                }
+            }
+            ToldPlace::Point(k, n) => {
+                let Some(feedback) = feedback.as_deref_mut() else {
+                    continue;
+                };
+                let times: Vec<u64> = feedback_kinds(feedback)[k][n]
+                    .sources
+                    .iter()
+                    .map(|s| s.ms)
+                    .collect();
+                for (_, entry) in told {
+                    let said_then = entry
+                        .sources
+                        .first()
+                        .is_some_and(|source| times.contains(&source.ms));
+                    if said_then && claims::says(&entry.text, judgement.beyond()) {
+                        for source in &entry.sources {
+                            too_strong.push((source.ms, judgement.beyond().to_string()));
+                        }
+                    }
+                }
+                match softer {
+                    Some(text) => feedback_kinds_mut(feedback)[k][n].text = text,
+                    None => gone_points.push((k, n)),
+                }
+            }
+        }
+        match judgement {
+            Judgement::Soften { .. } => done.softened += 1,
+            _ => done.gone += 1,
+        }
+    }
+    for &(p, s) in gone_sentences.iter().rev() {
+        story.parts[p].sentences.remove(s);
+    }
+    if let Some(feedback) = feedback {
+        let kinds = feedback_kinds_mut(feedback);
+        for &(k, n) in gone_points.iter().rev() {
+            kinds[k].remove(n);
+        }
+    }
+    for (_, entry) in entries.iter_mut() {
+        let marked = too_strong.iter().any(|(ms, beyond)| {
+            entry.sources.iter().any(|source| source.ms == *ms) && claims::says(&entry.text, beyond)
+        });
+        if marked {
+            push_reason(entry, CheckReason::SaidDifferently);
+        }
+    }
+    done
+}
+
+/// The kinds of feedback points, in the order of `feedback::KINDS`.
+fn feedback_kinds(feedback: &super::feedback::Feedback) -> [&Vec<super::feedback::Point>; 5] {
+    [
+        &feedback.good,
+        &feedback.improve,
+        &feedback.missed_questions,
+        &feedback.hesitations,
+        &feedback.next_time,
+    ]
+}
+
+fn feedback_kinds_mut(
+    feedback: &mut super::feedback::Feedback,
+) -> [&mut Vec<super::feedback::Point>; 5] {
+    [
+        &mut feedback.good,
+        &mut feedback.improve,
+        &mut feedback.missed_questions,
+        &mut feedback.hesitations,
+        &mut feedback.next_time,
+    ]
+}
+
+/// The most disagreements among the meeting's numbers put to the person.
+const MOST_DISAGREEMENTS: usize = 6;
+
+/// Finds numbers said in the meeting that disagree with each other (see
+/// `amounts::disagreements`), up to what the meeting ended with, and puts
+/// each to the person with both places it was said: on the entries that
+/// state one of its values and cite one of those lines, or, when none does,
+/// as an entry of its own (in the budget section when the template has one,
+/// else with what is not settled) that says what does not agree. No number
+/// is changed, and none is said to be the right one. Returns how many were
+/// found.
+fn mark_disagreements(
+    template: &Template,
+    entries: &mut Vec<(String, Entry)>,
+    transcript: &Transcript,
+    end_ms: Option<u64>,
+) -> usize {
+    let lines: Vec<&Segment> = transcript
+        .segments
+        .iter()
+        .filter(|segment| end_ms.is_none_or(|end| segment.start_ms < end))
+        .collect();
+    let texts: Vec<&str> = lines.iter().map(|segment| segment.text.as_str()).collect();
+    let speakers: Vec<u32> = lines.iter().map(|segment| segment.speaker).collect();
+    let found = super::amounts::disagreements_by(&texts, &speakers);
+    let section = if template.section("budget").is_some() {
+        "budget"
+    } else {
+        OPEN_SECTION
+    };
+    let near = |a: f64, b: f64| (a - b).abs() <= 1e-6 * a.abs().max(b.abs()).max(1.0);
+    // A thing priced two ways by name is put to the person only when the
+    // minutes speak of that thing: a name the reading of the words took
+    // wrongly ("하나는", "제품은") is in no entry.
+    let found: Vec<super::amounts::Disagreement> = found
+        .into_iter()
+        .filter(|d| {
+            d.name.is_empty()
+                || entries
+                    .iter()
+                    .any(|(_, entry)| entry.text.contains(d.name.as_str()))
+        })
+        .collect();
+    for disagreement in found.iter().take(MOST_DISAGREEMENTS) {
+        let reason = match disagreement.kind {
+            super::amounts::DisagreementKind::Rate => CheckReason::NumbersDiffer,
+            _ => CheckReason::SumsDisagree,
+        };
+        let mut said: Vec<Source> = Vec::new();
+        for at in [disagreement.first, disagreement.second] {
+            if !said.iter().any(|s| s.ms == lines[at].start_ms) {
+                said.push(Source {
+                    ms: lines[at].start_ms,
+                    quote: lines[at].text.clone(),
+                });
+            }
+        }
+        let mut marked = false;
+        for (_, entry) in entries.iter_mut() {
+            let cites = entry
+                .sources
+                .iter()
+                .any(|source| said.iter().any(|s| s.ms == source.ms));
+            let values = super::amounts::values_said(&entry.text);
+            let states = disagreement
+                .values
+                .iter()
+                .any(|&v| values.iter().any(|&w| near(v, w)));
+            if !cites || !states {
+                continue;
+            }
+            push_reason(entry, reason);
+            for source in &said {
+                if !entry.sources.iter().any(|s| s.ms == source.ms) {
+                    entry.sources.push(source.clone());
+                }
+            }
+            marked = true;
+        }
+        if !marked {
+            entries.push((
+                section.to_string(),
+                Entry {
+                    text: disagreement.note.clone(),
+                    owner: String::new(),
+                    due: String::new(),
+                    sources: said,
+                    reasons: vec![reason],
+                    done: false,
+                    faint: false,
+                },
+            ));
+        }
+    }
+    found.len().min(MOST_DISAGREEMENTS)
 }
 
 /// What the checker said of one entry: its verdict, and whether the owner
@@ -2646,7 +3090,10 @@ fn weight(template: &Template, key: &str, entry: &Entry) -> u32 {
     if entry.reasons.iter().any(|r| {
         matches!(
             r,
-            CheckReason::NumberNotInSource | CheckReason::UnitOdd | CheckReason::SumsDisagree
+            CheckReason::NumberNotInSource
+                | CheckReason::UnitOdd
+                | CheckReason::SumsDisagree
+                | CheckReason::NumbersDiffer
         )
     }) {
         weight += 2;
@@ -2665,7 +3112,7 @@ fn weight(template: &Template, key: &str, entry: &Entry) -> u32 {
         matches!(
             reason,
             CheckReason::WeakSupport
-                | CheckReason::NumbersDiffer
+                | CheckReason::SaidDifferently
                 | CheckReason::OwnerUnclear
                 | CheckReason::NotSettled
         )
@@ -2721,11 +3168,12 @@ fn keep_checks(template: &Template, entries: &mut Vec<(String, Entry)>, most: us
 
 /// Doubts never turned into a faint line by the limit on checks: the entry
 /// as written may be plainly wrong.
-const MUST_BE_HEARD: [CheckReason; 4] = [
+const MUST_BE_HEARD: [CheckReason; 5] = [
     CheckReason::AfterTheEnd,
     CheckReason::Conflicting,
     CheckReason::UnitOdd,
     CheckReason::SumsDisagree,
+    CheckReason::NumbersDiffer,
 ];
 
 fn push_reason(entry: &mut Entry, reason: CheckReason) {
@@ -3933,5 +4381,278 @@ mod tests {
         old.as_object_mut().unwrap().remove("not_rechecked");
         let read: Minutes = serde_json::from_value(old).unwrap();
         assert!(!read.not_rechecked);
+    }
+
+    fn meeting_of(lines: &[(u64, u32, &str)]) -> Transcript {
+        let mut transcript = transcript();
+        transcript.segments = lines
+            .iter()
+            .map(|&(ms, speaker, text)| line(ms, speaker, text))
+            .collect();
+        transcript
+    }
+
+    #[test]
+    fn numbers_that_disagree_go_to_a_look_with_both_places() {
+        let transcript = meeting_of(&[
+            (1_000, 1, "바닥 강마루는 평당 12만 원으로 잡았습니다."),
+            (
+                6_000,
+                1,
+                "철거 300만 원, 목공 450만 원, 합쳐서 800만 원입니다.",
+            ),
+            (
+                11_000,
+                1,
+                "이 3m 48만 원이고요, 막는 벽은 각각 1m씩 32만 원입니다.",
+            ),
+            (16_000, 1, "강마루는 평당 15만 원 기준이고요."),
+            (21_000, 1, "안녕히 가세요."),
+            (26_000, 1, "타일은 평당 8만 원이고 10평이라 90만 원이에요."),
+        ]);
+        let mut entries = vec![
+            (
+                "budget".to_string(),
+                task("강마루는 평당 15만 원이다", "", "", 16_000, vec![]),
+            ),
+            // Copies only a part of what was said ("1m씩"): found too.
+            (
+                "materials".to_string(),
+                task("막는 벽은 각각 1m씩이다", "", "", 11_000, vec![]),
+            ),
+            // Cites a line of the disagreement but states none of its
+            // numbers: left alone.
+            (
+                "requests".to_string(),
+                task("고객은 강마루를 원함", "", "", 1_000, vec![]),
+            ),
+        ];
+        // The meeting ended before the last line: it is not read.
+        let found = mark_disagreements(&consult(), &mut entries, &transcript, Some(26_000));
+        assert_eq!(found, 3);
+        assert_eq!(entries.len(), 4);
+        // The entry that states the price gets the doubt and both places.
+        assert_eq!(entries[0].1.reasons, [CheckReason::NumbersDiffer]);
+        assert_eq!(
+            entries[0]
+                .1
+                .sources
+                .iter()
+                .map(|s| s.ms)
+                .collect::<Vec<_>>(),
+            [16_000, 1_000]
+        );
+        assert_eq!(entries[1].1.reasons, [CheckReason::NumbersDiffer]);
+        assert!(entries[2].1.reasons.is_empty());
+        // The sum no entry states becomes one of its own, saying what does
+        // not agree; the numbers said are not changed.
+        let (section, sum) = &entries[3];
+        assert_eq!(section, "budget");
+        assert_eq!(
+            sum.text,
+            "300만 원 + 450만 원을 더하면 750만 원인데 800만 원으로 말함"
+        );
+        assert_eq!(sum.reasons, [CheckReason::SumsDisagree]);
+        assert_eq!(
+            sum.sources[0].quote,
+            "철거 300만 원, 목공 450만 원, 합쳐서 800만 원입니다."
+        );
+
+        // A template with no budget puts it with what is not settled. A
+        // thing priced two ways by name that no entry speaks of is left
+        // alone; the sums and products are told.
+        let meeting = built_in().into_iter().find(|t| t.id == "meeting").unwrap();
+        let mut none: Vec<(String, Entry)> = Vec::new();
+        mark_disagreements(&meeting, &mut none, &transcript, None);
+        assert!(none.iter().all(|(key, _)| key == OPEN_SECTION));
+        assert_eq!(none.len(), 3);
+        // Numbers that disagree are must-hear: never shown faintly as fact.
+        assert!(MUST_BE_HEARD.contains(&CheckReason::NumbersDiffer));
+    }
+
+    #[test]
+    fn a_story_sentence_or_feedback_point_the_lines_do_not_say_is_not_told() {
+        use crate::seogi::claims::Judgement;
+        use crate::seogi::feedback::{Feedback, Point};
+        let transcript = meeting_of(&[
+            (1_000, 2, "주방을 거실 쪽으로 옮기고 싶어요."),
+            (6_000, 1, "주방 옮기는 건 괜찮습니다."),
+            (11_000, 2, "창가 끝까지는요?"),
+            (16_000, 1, "그건 조금 어렵습니다."),
+            (21_000, 2, "공사가 커질까 걱정이에요."),
+            (26_000, 1, "거실 쪽으로만 옮기면 크게 늘지 않습니다."),
+        ]);
+        let too_strong = task("주방을 옮기는 안은 무리라고 판단함", "", "", 6_000, vec![]);
+        let worry = task("공사가 커질까 걱정함", "", "", 21_000, vec![]);
+        let mut story = Story {
+            parts: vec![
+                Draft {
+                    title: "주방".into(),
+                    sentences: vec![
+                        Sentence {
+                            text: "주방을 옮기는 안은 무리라고 판단했다.".into(),
+                            backing: vec![0],
+                        },
+                        Sentence {
+                            text: "고객은 공사가 커질까 걱정했다.".into(),
+                            backing: vec![1],
+                        },
+                    ],
+                },
+                Draft {
+                    title: "남은 것".into(),
+                    sentences: vec![Sentence {
+                        text: "창가 끝까지 옮기는 것은 불가능하다고 했다.".into(),
+                        backing: vec![0],
+                    }],
+                },
+            ],
+            cited: vec![too_strong.clone(), worry.clone()],
+        };
+        let point = |text: &str, ms: u64| Point {
+            text: text.into(),
+            sources: vec![Source {
+                ms,
+                quote: String::new(),
+            }],
+        };
+        let mut feedback = Feedback {
+            hesitations: vec![point("공사 걱정에 답한 기록이 없다.", 21_000)],
+            good: vec![point("주방 이전 가능 여부에 바로 답했다.", 6_000)],
+            ..Feedback::default()
+        };
+        let told = vec![
+            ("materials".to_string(), too_strong.clone()),
+            ("concerns".to_string(), worry.clone()),
+        ];
+        let (claims, places) = told_claims(&transcript, &story, Some(&feedback), &told);
+        assert_eq!(claims[0].items, ["주방을 옮기는 안은 무리라고 판단함"]);
+        assert_eq!(claims[4].items, ["공사가 커질까 걱정함"]);
+        assert_eq!(claims.len(), 5);
+        assert_eq!(places[3], ToldPlace::Point(0, 0));
+        assert_eq!(places[4], ToldPlace::Point(3, 0));
+        // The lines around the worry hold the answer.
+        assert!(claims[4]
+            .lines
+            .contains("거실 쪽으로만 옮기면 크게 늘지 않습니다."));
+
+        let mut entries = vec![
+            ("materials".to_string(), too_strong),
+            ("concerns".to_string(), worry),
+        ];
+        let judged: BTreeMap<usize, Judgement> = [
+            (
+                0,
+                Judgement::Drop {
+                    beyond: "무리".into(),
+                },
+            ),
+            (1, Judgement::Keep),
+            (
+                2,
+                Judgement::Soften {
+                    text: "창가 끝까지 옮기는 것은 조금 어렵다고 했다.".into(),
+                    beyond: "불가능".into(),
+                },
+            ),
+            (
+                4,
+                Judgement::Drop {
+                    beyond: "답한 기록이 없다".into(),
+                },
+            ),
+        ]
+        .into_iter()
+        .collect();
+        let done = apply_told(
+            &mut story,
+            Some(&mut feedback),
+            &mut entries,
+            &places,
+            &judged,
+            &told,
+        );
+        assert_eq!(
+            done,
+            ToldChecked {
+                read: 4,
+                softened: 1,
+                gone: 2
+            }
+        );
+        assert!(feedback.hesitations.is_empty());
+        assert_eq!(feedback.good.len(), 1);
+        // The entry that said "무리" itself goes to a look; the other not.
+        assert_eq!(entries[0].1.reasons, [CheckReason::SaidDifferently]);
+        assert!(entries[1].1.reasons.is_empty());
+        let parts = story.finish();
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].text, "고객은 공사가 커질까 걱정했다.");
+        assert_eq!(
+            parts[0].sources.iter().map(|s| s.ms).collect::<Vec<_>>(),
+            [21_000]
+        );
+        assert_eq!(parts[1].text, "창가 끝까지 옮기는 것은 조금 어렵다고 했다.");
+
+        // Nothing judged (the checker could not be asked): all stays.
+        let mut kept = Story {
+            parts: vec![Draft {
+                title: "t".into(),
+                sentences: vec![Sentence {
+                    text: "그대로다.".into(),
+                    backing: vec![0],
+                }],
+            }],
+            cited: vec![task("그대로", "", "", 1_000, vec![])],
+        };
+        let none = apply_told(
+            &mut kept,
+            None,
+            &mut [],
+            &[ToldPlace::Story(0, 0)],
+            &BTreeMap::new(),
+            &[],
+        );
+        assert_eq!(none, ToldChecked::default());
+        assert_eq!(kept.finish()[0].text, "그대로다.");
+
+        // A feedback point that went too far marks the entry it rests on,
+        // found again though tidying the tasks changed its words and its
+        // first time.
+        let said = task("주방 이전은 무리라고 판단함", "", "", 6_000, vec![]);
+        let mut tidied = task(
+            "주방 이전은 무리라고 보고 도면을 다시 그리기",
+            "",
+            "",
+            9_000,
+            vec![],
+        );
+        tidied.sources.push(Source {
+            ms: 6_000,
+            quote: String::new(),
+        });
+        let mut entries = vec![("our_tasks".to_string(), tidied)];
+        let mut feedback = Feedback {
+            improve: vec![point("주방 이전을 무리라고 단정했다.", 6_000)],
+            ..Feedback::default()
+        };
+        let judged: BTreeMap<usize, Judgement> = [(
+            0,
+            Judgement::Drop {
+                beyond: "무리".into(),
+            },
+        )]
+        .into_iter()
+        .collect();
+        apply_told(
+            &mut Story::default(),
+            Some(&mut feedback),
+            &mut entries,
+            &[ToldPlace::Point(1, 0)],
+            &judged,
+            &[("materials".to_string(), said)],
+        );
+        assert!(feedback.improve.is_empty());
+        assert_eq!(entries[0].1.reasons, [CheckReason::SaidDifferently]);
     }
 }
