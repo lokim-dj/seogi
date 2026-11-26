@@ -134,6 +134,8 @@ To look at a screen while changing it, run `bun run dev` and open `http://localh
 
 To try things without touching your own meetings, point a development run at its own data folder: `SEOGI_DATA_DIR=/some/dir bun run tauri dev` (put a `seogi.json` with `library_dir` there), or use the headless `--seogi-library` runs.
 
+A debug build never shares anything with the installed app: it runs as `io.github.lokimdj.seogi.dev` (`brand::DEV_IDENTIFIER`), so its data folder, keychain entries, single-instance lock and permission resets are its own, and it runs while the installed app is open. For a debug app bundle whose macOS permissions stay apart too, build it with the development config: `bun run tauri build --debug --config src-tauri/tauri.dev.conf.json` (without it the bundle carries the release identifier). The release identifier `io.github.lokimdj.seogi` in `tauri.conf.json` never changes: every installed copy would lose its permissions, keys and settings.
+
 ## Speech engine facts worth knowing
 
 - Every model runs through `transcribe-cpp` (GGUF models, Metal on Apple Silicon, Vulkan or CPU on Windows). The engine runs in a worker process: the app re-launches itself with a hidden flag, so a native crash never takes the app down.
