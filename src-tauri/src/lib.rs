@@ -1215,7 +1215,7 @@ pub fn run(cli_args: CliArgs) {
             {
                 let _ = main_window.with_webview(|webview| unsafe {
                     use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
-                    use windows::core::Interface;
+                    use windows_core::Interface;
 
                     let result = webview
                         .controller()
