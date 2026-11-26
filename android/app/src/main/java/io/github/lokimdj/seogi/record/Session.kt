@@ -1,5 +1,6 @@
 package io.github.lokimdj.seogi.record
 
+import io.github.lokimdj.seogi.data.Recording
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -41,10 +42,32 @@ class SessionDir(val dir: File) {
         null
     }
 
-    /** Removes the stream and its state; only after the recording is safely saved. */
+    private fun savedFile(id: String) = File(dir, "$id.saved.json")
+
+    /**
+     * The finished recording, written right after it reached MediaStore and
+     * before it is listed, so a crash in between does not save it twice.
+     */
+    fun writeSaved(recording: Recording) {
+        val tmp = File(dir, "${recording.id}.saved.json.tmp")
+        tmp.writeText(json.encodeToString(Recording.serializer(), recording))
+        if (!tmp.renameTo(savedFile(recording.id))) {
+            savedFile(recording.id).delete()
+            tmp.renameTo(savedFile(recording.id))
+        }
+    }
+
+    fun readSaved(id: String): Recording? = try {
+        savedFile(id).takeIf { it.exists() }?.readText()?.let { json.decodeFromString(Recording.serializer(), it) }
+    } catch (e: Exception) {
+        null
+    }
+
+    /** Removes the stream and its notes; only after the recording is safely saved and listed. */
     fun clear(id: String) {
         audio(id).delete()
         stateFile(id).delete()
+        savedFile(id).delete()
     }
 
     /**

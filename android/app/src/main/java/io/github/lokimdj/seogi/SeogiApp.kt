@@ -40,6 +40,17 @@ class SeogiApp : Application() {
      * otherwise it stays for the next start to try again.
      */
     suspend fun saveSession(sessions: SessionDir, id: String, recovered: Boolean) = saving.withLock {
+        // Already in MediaStore (and maybe listed) before a crash: list it, never copy twice.
+        sessions.readSaved(id)?.let {
+            if (store.get(id) == null) store.upsert(it)
+            sessions.clear(id)
+            UploadQueue.enqueue(this, UploadQueue.Mode.APPEND)
+            return@withLock
+        }
+        store.get(id)?.takeIf { it.mediaUri != null }?.let {
+            sessions.clear(id)
+            return@withLock
+        }
         val stream = sessions.audio(id)
         if (!stream.exists()) return@withLock
         if (stream.length() == 0L) {
@@ -51,6 +62,7 @@ class SeogiApp : Application() {
             ?: return@withLock
         try {
             val recording = Finalizer.finalize(this, stream, state, recovered)
+            sessions.writeSaved(recording)
             store.upsert(recording)
             sessions.clear(id)
             UploadQueue.enqueue(this, UploadQueue.Mode.APPEND)

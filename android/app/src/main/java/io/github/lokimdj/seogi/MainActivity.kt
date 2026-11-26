@@ -101,11 +101,19 @@ class MainActivity : ComponentActivity() {
             val email = pickedEmail
                 ?: r.toGoogleSignInAccount()?.email
                 ?: withContext(Dispatchers.IO) { runCatching { DriveApi().email(token) }.getOrNull() }
+            val before = app.settings.email.value
             app.settings.setEmail(email ?: "")
+            val switched = before != null && before != (email ?: "")
+            if (switched) {
+                // Another account: half-done uploads belong to the old Drive; start them over.
+                app.store.all.value.filter { it.upload != UploadState.UPLOADED }.forEach { rec ->
+                    app.store.update(rec.id) { it.copy(sessionUri = null, sidecarFileId = null, progress = 0f) }
+                }
+            }
             app.store.all.value.filter { it.error == UploadError.NEED_LOGIN }.forEach { rec ->
                 app.store.update(rec.id) { it.copy(upload = UploadState.WAITING, error = null) }
             }
-            UploadQueue.enqueue(this@MainActivity, UploadQueue.Mode.APPEND)
+            UploadQueue.enqueue(this@MainActivity, if (switched) UploadQueue.Mode.REPLACE else UploadQueue.Mode.APPEND)
         }
     }
 
@@ -190,6 +198,10 @@ class MainActivity : ComponentActivity() {
             if (ok) {
                 RecorderService.start(this@MainActivity)
                 screen = Screen.RECORDING
+            } else if (!shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)) {
+                // Refused for good: Android shows no dialog any more, so say why and open settings.
+                Toast.makeText(this@MainActivity, R.string.mic_needed, Toast.LENGTH_LONG).show()
+                openAppSettings()
             }
         }
 

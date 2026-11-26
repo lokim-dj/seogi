@@ -5,6 +5,14 @@ import io.github.lokimdj.seogi.data.RecordingStore
 import io.github.lokimdj.seogi.data.Sidecar
 import io.github.lokimdj.seogi.data.UploadError
 import io.github.lokimdj.seogi.data.UploadState
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runInterruptible
 import java.io.Closeable
 import java.io.IOException
 
@@ -44,17 +52,24 @@ class Uploader(
 
     enum class Outcome { DONE, RETRY, NEED_LOGIN }
 
+    /**
+     * One pass over everything waiting, oldest first. A recording that fails
+     * for a reason the queue handles itself does not hold up the ones after
+     * it; the pass then ends with [Outcome.RETRY] so the queue comes back.
+     */
     suspend fun runAll(): Outcome {
         var outcome = Outcome.DONE
+        val tried = mutableSetOf<String>()
         while (true) {
-            val next = store.all.value.filter { it.needsUpload }.minByOrNull { it.startedAt } ?: break
-            when (val o = uploadOne(next)) {
-                Outcome.DONE -> continue
-                Outcome.NEED_LOGIN -> return o
-                Outcome.RETRY -> {
-                    outcome = Outcome.RETRY
-                    break
-                }
+            currentCoroutineContext().ensureActive()
+            val next = store.all.value
+                .filter { it.needsUpload && it.id !in tried }
+                .minByOrNull { it.startedAt } ?: break
+            tried += next.id
+            when (uploadOne(next)) {
+                Outcome.DONE -> Unit
+                Outcome.NEED_LOGIN -> return Outcome.NEED_LOGIN
+                Outcome.RETRY -> outcome = Outcome.RETRY
             }
         }
         return outcome
@@ -98,36 +113,52 @@ class Uploader(
                         else -> return failRetry(id, UploadError.SERVER)
                     }
                 } catch (e: IOException) {
+                    if (!currentCoroutineContext().isActive) {
+                        // Interrupted by a cancel, not "offline".
+                        backToWaiting(id)
+                        throw CancellationException("upload stopped")
+                    }
                     return failRetry(id, UploadError.OFFLINE)
+                } catch (e: CancellationException) {
+                    // Stopped by the system or a changed network rule: the
+                    // session stays, the next run continues from Drive's count.
+                    backToWaiting(id)
+                    throw e
+                } catch (e: Exception) {
+                    // An answer we did not expect: never leave it "uploading".
+                    return failRetry(id, UploadError.SERVER)
                 }
             }
         }
     }
 
     private suspend fun send(token: String, r: Recording, src: AudioSource) {
-        val folderId = folder.folderId ?: drive.ensureFolder(token).also { folder.folderId = it }
+        val folderId = folder.folderId ?: io { drive.ensureFolder(token) }.also { folder.folderId = it }
         if (r.sidecarFileId == null) {
             val bytes = Sidecar.json(r, device, appVersion).toByteArray()
-            val fileId = drive.uploadSmall(token, folderId, Sidecar.fileName(r.fileName), "application/json", bytes)
+            val fileId = io { drive.uploadSmall(token, folderId, Sidecar.fileName(r.fileName), "application/json", bytes) }
             store.update(r.id) { it.copy(sidecarFileId = fileId) }
         }
         val size = src.size
         var session = r.sessionUri
         var offset = 0L
         if (session != null) {
-            when (val s = drive.status(token, session, size)) {
+            val open = session
+            when (val s = io { drive.status(token, open, size) }) {
                 is UploadStatus.Complete -> return done(r.id, s.fileId)
                 is UploadStatus.Incomplete -> offset = s.next
                 UploadStatus.Expired -> session = null
             }
         }
         if (session == null) {
-            session = drive.startSession(token, folderId, r.fileName, r.mimeType, size)
-            val s = session
-            store.update(r.id) { it.copy(sessionUri = s, progress = 0f) }
+            val made = io { drive.startSession(token, folderId, r.fileName, r.mimeType, size) }
+            session = made
+            store.update(r.id) { it.copy(sessionUri = made, progress = 0f) }
         }
+        val current: String = session
         val buf = ByteArray(chunkSize)
         while (true) {
+            currentCoroutineContext().ensureActive()
             val want = minOf(chunkSize.toLong(), size - offset).toInt()
             var got = 0
             while (got < want) {
@@ -136,7 +167,7 @@ class Uploader(
                 got += n
             }
             val piece = if (want == chunkSize) buf else buf.copyOf(want)
-            when (val s = drive.putChunk(token, session, piece, offset, size)) {
+            when (val s = io { drive.putChunk(token, current, piece, offset, size) }) {
                 is UploadStatus.Complete -> return done(r.id, s.fileId)
                 is UploadStatus.Incomplete -> {
                     offset = s.next
@@ -150,6 +181,13 @@ class Uploader(
             }
         }
     }
+
+    private suspend fun backToWaiting(id: String) = withContext(NonCancellable) {
+        store.update(id) { if (it.upload == UploadState.UPLOADING) it.copy(upload = UploadState.WAITING) else it }
+    }
+
+    /** Network calls block; this lets a cancelled run stop at the next piece. */
+    private suspend fun <T> io(block: () -> T): T = runInterruptible(Dispatchers.IO) { block() }
 
     private suspend fun done(id: String, fileId: String) =
         store.update(id) { it.copy(upload = UploadState.UPLOADED, progress = 1f, error = null, driveFileId = fileId, sessionUri = null) }

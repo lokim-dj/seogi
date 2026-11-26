@@ -16,6 +16,7 @@ import io.github.lokimdj.seogi.SeogiApp
 import io.github.lokimdj.seogi.data.FileNames
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -67,19 +68,19 @@ class RecorderService : LifecycleService() {
             ACTION_START -> if (_state.value == RecState.Idle) begin() else if (_state.value is RecState.Recording) showNotification()
             ACTION_MARK -> mark()
             ACTION_STOP -> finish()
-            else -> if (_state.value == RecState.Idle) stopSelf()
         }
+        // A mark or stop that arrives with nothing running (an old notification).
+        if (_state.value == RecState.Idle) stopSelf()
         return START_NOT_STICKY
     }
 
     private fun begin() {
         val now = System.currentTimeMillis()
         val zone = ZoneId.systemDefault()
-        val event = CalendarPick.current(CalendarReader.today(this, now), now)
         val id = SessionDir.newId(now)
-        val state = SessionState(id = id, startedAt = now, zone = zone.id, eventTitle = event?.title)
-        val title = FileNames.displayTitle(Instant.ofEpochMilli(now).atZone(zone), event?.title)
-        _state.value = RecState.Recording(id, title, event != null, now, SystemClock.elapsedRealtime(), emptyList())
+        val state = SessionState(id = id, startedAt = now, zone = zone.id)
+        val title = FileNames.displayTitle(Instant.ofEpochMilli(now).atZone(zone), null)
+        _state.value = RecState.Recording(id, title, false, now, SystemClock.elapsedRealtime(), emptyList())
         activeId = id
         // The notification must be up before the microphone opens.
         try {
@@ -112,6 +113,17 @@ class RecorderService : LifecycleService() {
         wakeLock = getSystemService(PowerManager::class.java)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "seogi:recording")
             .apply { acquire(MAX_WAKE_MS) }
+        // The microphone is open first; the calendar title follows, so a slow
+        // calendar never cuts the start of a meeting.
+        lifecycleScope.launch {
+            val event = withContext(Dispatchers.IO) { CalendarPick.current(CalendarReader.today(this@RecorderService, now), now) }
+                ?: return@launch
+            val cur = _state.value as? RecState.Recording ?: return@launch
+            if (cur.id != id) return@launch
+            _state.value = cur.copy(title = FileNames.displayTitle(Instant.ofEpochMilli(now).atZone(zone), event.title), fromCalendar = true)
+            sessions.read(id)?.let { sessions.write(it.copy(eventTitle = event.title)) }
+            showNotification()
+        }
         ticker = lifecycleScope.launch {
             while (isActive) {
                 val amp = try { recorder?.maxAmplitude ?: 0 } catch (e: Exception) { 0 }
@@ -138,12 +150,20 @@ class RecorderService : LifecycleService() {
         recorder = null
         wakeLock?.takeIf { it.isHeld }?.release()
         _state.value = RecState.Saving
-        lifecycleScope.launch {
-            withContext(Dispatchers.IO) { (application as SeogiApp).saveSession(sessions, s.id, recovered = false) }
-            activeId = null
-            _state.value = RecState.Idle
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+        // Saved in the app's scope, not the service's, so the screens never
+        // stay on "저장 중" even if the service goes away meanwhile.
+        val app = application as SeogiApp
+        app.scope.launch {
+            try {
+                app.saveSession(sessions, s.id, recovered = false)
+            } finally {
+                activeId = null
+                _state.value = RecState.Idle
+                withContext(Dispatchers.Main + NonCancellable) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+            }
         }
     }
 

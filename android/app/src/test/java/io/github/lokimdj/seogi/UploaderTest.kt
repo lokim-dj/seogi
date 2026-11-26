@@ -10,6 +10,7 @@ import io.github.lokimdj.seogi.upload.DriveHttpException
 import io.github.lokimdj.seogi.upload.TokenResult
 import io.github.lokimdj.seogi.upload.UploadStatus
 import io.github.lokimdj.seogi.upload.Uploader
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -32,6 +33,8 @@ class UploaderTest {
         var chunkError: Exception = IOException("network")
         var unauthorizedCalls = 0
         var folderCalls = 0
+        var failSession: String? = null
+        var onChunk: () -> Unit = {}
 
         override fun ensureFolder(token: String): String { folderCalls++; return "F" }
         override fun uploadSmall(token: String, folderId: String, name: String, mime: String, bytes: ByteArray): String {
@@ -46,7 +49,9 @@ class UploaderTest {
         override fun status(token: String, session: String, size: Long): UploadStatus =
             received[session]?.let { UploadStatus.Incomplete(it.size().toLong()) } ?: UploadStatus.Expired
         override fun putChunk(token: String, session: String, bytes: ByteArray, from: Long, size: Long): UploadStatus {
+            if (session == failSession) throw DriveHttpException(400, "bad request")
             if (failAfterChunks-- <= 0) throw chunkError
+            onChunk()
             val out = received.getValue(session)
             check(from == out.size().toLong()) { "chunk at $from but drive has ${out.size()}" }
             out.write(bytes)
@@ -147,5 +152,38 @@ class UploaderTest {
         val d = FakeDrive()
         uploader(s, d).runAll()
         assertEquals(listOf("a.json", "b.json"), d.small)
+    }
+
+    /** Review: an answer we did not expect must not leave it "uploading" for ever. */
+    @Test fun unexpectedErrorIsAFailureNotAStuckUpload() = runTest {
+        val s = store().apply { upsert(recording("a")) }
+        val d = FakeDrive().apply { failAfterChunks = 0; chunkError = IllegalStateException("odd answer") }
+        assertEquals(Uploader.Outcome.RETRY, uploader(s, d).runAll())
+        assertEquals(UploadState.FAILED, s.get("a")!!.upload)
+        assertEquals(UploadError.SERVER, s.get("a")!!.error)
+    }
+
+    /** Review: one recording that keeps failing does not hold up the newer ones. */
+    @Test fun aFailingRecordingDoesNotBlockTheRest() = runTest {
+        val s = store().apply {
+            upsert(recording("old", startedAt = 1))
+            upsert(recording("new", startedAt = 2))
+        }
+        val d = FakeDrive().apply { failSession = "s1" }
+        assertEquals(Uploader.Outcome.RETRY, uploader(s, d).runAll())
+        assertEquals(UploadState.FAILED, s.get("old")!!.upload)
+        assertEquals(UploadState.UPLOADED, s.get("new")!!.upload)
+    }
+
+    /** Review: a cancelled run (Wi-Fi-only switched on, system stop) sends no more pieces. */
+    @Test fun cancelStopsAtTheNextPiece() = runTest {
+        val s = store().apply { upsert(recording("a")) }
+        val d = FakeDrive()
+        val job = launch(kotlinx.coroutines.Dispatchers.Default) { uploader(s, d).runAll() }
+        d.onChunk = { job.cancel() }
+        job.join()
+        assertEquals(1024, d.received.getValue("s1").size())
+        assertEquals(UploadState.WAITING, s.get("a")!!.upload)
+        assertEquals("s1", s.get("a")!!.sessionUri)
     }
 }
