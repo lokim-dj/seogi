@@ -3,6 +3,7 @@
 //!
 //!     seogi --seogi-transcribe meeting.m4a --seogi-out out/ --seogi-minutes
 //!     seogi --seogi-minutes-from out/transcript.json --seogi-out out/ --seogi-llm claude:sonnet
+//!     seogi --seogi-minutes-from meeting.json --seogi-out out/   # with its people, place, event
 //!
 //! and of the whole secretary, as the app runs it, against a library folder
 //! of its own:
@@ -96,6 +97,9 @@ fn run_inner(app: &AppHandle, args: &CliArgs) -> Result<(), Failure> {
         None => Vec::new(),
     };
 
+    // A meeting.json given to --seogi-minutes-from brings what the user told
+    // about the meeting too: the people, the customer, the place, the event.
+    let mut meeting: Option<super::store::Meeting> = None;
     let (transcript, audio_ms) = match (&args.seogi_minutes_from, &args.seogi_transcribe) {
         (Some(json), _) => {
             let text = std::fs::read_to_string(json)
@@ -112,6 +116,12 @@ fn run_inner(app: &AppHandle, args: &CliArgs) -> Result<(), Failure> {
                 .pointer("/stats/audio_ms")
                 .and_then(serde_json::Value::as_u64)
                 .unwrap_or_else(|| transcript.duration_ms());
+            if value.get("started_at_ms").is_some() {
+                meeting = serde_json::from_value(value)
+                    .context("it looks like a meeting.json but cannot be read as one")
+                    .map(Some)
+                    .map_err(Failure::Input)?;
+            }
             (transcript, audio_ms)
         }
         (None, Some(file)) => transcribe(app, args, file)?,
@@ -136,15 +146,29 @@ fn run_inner(app: &AppHandle, args: &CliArgs) -> Result<(), Failure> {
     let all_templates = templates::built_in();
     let cancelled = AtomicBool::new(false);
     let no_secrets = |_: &str| None;
+    let mut people: Vec<String> = Vec::new();
+    let (mut recorded_on, mut context) = (String::new(), String::new());
+    let mut template_id = args.seogi_template.clone();
+    if let Some(meeting) = &meeting {
+        people = meeting.people.clone();
+        if !meeting.customer.is_empty() && !people.contains(&meeting.customer) {
+            people.push(meeting.customer.clone());
+        }
+        recorded_on = meeting.recorded_on();
+        context = meeting.context();
+        if template_id.is_none() && !meeting.template_id.is_empty() {
+            template_id = Some(meeting.template_id.clone());
+        }
+    }
     let input = minutes::Input {
         transcript: &transcript,
         templates: &all_templates,
-        template_id: args.seogi_template.as_deref(),
+        template_id: template_id.as_deref(),
         marks_ms: &marks,
         mark_notes: &[],
-        people: &[],
-        recorded_on: "",
-        context: "",
+        people: &people,
+        recorded_on: &recorded_on,
+        context: &context,
         feedback_rules: super::feedback::EXAMPLE_RULES,
         provider: &provider,
         secrets: &no_secrets,
@@ -168,11 +192,17 @@ fn run_inner(app: &AppHandle, args: &CliArgs) -> Result<(), Failure> {
             speaker.name = name.clone();
         }
     }
-    let header = Header {
-        duration_ms: audio_ms,
-        transcribed_by: transcript.model.clone(),
-        app_version: env!("CARGO_PKG_VERSION").to_string(),
-        ..Default::default()
+    let header = match &meeting {
+        Some(meeting) => Header {
+            transcribed_by: transcript.model.clone(),
+            ..meeting.header()
+        },
+        None => Header {
+            duration_ms: audio_ms,
+            transcribed_by: transcript.model.clone(),
+            app_version: env!("CARGO_PKG_VERSION").to_string(),
+            ..Default::default()
+        },
     };
     let markdown = render::minutes_markdown(&output.minutes, &named, &header, &marks);
     let elapsed = started.elapsed().as_secs_f64();

@@ -1,0 +1,14 @@
+# 연습 대본 internal_4spk 의 회의록 기대값 (대본은 ../scripts/internal_4spk.txt)
+# 실제 사람·회사·현장과 무관한 가상의 내용입니다.
+# script: ../scripts/internal_4spk.txt
+# template: meeting
+# people: 최도윤 팀장, 오세훈 과장, 정다은 대리, 윤지호 사원
+# task: 벽지 업체에 전화해 수요일 입고 확인하기 | 정다은
+# task: 견적서 두 가지 안 만들어 공유하기 | 오세훈
+# task: 고객 미팅 자료 준비하기 | 윤지호
+# task: 간접등 발주 넣기 | 정다은
+# task: 고객께 걸레받이 회색 변경 알리기 | 윤지호
+# task: 회의실 예약하기 | 최도윤
+# expect: decisions | 화요일 오후 3시|오후 3시
+# expect: decisions | 회색
+# trap: decisions | 몰딩.{0,12}(업체|바꾸|변경) | unless: 다음|다시|검토
