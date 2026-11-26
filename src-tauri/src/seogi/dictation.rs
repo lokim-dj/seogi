@@ -50,8 +50,15 @@ pub struct Spot {
     pub y: i32,
 }
 
-/// Seogi's own dictation settings, kept in `seogi.json`. The rest (the
-/// shortcut, the model, how the words are typed) are the engine's settings.
+/// Seogi's own dictation settings, kept in `seogi.json` and changed only
+/// through `Secretary::update_dictation`. Each dictation setting has one
+/// home: these, which only Seogi reads, live here; the ones the inherited
+/// engine acts on (the shortcut, how it is pressed, the model, how the
+/// words are typed, sounds, fillers, how many are kept, and the two marks
+/// about the shortcut and the model) live in the engine's settings store
+/// and are read and written there ([`read`], [`write`]). The language is
+/// `seogi.json`'s and the engine reads it from there
+/// (`settings::speak_seogi_language`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(default)]
 pub struct DictationConfig {
@@ -69,13 +76,6 @@ pub struct DictationConfig {
     pub button: bool,
     /// Where the user left the key; `None` for the bottom right corner.
     pub button_at: Option<Spot>,
-    /// The shortcut has been moved off the first release's default
-    /// (Control+Option+Space) to the key dictation apps use. Done once.
-    pub key_moved: bool,
-    /// The meetings' speech model stands in for dictation until the default
-    /// dictation model is downloaded, then dictation moves to it. Never set
-    /// for a model the user picked.
-    pub model_standing_in: bool,
 }
 
 impl Default for DictationConfig {
@@ -90,8 +90,6 @@ impl Default for DictationConfig {
             numbers: true,
             button: false,
             button_at: None,
-            key_moved: false,
-            model_standing_in: false,
         }
     }
 }
@@ -230,7 +228,11 @@ pub fn is_listening() -> bool {
 
 /// The choices as they are now.
 pub fn read(app: &AppHandle, config: &DictationConfig) -> Dictation {
-    let s = settings::get_settings(app);
+    choices(&settings::get_settings(app), config)
+}
+
+/// The choices from their two homes: the engine's settings and Seogi's.
+fn choices(s: &AppSettings, config: &DictationConfig) -> Dictation {
     Dictation {
         enabled: config.enabled,
         shortcut: s
@@ -282,6 +284,36 @@ pub fn write(app: &AppHandle, wanted: Dictation) -> Result<(), String> {
     }
 
     let mut s = settings::get_settings(app);
+    let old_model = s.selected_model.clone();
+    put_engine_choices(&mut s, &wanted);
+    if wanted.model != old_model && !wanted.model.is_empty() {
+        // A model the user picks is theirs from now on, even while it is
+        // still downloading.
+        s.dictation_stand_in.clear();
+    }
+    settings::write_settings(app, s);
+
+    if changing_key {
+        set_shortcut(app, &shortcut)?;
+    }
+    if wanted.model != old_model && !wanted.model.is_empty() {
+        choose_model(app, &wanted.model)?;
+    }
+
+    if wanted.tidy_with != config.dictation.tidy_with {
+        forget_troubles();
+    }
+    secretary
+        .update_dictation(|dictation| put_seogi_choices(dictation, &wanted))
+        .map_err(|e| format!("{e:#}"))?;
+    apply(app);
+    Ok(())
+}
+
+/// The engine's part of the choices, into its settings. The shortcut and
+/// the model go their own ways ([`set_shortcut`], [`choose_model`]): one is
+/// registered with the system, the other may need a download first.
+fn put_engine_choices(s: &mut AppSettings, wanted: &Dictation) {
     s.shortcut_activation = match wanted.press {
         Press::Hold => ShortcutActivation::PushToTalk,
         Press::Toggle => ShortcutActivation::Toggle,
@@ -295,35 +327,16 @@ pub fn write(app: &AppHandle, wanted: Dictation) -> Result<(), String> {
     s.audio_feedback = wanted.sounds;
     s.filler_word_removal_enabled = wanted.fillers;
     s.history_limit = wanted.keep.clamp(1, 50) as usize;
-    let old_model = s.selected_model.clone();
-    settings::write_settings(app, s);
+}
 
-    if changing_key {
-        set_shortcut(app, &shortcut)?;
-    }
-    if wanted.model != old_model && !wanted.model.is_empty() {
-        choose_model(app, &wanted.model)?;
-    }
-
-    let dictation = DictationConfig {
-        enabled: wanted.enabled,
-        tidy: wanted.tidy,
-        tidy_with: wanted.tidy_with.clone(),
-        numbers: wanted.numbers,
-        button: wanted.button,
-        button_at: config.dictation.button_at,
-        key_moved: config.dictation.key_moved,
-        // A model the user picks is theirs from now on.
-        model_standing_in: config.dictation.model_standing_in && wanted.model == old_model,
-    };
-    if dictation.tidy_with != config.dictation.tidy_with {
-        forget_troubles();
-    }
-    secretary
-        .set_dictation(dictation)
-        .map_err(|e| format!("{e:#}"))?;
-    apply(app);
-    Ok(())
+/// Seogi's part of the choices. Where the floating key was left is not a
+/// choice on the screen and stays as it is.
+fn put_seogi_choices(dictation: &mut DictationConfig, wanted: &Dictation) {
+    dictation.enabled = wanted.enabled;
+    dictation.tidy = wanted.tidy;
+    dictation.tidy_with = wanted.tidy_with.clone();
+    dictation.numbers = wanted.numbers;
+    dictation.button = wanted.button;
 }
 
 /// The shortcut, re-registered at once when dictation is listening.
@@ -363,7 +376,7 @@ fn choose_model(app: &AppHandle, model: &str) -> Result<(), String> {
         .get_model_info(model)
         .ok_or_else(|| format!("unknown model {model}"))?;
     if info.is_downloaded {
-        select_model(app, model);
+        select_model(app, model, false);
         return Ok(());
     }
     let models = models.inner().clone();
@@ -371,24 +384,47 @@ fn choose_model(app: &AppHandle, model: &str) -> Result<(), String> {
     let model = model.to_string();
     tauri::async_runtime::spawn(async move {
         match models.download_model(&model).await {
-            Ok(()) => select_model(&app, &model),
+            Ok(()) => select_model(&app, &model, false),
             Err(e) => warn!("The dictation model {model} could not be downloaded: {e:#}"),
         }
     });
     Ok(())
 }
 
-fn select_model(app: &AppHandle, model: &str) {
+/// Puts `model` in for dictation, as the user's choice or (`stand_in`) only
+/// until the default is downloaded. The model and that mark are written
+/// together, in one place.
+fn select_model(app: &AppHandle, model: &str, stand_in: bool) {
     let mut s = settings::get_settings(app);
-    if s.selected_model == model {
+    let changed = s.selected_model != model;
+    if !put_model(&mut s, model, stand_in) {
         return;
     }
-    s.selected_model = model.to_string();
     settings::write_settings(app, s);
-    if let Some(tm) = app.try_state::<Arc<TranscriptionManager>>() {
-        tm.reload_model_on_next_use();
+    if changed {
+        if let Some(tm) = app.try_state::<Arc<TranscriptionManager>>() {
+            tm.reload_model_on_next_use();
+        }
+        info!("Dictation now uses {model}");
     }
-    info!("Dictation now uses {model}");
+}
+
+/// Sets the model and whether it only stands in; true when anything
+/// changed.
+fn put_model(s: &mut AppSettings, model: &str, stand_in: bool) -> bool {
+    let stand_in = if stand_in { model } else { "" };
+    if s.selected_model == model && s.dictation_stand_in == stand_in {
+        return false;
+    }
+    s.selected_model = model.to_string();
+    s.dictation_stand_in = stand_in.to_string();
+    true
+}
+
+/// Whether the dictation model only stands in for the default: it was put
+/// in as a stand-in and nothing has chosen another model since.
+fn standing_in(s: &AppSettings) -> bool {
+    !s.dictation_stand_in.is_empty() && s.dictation_stand_in == s.selected_model
 }
 
 /// What dictation should do about its speech model.
@@ -428,11 +464,7 @@ fn model_choice(
 }
 
 fn ensure_model(app: &AppHandle, meeting_model: &str) {
-    let Some(secretary) = Secretary::of(app) else {
-        return;
-    };
-    let mut dictation = secretary.config().dictation;
-    let selected = settings::get_settings(app).selected_model;
+    let s = settings::get_settings(app);
     let models = app.state::<Arc<ModelManager>>();
     let here = |id: &str| models.get_model_info(id).is_some_and(|m| m.is_downloaded);
     // The smaller model first: a dictation is seconds long, and Whisper
@@ -440,17 +472,11 @@ fn ensure_model(app: &AppHandle, meeting_model: &str) {
     // (2.2 GB).
     let stand_ins = [super::config::WHISPER_TURBO, meeting_model];
     let ModelChoice::Use { model, standing_in } =
-        model_choice(&selected, dictation.model_standing_in, &stand_ins, here)
+        model_choice(&s.selected_model, self::standing_in(&s), &stand_ins, here)
     else {
         return;
     };
-    select_model(app, &model);
-    if dictation.model_standing_in != standing_in {
-        dictation.model_standing_in = standing_in;
-        if let Err(e) = secretary.set_dictation(dictation) {
-            warn!("Could not save the settings: {e:#}");
-        }
-    }
+    select_model(app, &model, standing_in);
 }
 
 /// Downloads the default dictation model, asked for by the first-run screen
@@ -494,7 +520,6 @@ pub fn apply(app: &AppHandle) {
         return;
     };
     let config = secretary.config();
-    follow_language(app, &config.language);
     let dictation = &config.dictation;
     if dictation.enabled {
         ensure_model(app, config.speech_model());
@@ -507,29 +532,6 @@ pub fn apply(app: &AppHandle) {
         stop_listening(app);
     }
     super::mic_button::set_shown(app, dictation.enabled && dictation.button);
-}
-
-/// Dictation speaks Seogi's language (`seogi.json`, Korean unless changed),
-/// not the engine's "auto": left to guess, a model can hear a drawn-out
-/// Korean "아아아" as Chinese and type 啊啊啊. Words said in English inside
-/// Korean still come out in English (checked on mixed clips; see the pull
-/// request that made this change).
-fn follow_language(app: &AppHandle, language: &str) {
-    let mut s = settings::get_settings(app);
-    if speak_language(&mut s, language) {
-        info!("Dictation now listens for {language}");
-        settings::write_settings(app, s);
-    }
-}
-
-/// Sets the engine's language to `language`; true when it changed.
-fn speak_language(s: &mut AppSettings, language: &str) -> bool {
-    let language = language.trim();
-    if language.is_empty() || s.selected_language == language {
-        return false;
-    }
-    s.selected_language = language.to_string();
-    true
 }
 
 /// Whether dictated words came out in a script the user's language does not
@@ -702,8 +704,7 @@ const FIRST_KEYS: &[&str] = &["ctrl+option+space", "ctrl+alt+space"];
 /// dictation apps use, once. A key the user chose is left alone.
 fn move_old_default_key(app: &AppHandle, secretary: &Secretary) {
     let config = secretary.config();
-    let mut dictation = config.dictation.clone();
-    if dictation.key_moved {
+    if settings::get_settings(app).dictation_key_moved {
         return;
     }
     let current = settings::get_settings(app)
@@ -726,10 +727,84 @@ fn move_old_default_key(app: &AppHandle, secretary: &Secretary) {
             info!("The dictation shortcut stays on {current}: {new} is Seogi's {by} shortcut")
         }
     }
-    dictation.key_moved = true;
-    if let Err(e) = secretary.set_dictation(dictation) {
-        warn!("Could not save the settings: {e:#}");
+    let mut s = settings::get_settings(app);
+    s.dictation_key_moved = true;
+    settings::write_settings(app, s);
+}
+
+/// Moves the two marks 0.1.16 and earlier kept in `seogi.json` about the
+/// engine's values (the shortcut has been moved; the model only stands in)
+/// to the engine's settings, beside those values, then saves `seogi.json`
+/// without them. Called at start before anything else saves `seogi.json`
+/// (any save drops them). Once: a `seogi.json` without them has nothing to
+/// move, and moving again changes nothing.
+pub fn move_marks_from_seogi_json(app: &AppHandle, data_dir: &std::path::Path) {
+    let Some(old) = super::config::Config::raw(data_dir) else {
+        return;
+    };
+    if !has_old_marks(&old) {
+        return;
     }
+    let mut s = settings::get_settings(app);
+    if take_old_marks(&old, &mut s) {
+        settings::write_settings(app, s);
+        // On disk before seogi.json loses them.
+        settings::flush_settings(app);
+        info!("Moved the dictation marks from seogi.json to the engine's settings");
+    }
+    // Saved again only when it reads as settings: a file this version
+    // cannot read is never replaced by the defaults here.
+    match serde_json::from_value::<super::config::Config>(old) {
+        Ok(config) => {
+            if let Err(e) = config.save(data_dir) {
+                warn!("Could not save the settings: {e:#}");
+            }
+        }
+        Err(e) => warn!("seogi.json kept as it is ({e})"),
+    }
+}
+
+fn has_old_marks(old: &Value) -> bool {
+    ["/dictation/key_moved", "/dictation/model_standing_in"]
+        .iter()
+        .any(|mark| old.pointer(mark).is_some())
+}
+
+/// Takes the old `seogi.json` marks into the engine's settings `s`; true
+/// when `s` changed. A mark already in `s` wins over the old file's: it is
+/// the newer, and the one the app has been acting on.
+fn take_old_marks(old: &Value, s: &mut AppSettings) -> bool {
+    let said = |mark: &str| old.pointer(mark).and_then(Value::as_bool) == Some(true);
+    let mut changed = false;
+    if said("/dictation/key_moved") && !s.dictation_key_moved {
+        s.dictation_key_moved = true;
+        changed = true;
+    }
+    // The flag meant: the model in use now stands in. Only a model that
+    // could have been put in to stand in is taken as one (Whisper turbo or
+    // a meetings' model): a flag left behind while the user chose another
+    // model some other way must not make that choice give way. The default
+    // itself never stands in.
+    let meeting_model = old
+        .get("speech_model")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+        .unwrap_or(super::config::DEFAULT_SPEECH_MODEL);
+    let could_stand_in = |model: &str| {
+        model == super::config::WHISPER_TURBO
+            || model == meeting_model
+            || super::config::STAND_IN_SPEECH_MODELS.contains(&model)
+    };
+    if said("/dictation/model_standing_in")
+        && s.dictation_stand_in.is_empty()
+        && s.selected_model != DEFAULT_DICTATION_MODEL
+        && could_stand_in(&s.selected_model)
+    {
+        s.dictation_stand_in = s.selected_model.clone();
+        changed = true;
+    }
+    changed
 }
 
 /// Where a shortcut still on the first release's default moves: `Ok(None)`
@@ -2001,17 +2076,16 @@ mod tests {
     }
 
     /// The engine's "auto" let a model guess the language; Seogi's language
-    /// is passed instead, and then the model is told Korean.
+    /// is what the engine reads instead, and then the model is told Korean.
     #[test]
     fn dictation_speaks_seogis_language() {
         use crate::language_detection::policy::{self, ModelLanguages, Plan};
         let mut s = settings::get_default_settings();
         s.spoken_languages = vec!["ko".into(), "en".into()];
         assert_eq!(s.selected_language, "auto");
-        assert!(speak_language(&mut s, "ko"));
+        settings::speak_seogi_language(&mut s, "ko");
         assert_eq!(s.selected_language, "ko");
-        assert!(!speak_language(&mut s, "ko"));
-        assert!(!speak_language(&mut s, ""));
+        settings::speak_seogi_language(&mut s, " ");
         assert_eq!(s.selected_language, "ko");
 
         let languages: Vec<String> = ["zh", "en", "ja", "ko"].map(String::from).to_vec();
@@ -2028,6 +2102,202 @@ mod tests {
             &[],
         );
         assert!(matches!(plan, Plan::Fixed { ref language, .. } if language == "ko"));
+    }
+
+    /// Whatever language the store holds (an older copy, another app's
+    /// "auto"), the engine reads Seogi's: there is no second language to be
+    /// out of step with.
+    #[test]
+    fn a_language_left_in_the_store_is_not_read() {
+        for stored in ["auto", "en", "ja", "ko"] {
+            let mut s: AppSettings =
+                serde_json::from_value(json!({ "selected_language": stored })).unwrap();
+            settings::speak_seogi_language(&mut s, "ko");
+            assert_eq!(s.selected_language, "ko", "{stored}");
+        }
+    }
+
+    /// Each dictation choice on the screen goes to its one home and comes
+    /// back from there as it was chosen.
+    #[test]
+    fn every_dictation_choice_round_trips_through_its_home() {
+        let mut s = settings::get_default_settings();
+        let mut seogi = DictationConfig::default();
+        let start = choices(&s, &seogi);
+        let tidy_with = Provider::ClaudeCli {
+            model: "sonnet".into(),
+        };
+        type Change = Box<dyn Fn(&mut Dictation)>;
+        let changes: Vec<(&str, Change)> = vec![
+            ("enabled", Box::new(|d| d.enabled = !d.enabled)),
+            ("press hold", Box::new(|d| d.press = Press::Hold)),
+            ("press toggle", Box::new(|d| d.press = Press::Toggle)),
+            ("press both", Box::new(|d| d.press = Press::Both)),
+            ("typing type", Box::new(|d| d.typing = Typing::Type)),
+            ("typing copy", Box::new(|d| d.typing = Typing::Copy)),
+            ("typing paste", Box::new(|d| d.typing = Typing::Paste)),
+            ("sounds", Box::new(|d| d.sounds = !d.sounds)),
+            ("fillers", Box::new(|d| d.fillers = !d.fillers)),
+            ("keep", Box::new(|d| d.keep = 7)),
+            ("tidy", Box::new(|d| d.tidy = !d.tidy)),
+            (
+                "tidy_with",
+                Box::new(move |d| d.tidy_with = tidy_with.clone()),
+            ),
+            ("numbers", Box::new(|d| d.numbers = !d.numbers)),
+            ("button", Box::new(|d| d.button = !d.button)),
+        ];
+        for (name, change) in changes {
+            let mut wanted = choices(&s, &seogi);
+            change(&mut wanted);
+            put_engine_choices(&mut s, &wanted);
+            put_seogi_choices(&mut seogi, &wanted);
+            // Through the files, as a restart reads them.
+            let s_again: AppSettings =
+                serde_json::from_value(serde_json::to_value(&s).unwrap()).unwrap();
+            let seogi_again: DictationConfig =
+                serde_json::from_value(serde_json::to_value(&seogi).unwrap()).unwrap();
+            assert_eq!(choices(&s_again, &seogi_again), wanted, "{name}");
+        }
+        assert_ne!(choices(&s, &seogi), start);
+
+        // The shortcut and the model are the engine's too.
+        let mut binding = settings::get_stored_binding(&s, "transcribe").unwrap();
+        binding.current_binding = "ctrl+shift+space".into();
+        s.bindings.insert("transcribe".into(), binding);
+        assert!(put_model(&mut s, "some/model-gguf/model-Q8_0.gguf", false));
+        let s_again: AppSettings =
+            serde_json::from_value(serde_json::to_value(&s).unwrap()).unwrap();
+        let read = choices(&s_again, &seogi);
+        assert_eq!(read.shortcut, "ctrl+shift+space");
+        assert_eq!(read.model, "some/model-gguf/model-Q8_0.gguf");
+        // How many are kept stays within what the screen offers.
+        let mut wanted = read;
+        wanted.keep = 500;
+        put_engine_choices(&mut s, &wanted);
+        assert_eq!(choices(&s, &seogi).keep, 50);
+    }
+
+    /// A seogi.json written by 0.1.16 and earlier carried two marks about
+    /// the engine's values; they move beside those values once.
+    #[test]
+    fn the_old_marks_move_to_the_engines_settings_once() {
+        let old_seogi: Value =
+            serde_json::from_str(include_str!("fixtures/seogi-0.1.16.json")).unwrap();
+        let old_store: Value =
+            serde_json::from_str(include_str!("fixtures/settings_store-0.1.16.json")).unwrap();
+        let stored =
+            || -> AppSettings { serde_json::from_value(old_store["settings"].clone()).unwrap() };
+        assert!(has_old_marks(&old_seogi));
+
+        // Both files: the marks move, and the store's values are kept.
+        let mut s = stored();
+        let before = serde_json::to_value(stored()).unwrap();
+        assert!(!s.dictation_key_moved);
+        assert!(take_old_marks(&old_seogi, &mut s));
+        assert!(s.dictation_key_moved);
+        assert_eq!(s.dictation_stand_in, s.selected_model);
+        assert!(standing_in(&s));
+        let mut after = serde_json::to_value(&s).unwrap();
+        after["dictation_key_moved"] = before["dictation_key_moved"].clone();
+        after["dictation_stand_in"] = before["dictation_stand_in"].clone();
+        assert_eq!(after, before, "nothing else in the store changes");
+        // Again: nothing more to do.
+        assert!(!take_old_marks(&old_seogi, &mut s));
+
+        // Only seogi.json (the store is new): the key mark moves; the model
+        // in a new store is empty, so nothing stands in.
+        let mut fresh = settings::get_default_settings();
+        assert!(take_old_marks(&old_seogi, &mut fresh));
+        assert!(fresh.dictation_key_moved);
+        assert!(fresh.dictation_stand_in.is_empty());
+
+        // Only the store, or neither: nothing to move.
+        let none = json!({ "language": "ko" });
+        assert!(!has_old_marks(&none));
+        let mut s = stored();
+        assert!(!take_old_marks(&none, &mut s));
+        let mut s = settings::get_default_settings();
+        assert!(!take_old_marks(&none, &mut s));
+
+        // Disagreeing: a mark already in the store is kept (it is the newer
+        // and the one the app acts on); an old "false" never undoes a move;
+        // the default model never stands in.
+        let mut s = stored();
+        s.dictation_key_moved = true;
+        s.dictation_stand_in = "other/stand-in-gguf/x.gguf".into();
+        let said_no = json!({ "dictation": { "key_moved": false, "model_standing_in": true } });
+        assert!(!take_old_marks(&said_no, &mut s));
+        assert!(s.dictation_key_moved);
+        assert_eq!(s.dictation_stand_in, "other/stand-in-gguf/x.gguf");
+        let mut s = stored();
+        s.selected_model = DEFAULT_DICTATION_MODEL.into();
+        assert!(take_old_marks(&old_seogi, &mut s));
+        assert!(s.dictation_stand_in.is_empty());
+        // A flag left behind while the user chose a model no stand-in could
+        // be: that choice stays theirs.
+        let mut s = stored();
+        s.selected_model = "someone/picked-gguf/picked-Q8_0.gguf".into();
+        assert!(take_old_marks(&old_seogi, &mut s));
+        assert!(s.dictation_stand_in.is_empty());
+        // A meetings' model picked in seogi.json could have stood in.
+        let mut s = stored();
+        s.selected_model = "someone/meeting-gguf/meeting-Q8_0.gguf".into();
+        let picked_meeting = json!({ "speech_model": "someone/meeting-gguf/meeting-Q8_0.gguf",
+                                     "dictation": { "model_standing_in": true } });
+        assert!(take_old_marks(&picked_meeting, &mut s));
+        assert_eq!(
+            s.dictation_stand_in,
+            "someone/meeting-gguf/meeting-Q8_0.gguf"
+        );
+
+        // The old seogi.json still loads, every value kept, and saves
+        // without the marks.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("seogi.json"),
+            include_str!("fixtures/seogi-0.1.16.json"),
+        )
+        .unwrap();
+        let loaded = super::super::config::Config::load(dir.path());
+        assert_eq!(loaded.language, "ko");
+        assert_eq!(loaded.record_shortcut, "Ctrl+Alt+R");
+        assert!(!loaded.dictation.enabled);
+        assert!(loaded.dictation.button);
+        assert_eq!(loaded.dictation.button_at, Some(Spot { x: 1200, y: 700 }));
+        assert_eq!(loaded.watched.len(), 1);
+        loaded.save(dir.path()).unwrap();
+        let saved = super::super::config::Config::raw(dir.path()).unwrap();
+        assert!(!has_old_marks(&saved));
+        assert_eq!(super::super::config::Config::load(dir.path()), loaded);
+    }
+
+    /// A model put in to stand in stops standing in as soon as anything
+    /// else (the settings screen, the engine after a delete) chooses
+    /// another, so the default never replaces a model someone picked. With
+    /// the mark in seogi.json, a change made elsewhere left it behind.
+    #[test]
+    fn a_stand_in_ends_when_another_model_is_chosen_anywhere() {
+        let mut s = settings::get_default_settings();
+        assert!(put_model(&mut s, "whisper-turbo", true));
+        assert!(standing_in(&s));
+        assert!(!put_model(&mut s, "whisper-turbo", true));
+        // Chosen by a path that knows nothing of stand-ins.
+        s.selected_model = "picked-gguf/picked.gguf".into();
+        assert!(!standing_in(&s));
+        assert_eq!(
+            model_choice(
+                &s.selected_model,
+                standing_in(&s),
+                &["whisper-turbo"],
+                |_| true
+            ),
+            ModelChoice::Keep
+        );
+        // Picked back to the very model that once stood in: still the
+        // user's, because a pick writes the model and the mark together.
+        assert!(put_model(&mut s, "whisper-turbo", false));
+        assert!(!standing_in(&s));
     }
 
     #[test]

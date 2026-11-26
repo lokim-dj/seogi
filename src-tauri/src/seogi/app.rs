@@ -529,6 +529,11 @@ impl Secretary {
         lock(&self.config).clone()
     }
 
+    /// The language recordings are in, which dictation listens for too.
+    pub fn language(&self) -> String {
+        lock(&self.config).language.clone()
+    }
+
     pub fn data_dir(&self) -> &Path {
         &self.data_dir
     }
@@ -538,9 +543,7 @@ impl Secretary {
     pub fn set_config(&self, mut config: Config) -> Result<()> {
         let library_moved = {
             let mut current = lock(&self.config);
-            // Dictation has its own command (and the floating key moves on
-            // its own); a screen holding older settings must not undo it.
-            config.dictation = current.dictation.clone();
+            config.keep_dictation_of(&current);
             config.save(&self.data_dir)?;
             let moved = current.library() != config.library();
             *current = config;
@@ -556,12 +559,18 @@ impl Secretary {
         Ok(())
     }
 
-    /// Replaces only the dictation settings and saves them. Nothing else
-    /// is read again: the floating key saves its place here on every drag.
-    pub fn set_dictation(&self, dictation: super::dictation::DictationConfig) -> Result<()> {
+    /// The one way the dictation settings in `seogi.json` change: `change`
+    /// is applied to what is saved now, under the lock, and the result is
+    /// saved. So the settings screen and the floating key (which saves its
+    /// place on every drag) never undo each other. Nothing else is read
+    /// again.
+    pub fn update_dictation(
+        &self,
+        change: impl FnOnce(&mut super::dictation::DictationConfig),
+    ) -> Result<()> {
         let mut current = lock(&self.config);
         let mut config = current.clone();
-        config.dictation = dictation;
+        change(&mut config.dictation);
         config.save(&self.data_dir)?;
         *current = config;
         Ok(())

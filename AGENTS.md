@@ -84,7 +84,7 @@ src-tauri/src/
   engine_supervisor/  Runs the speech engine (transcribe.cpp) in a child process
   audio_toolkit/    Decoding, VAD, long-form chunking, text cleanup
   commands/         Tauri commands for the dictation settings screens
-  settings.rs       Dictation settings (tauri-plugin-store)
+  settings.rs       The engine's settings (tauri-plugin-store); which setting lives where: docs/adr/0001
 src/
   seogi/            Seogi's own frontend (the product UI)
   components/       Dictation settings screens and onboarding

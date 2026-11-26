@@ -2016,7 +2016,22 @@ language_detection_window_secs?: number;
  * not gated on this — that follows model capability. Migrated from the old
  * `overlay_position` (position `none` → style `None`).
  */
-overlay_style?: OverlayStyle }
+overlay_style?: OverlayStyle; 
+/**
+ * Seogi: the dictation model put in `selected_model` to stand in while
+ * the default dictation model downloads; empty for none. It stands in
+ * only while `selected_model` is still this model, so any other choice
+ * of model, by whatever path, ends it. Kept beside `selected_model`
+ * (until 0.1.16 a flag in `seogi.json` said so, and a model changed
+ * elsewhere left the flag behind).
+ */
+dictation_stand_in?: string; 
+/**
+ * Seogi: the dictation shortcut has been moved off the first release's
+ * default once. Kept beside the binding it is about (until 0.1.16 in
+ * `seogi.json`).
+ */
+dictation_key_moved?: boolean }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AutoUnavailableReason = 
@@ -2314,8 +2329,15 @@ numbers: boolean; button: boolean;
  */
 keep: number }
 /**
- * Seogi's own dictation settings, kept in `seogi.json`. The rest (the
- * shortcut, the model, how the words are typed) are the engine's settings.
+ * Seogi's own dictation settings, kept in `seogi.json` and changed only
+ * through `Secretary::update_dictation`. Each dictation setting has one
+ * home: these, which only Seogi reads, live here; the ones the inherited
+ * engine acts on (the shortcut, how it is pressed, the model, how the
+ * words are typed, sounds, fillers, how many are kept, and the two marks
+ * about the shortcut and the model) live in the engine's settings store
+ * and are read and written there ([`read`], [`write`]). The language is
+ * `seogi.json`'s and the engine reads it from there
+ * (`settings::speak_seogi_language`).
  */
 export type DictationConfig = { 
 /**
@@ -2343,18 +2365,7 @@ button: boolean;
 /**
  * Where the user left the key; `None` for the bottom right corner.
  */
-button_at: Spot | null; 
-/**
- * The shortcut has been moved off the first release's default
- * (Control+Option+Space) to the key dictation apps use. Done once.
- */
-key_moved: boolean; 
-/**
- * The meetings' speech model stands in for dictation until the default
- * dictation model is downloaded, then dictation moves to it. Never set
- * for a model the user picked.
- */
-model_standing_in: boolean }
+button_at: Spot | null }
 /**
  * What the settings screen needs to know besides the choices.
  */
