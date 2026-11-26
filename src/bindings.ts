@@ -1251,6 +1251,20 @@ async seogiDownloadDiarizer() : Promise<Result<null, string>> {
 }
 },
 /**
+ * Downloads a speech model for meetings, once: a download already under
+ * way is left to finish. Before it starts, the disk must have room for it
+ * and some to spare. An error is a code the screen has words for:
+ * `no_space:<bytes missing>`, or a reason.
+ */
+async seogiDownloadSpeechModel(model: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_download_speech_model", { model }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * A few seconds of the meeting's original recording, as a WAV file in
  * base64 (`data:audio/wav;base64,...` plays it): for listening to the
  * words an entry of the minutes rests on. At most a minute.
@@ -2986,6 +3000,15 @@ speech_model_stand_in: string | null;
  */
 speech_model_bytes: number; 
 /**
+ * The user put a model of their own in `speech_model`, rather than
+ * following the default.
+ */
+speech_model_chosen: boolean; 
+/**
+ * The models the settings offer for meetings, best first.
+ */
+speech_models: SpeechModelOption[]; 
+/**
  * The model that tells speakers apart.
  */
 diarizer_ready: boolean; 
@@ -3290,6 +3313,14 @@ export type SpeechChoice = { id: string; label: string; downloaded: boolean; siz
  * Among the most accurate for Korean.
  */
 accurate: boolean; recommended: boolean }
+/**
+ * A speech model the settings offer for meetings.
+ */
+export type SpeechModelOption = { id: string; downloaded: boolean; downloading: boolean; 
+/**
+ * The download, in bytes; 0 when unknown.
+ */
+bytes: number }
 /**
  * How quick a choice is for dictation, where the words should be in within
  * a second or two of the last one spoken.

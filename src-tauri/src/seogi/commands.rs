@@ -632,6 +632,16 @@ pub fn seogi_open_calendar_rules(
         .map_err(|e| e.to_string())
 }
 
+/// A speech model the settings offer for meetings.
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+pub struct SpeechModelOption {
+    pub id: String,
+    pub downloaded: bool,
+    pub downloading: bool,
+    /// The download, in bytes; 0 when unknown.
+    pub bytes: u64,
+}
+
 /// What Seogi needs to do its work, and which of it is in place.
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 pub struct Readiness {
@@ -644,6 +654,11 @@ pub struct Readiness {
     pub speech_model_stand_in: Option<String>,
     /// The speech model's download, in bytes; 0 when unknown.
     pub speech_model_bytes: u64,
+    /// The user put a model of their own in `speech_model`, rather than
+    /// following the default.
+    pub speech_model_chosen: bool,
+    /// The models the settings offer for meetings, best first.
+    pub speech_models: Vec<SpeechModelOption>,
     /// The model that tells speakers apart.
     pub diarizer_ready: bool,
     /// ffmpeg is installed. Needed only for file kinds the built-in decoder
@@ -701,6 +716,17 @@ pub async fn seogi_readiness(
             })
             .filter(|now| now.standing_in_for.is_some())
             .map(|now| now.model);
+        let speech_model_chosen = !config.speech_model.trim().is_empty();
+        let speech_models = config::STAND_IN_SPEECH_MODELS
+            .iter()
+            .filter_map(|id| models.get_model_info(id))
+            .map(|model| SpeechModelOption {
+                id: model.id,
+                downloaded: model.is_downloaded,
+                downloading: model.is_downloading,
+                bytes: model.size_mb * 1024 * 1024,
+            })
+            .collect();
 
         let ollama_url = match &config.summary {
             Provider::Ollama { base_url, .. } => base_url.clone(),
@@ -751,6 +777,8 @@ pub async fn seogi_readiness(
             speech_model_ready,
             speech_model_stand_in,
             speech_model_bytes,
+            speech_model_chosen,
+            speech_models,
             diarizer_ready: models.diarizer_path().is_some(),
             ffmpeg: audio_in::find_ffmpeg().is_some(),
             ollama_running: !ollama_models.is_empty(),
@@ -831,6 +859,80 @@ pub async fn seogi_download_diarizer(models: State<'_, Arc<ModelManager>>) -> Re
         .download_diarizer()
         .await
         .map_err(|e| format!("{e:#}"))
+}
+
+/// Downloads a speech model for meetings, once: a download already under
+/// way is left to finish. Before it starts, the disk must have room for it
+/// and some to spare. An error is a code the screen has words for:
+/// `no_space:<bytes missing>`, or a reason.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_download_speech_model(
+    app: AppHandle,
+    models: State<'_, Arc<ModelManager>>,
+    model: String,
+) -> Result<(), String> {
+    let models = models.inner().clone();
+    let Some(info) = models.get_model_info(&model) else {
+        return Err(format!("unknown model {model}"));
+    };
+    if info.is_downloaded || info.is_downloading {
+        return Ok(());
+    }
+    // Two presses before the first progress report start one download.
+    static STARTED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    {
+        let mut started = STARTED.lock().unwrap_or_else(|e| e.into_inner());
+        if started.contains(&model) {
+            return Ok(());
+        }
+        started.push(model.clone());
+    }
+    let result = download_speech_model(&app, &models, &model, &info).await;
+    STARTED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|id| *id != model);
+    result
+}
+
+async fn download_speech_model(
+    app: &AppHandle,
+    models: &ModelManager,
+    model: &str,
+    info: &crate::managers::model::ModelInfo,
+) -> Result<(), String> {
+    use super::disk;
+    use tauri::Emitter;
+    let cache = hf_hub::Cache::from_env().path().clone();
+    let needed = (info.size_mb * 1024 * 1024).saturating_sub(info.partial_size);
+    let missing =
+        |needed: u64| disk::free_bytes(&cache).and_then(|free| disk::shortfall(free, needed));
+    if let Some(short) = missing(needed) {
+        return Err(format!("no_space:{short}"));
+    }
+    if let Err(e) = models.download_model(model).await {
+        let error = format!("{e:#}");
+        log::error!("The speech model {model} could not be downloaded: {error}");
+        let _ = app.emit(
+            "model-download-failed",
+            serde_json::json!({ "model_id": &model, "error": &error }),
+        );
+        let left = models.get_model_info(model).map_or(needed, |now| {
+            (now.size_mb * 1024 * 1024).saturating_sub(now.partial_size)
+        });
+        if disk::is_disk_full(&error) {
+            return Err(format!(
+                "no_space:{}",
+                missing(left).unwrap_or(disk::SPARE_BYTES)
+            ));
+        }
+        if let Some(short) = missing(left) {
+            return Err(format!("no_space:{short}"));
+        }
+        return Err(error);
+    }
+    Ok(())
 }
 
 // ----- dictation --------------------------------------------------------------

@@ -8,7 +8,7 @@ import { platform } from "@tauri-apps/plugin-os";
 import { commands, type CalendarCheck, type SignIns } from "@/bindings";
 import { NS } from "../i18n";
 import { friendlyPath, keysLabel, keysShort, shortModel } from "../lib/format";
-import { gigabytes, minutesToDownload } from "../lib/speech";
+import { gigabytes, gigabytesShort, minutesToDownload } from "../lib/speech";
 import {
   KEY_OWNERS,
   LOCAL,
@@ -31,6 +31,8 @@ export default function Onboarding() {
   const downloads = useSeogi((s) => s.downloads);
   const downloadMinutesLeft = useSeogi((s) => s.downloadMinutesLeft);
   const downloadFailed = useSeogi((s) => s.downloadFailed);
+  const downloadShort = useSeogi((s) => s.downloadShort);
+  const downloadSpeechModel = useSeogi((s) => s.downloadSpeechModel);
   const saveConfig = useSeogi((s) => s.saveConfig);
   const refreshSetup = useSeogi((s) => s.refreshSetup);
 
@@ -211,7 +213,7 @@ export default function Onboarding() {
     }
     // Transcribing needs its models whichever way was chosen.
     if (readiness && !readiness.speech_model_ready) {
-      void commands.downloadModel(readiness.speech_model);
+      void downloadSpeechModel(readiness.speech_model);
     }
     if (readiness && !readiness.diarizer_ready) {
       void commands.seogiDownloadDiarizer();
@@ -249,8 +251,12 @@ export default function Onboarding() {
       };
     }
     if (downloadFailed.includes(readiness.speech_model)) {
+      const short = downloadShort[readiness.speech_model];
       return {
-        head: t("onboarding.speechFailed"),
+        head:
+          short !== undefined
+            ? t("settings.noSpace", { gb: gigabytesShort(short) })
+            : t("onboarding.speechFailed"),
         hint: standIn
           ? `${t("onboarding.speechStandIn", { model: shortModel(standIn) })} · ${t("onboarding.speechFailedHint")}`
           : t("onboarding.speechFailedHint"),

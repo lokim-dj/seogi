@@ -4,6 +4,7 @@
 
 import { create } from "zustand";
 import { microphoneAllowed } from "./lib/microphone";
+import { downloadAsked, downloadEnded, noSpace } from "./lib/speech";
 import {
   commands,
   events,
@@ -89,6 +90,11 @@ interface Seogi {
   downloadMinutesLeft: Record<string, number>;
   /** Models whose last download failed, until one is tried again. */
   downloadFailed: string[];
+  /** Bytes the disk is short of for a model's download. */
+  downloadShort: Record<string, number>;
+  /** The home's band about the speech model was put off until the app is
+   *  started again. */
+  speechNoticeLater: boolean;
   /** Documents dropped on an open meeting, for its words. */
   droppedDocuments: { id: string; paths: string[] } | null;
   /** The meeting just moved to the trash, which can be brought back. */
@@ -118,6 +124,9 @@ interface Seogi {
   stopRecording: () => Promise<string | null>;
   importPaths: (paths: string[]) => Promise<ImportTally>;
   dropDocuments: (dropped: { id: string; paths: string[] } | null) => void;
+  /** Downloads a speech model for meetings, once, if the disk has room. */
+  downloadSpeechModel: (model: string) => Promise<void>;
+  putOffSpeechNotice: () => void;
 }
 
 let started = false;
@@ -143,6 +152,8 @@ export const useSeogi = create<Seogi>((set, get) => ({
   downloads: {},
   downloadMinutesLeft: {},
   downloadFailed: [],
+  downloadShort: {},
+  speechNoticeLater: false,
 
   init: async () => {
     if (started) return;
@@ -279,6 +290,18 @@ export const useSeogi = create<Seogi>((set, get) => ({
     });
     arrived(step.to);
   },
+
+  downloadSpeechModel: async (model) => {
+    if (get().downloads[model] !== undefined) return;
+    set((state) => downloadAsked(state, model));
+    const result = await commands.seogiDownloadSpeechModel(model);
+    if (result.status === "error") {
+      set((state) => downloadEnded(state, model, true, noSpace(result.error)));
+    }
+    void get().refreshSetup();
+  },
+
+  putOffSpeechNotice: () => set({ speechNoticeLater: true }),
 
   saveConfig: async (config) => {
     const result = await commands.seogiSetConfig(config);

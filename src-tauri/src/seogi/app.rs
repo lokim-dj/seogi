@@ -400,6 +400,28 @@ fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
+/// Transcribes with the speech model to use now (`run` does the work with
+/// a model id): the chosen one, or, while it is not here, the best stand-in
+/// that is, and then the outcome's stats name the chosen one. With no
+/// usable model here it tries the chosen one, whose own error says why.
+fn transcribe_now<E>(
+    config: &Config,
+    here: impl Fn(&str) -> bool,
+    run: impl FnOnce(&str) -> Result<Option<pipeline::Outcome>, E>,
+) -> Result<Option<pipeline::Outcome>, E> {
+    let speech = config
+        .speech_model_now(here)
+        .unwrap_or_else(|| SpeechModelNow {
+            model: config.speech_model().to_string(),
+            standing_in_for: None,
+        });
+    let mut outcome = run(&speech.model)?;
+    if let Some(outcome) = outcome.as_mut() {
+        outcome.stats.stood_in_for = speech.standing_in_for;
+    }
+    Ok(outcome)
+}
+
 fn backoff_ms(attempts: u32) -> i64 {
     let index = (attempts.saturating_sub(1) as usize).min(BACKOFF_SECS.len() - 1);
     BACKOFF_SECS[index] * 1_000
@@ -1437,16 +1459,21 @@ impl Secretary {
     /// stands in while it is not on this computer; `None` when no usable
     /// model is here yet.
     fn speech_model_now(&self) -> Option<SpeechModelNow> {
+        self.config().speech_model_now(self.model_here())
+    }
+
+    /// Whether a speech model is downloaded. Without the model manager (a
+    /// run that has none) every model counts as here, as it always did.
+    fn model_here(&self) -> impl Fn(&str) -> bool + '_ {
         use crate::managers::model::ModelManager;
-        let config = self.config();
-        let Some(models) = self.app.try_state::<Arc<ModelManager>>() else {
-            return config.speech_model_now(|_| true);
-        };
-        config.speech_model_now(|id| {
-            models
-                .get_model_info(id)
-                .is_some_and(|model| model.is_downloaded)
-        })
+        let models = self.app.try_state::<Arc<ModelManager>>();
+        move |id: &str| {
+            models.as_ref().is_none_or(|models| {
+                models
+                    .get_model_info(id)
+                    .is_some_and(|model| model.is_downloaded)
+            })
+        }
     }
 
     fn process(&self, id: &str) -> Result<()> {
@@ -1711,29 +1738,25 @@ impl Secretary {
             id: &meeting.id,
             cancel,
         };
-        // While the chosen model is downloading (or could not be), another
-        // that is here does the work, and the meeting says so.
-        let speech = self.speech_model_now().unwrap_or_else(|| SpeechModelNow {
-            model: config.speech_model().to_string(),
-            standing_in_for: None,
+        let outcome = transcribe_now(&config, self.model_here(), |model| {
+            let request = Request {
+                pcm: &pcm,
+                language: &config.language,
+                vocabulary: &vocabulary,
+                mentions: &mentions,
+                diarize: config.diarize,
+                model_id: Some(model),
+            };
+            pipeline::transcribe(&self.app, &request, &monitor)
         });
-        if let Some(chosen) = &speech.standing_in_for {
-            info!(
-                "{} is not here yet; transcribing {} with {}",
-                chosen, meeting.id, speech.model
-            );
-        }
-        let request = Request {
-            pcm: &pcm,
-            language: &config.language,
-            vocabulary: &vocabulary,
-            mentions: &mentions,
-            diarize: config.diarize,
-            model_id: Some(&speech.model),
-        };
-        match pipeline::transcribe(&self.app, &request, &monitor) {
-            Ok(Some(mut outcome)) => {
-                outcome.stats.stood_in_for = speech.standing_in_for;
+        match outcome {
+            Ok(Some(outcome)) => {
+                if let Some(chosen) = &outcome.stats.stood_in_for {
+                    info!(
+                        "{chosen} is not here; {} was transcribed with {}",
+                        meeting.id, outcome.transcript.model
+                    );
+                }
                 meeting.transcript = Some(outcome.transcript);
                 meeting.stats = Some(outcome.stats);
                 Ok(true)
@@ -2638,6 +2661,64 @@ pub fn tidy_names(names: Vec<String>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The path a recording takes in `Secretary::transcribe`: the chosen
+    /// model when it is here; while it is not, the best stand-in, named in
+    /// the meeting's stats; with none here, the chosen one (whose error
+    /// says why; `process` keeps the recording waiting before that).
+    #[test]
+    fn a_recording_is_transcribed_by_a_stand_in_while_its_model_is_missing() {
+        use super::super::config::{FUN_ASR_NANO, QWEN3_ASR_1_7B, WHISPER_TURBO};
+        use super::super::transcript::Transcript;
+        let run = |model: &str| -> Result<Option<pipeline::Outcome>, ()> {
+            Ok(Some(pipeline::Outcome {
+                transcript: Transcript {
+                    language: "ko".into(),
+                    model: model.to_string(),
+                    segments: Vec::new(),
+                    speakers: Vec::new(),
+                    corrections: Vec::new(),
+                },
+                stats: pipeline::Stats::default(),
+            }))
+        };
+        let with = |ids: &'static [&'static str]| move |id: &str| ids.contains(&id);
+        let config = Config::default();
+
+        let done = transcribe_now(&config, with(&[QWEN3_ASR_1_7B, WHISPER_TURBO]), run)
+            .unwrap()
+            .unwrap();
+        assert_eq!(done.transcript.model, QWEN3_ASR_1_7B);
+        assert_eq!(done.stats.stood_in_for, None);
+
+        let done = transcribe_now(&config, with(&[WHISPER_TURBO, FUN_ASR_NANO]), run)
+            .unwrap()
+            .unwrap();
+        assert_eq!(done.transcript.model, WHISPER_TURBO);
+        assert_eq!(done.stats.stood_in_for.as_deref(), Some(QWEN3_ASR_1_7B));
+
+        // A model the user picked is used when it is here, and nothing is
+        // said to stand in.
+        let picked = Config {
+            speech_model: WHISPER_TURBO.to_string(),
+            ..Config::default()
+        };
+        let done = transcribe_now(&picked, with(&[WHISPER_TURBO]), run)
+            .unwrap()
+            .unwrap();
+        assert_eq!(done.transcript.model, WHISPER_TURBO);
+        assert_eq!(done.stats.stood_in_for, None);
+
+        // Nothing here: the chosen model is tried and its error comes back.
+        let mut tried = String::new();
+        let failed = transcribe_now(&config, with(&[]), |model| {
+            tried = model.to_string();
+            Err::<Option<pipeline::Outcome>, _>("not downloaded")
+        });
+        assert_eq!(failed.err(), Some("not downloaded"));
+        assert_eq!(tried, QWEN3_ASR_1_7B);
+        assert!(config.speech_model_now(with(&[])).is_none());
+    }
 
     #[test]
     #[ignore = "moves a folder to the real trash"]

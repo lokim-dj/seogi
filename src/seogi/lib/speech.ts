@@ -51,6 +51,22 @@ export interface Downloads {
   downloadMinutesLeft: Record<string, number>;
   /** Models whose last download failed, until one is tried again. */
   downloadFailed: string[];
+  /** Bytes the disk is short of for a model's download, when that is why
+   *  it did not start or did not finish. */
+  downloadShort: Record<string, number>;
+}
+
+/** The bytes missing, from a download's error `no_space:<bytes>`; `null`
+ *  for any other error. */
+export function noSpace(error: string): number | null {
+  const found = /^no_space:(\d+)$/.exec(error.trim());
+  return found ? Number(found[1]) : null;
+}
+
+/** Gigabytes missing, rounded up to one decimal so "enough" is enough:
+ *  1 byte short is "0.1". */
+export function gigabytesShort(bytes: number): string {
+  return (Math.ceil(bytes / 1e8) / 10).toFixed(1);
 }
 
 /** A download reported progress: it runs, so it has not failed. */
@@ -69,28 +85,49 @@ export function downloadProgressed(
   const downloadMinutesLeft = { ...state.downloadMinutesLeft };
   if (left === null) delete downloadMinutesLeft[model_id];
   else downloadMinutesLeft[model_id] = left;
+  const downloadShort = { ...state.downloadShort };
+  delete downloadShort[model_id];
   return {
     downloads: { ...state.downloads, [model_id]: percentage },
     downloadMinutesLeft,
     downloadFailed: state.downloadFailed.filter((id) => id !== model_id),
+    downloadShort,
   };
 }
 
+/** A download was asked for: it shows as started at once, so a second
+ *  press before the first progress report does not start another. */
+export function downloadAsked(state: Downloads, modelId: string): Downloads {
+  return downloadProgressed(state, {
+    model_id: modelId,
+    percentage: state.downloads[modelId] ?? 0,
+    downloaded: 0,
+    total: 0,
+    bytes_per_sec: null,
+  });
+}
+
 /** A download ended, well or not: its progress goes, and a failure is kept
- *  so the screens can offer to try again. */
+ *  so the screens can offer to try again, with the bytes the disk is short
+ *  of when that was why. */
 export function downloadEnded(
   state: Downloads,
   modelId: string,
   failed: boolean,
+  shortBytes: number | null = null,
 ): Downloads {
   const downloads = { ...state.downloads };
   delete downloads[modelId];
   const downloadMinutesLeft = { ...state.downloadMinutesLeft };
   delete downloadMinutesLeft[modelId];
   const others = state.downloadFailed.filter((id) => id !== modelId);
+  const downloadShort = { ...state.downloadShort };
+  if (failed && shortBytes !== null) downloadShort[modelId] = shortBytes;
+  else if (!failed) delete downloadShort[modelId];
   return {
     downloads,
     downloadMinutesLeft,
     downloadFailed: failed ? [...others, modelId] : others,
+    downloadShort,
   };
 }

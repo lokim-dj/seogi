@@ -6,7 +6,11 @@
 
 import assert from "node:assert/strict";
 import {
+  downloadAsked,
   downloadEnded,
+  gigabytesShort,
+  noSpace,
+  type Downloads,
   downloadProgressed,
   gigabytes,
   minutesLeft,
@@ -55,7 +59,12 @@ assert.equal(minutesLeft(700e6, 600e6, 5e6), 1);
 
 // A download runs, fails, is tried again and ends: the screens see its
 // progress, then a failure they can offer again, then nothing.
-const none = { downloads: {}, downloadMinutesLeft: {}, downloadFailed: [] };
+const none: Downloads = {
+  downloads: {},
+  downloadMinutesLeft: {},
+  downloadFailed: [],
+  downloadShort: {},
+};
 const running = downloadProgressed(none, {
   model_id: QWEN,
   percentage: 40,
@@ -70,6 +79,7 @@ assert.deepEqual(failed, {
   downloads: {},
   downloadMinutesLeft: {},
   downloadFailed: [QWEN],
+  downloadShort: {},
 });
 const again = downloadProgressed(failed, {
   model_id: QWEN,
@@ -83,5 +93,28 @@ assert.deepEqual(again.downloadMinutesLeft, {});
 assert.deepEqual(downloadEnded(again, QWEN, false), none);
 // Another model's download leaves this one's failure where it is.
 assert.deepEqual(downloadEnded(failed, TURBO, false).downloadFailed, [QWEN]);
+
+// A press shows the download as started at once, keeping progress it
+// already has.
+assert.deepEqual(downloadAsked(none, QWEN).downloads, { [QWEN]: 0 });
+assert.deepEqual(downloadAsked(running, QWEN).downloads, { [QWEN]: 40 });
+
+// No room on the disk: the bytes missing, said in whole tenths rounded up,
+// until the next try.
+assert.equal(noSpace("no_space:1500000000"), 1500000000);
+assert.equal(noSpace("no_space:"), null);
+assert.equal(noSpace("HTTP 404"), null);
+assert.equal(gigabytesShort(1500000000), "1.5");
+assert.equal(gigabytesShort(1), "0.1");
+assert.equal(gigabytesShort(1_000_000_001), "1.1");
+const full = downloadEnded(running, QWEN, true, 1500000000);
+assert.deepEqual(full.downloadShort, { [QWEN]: 1500000000 });
+assert.deepEqual(full.downloadFailed, [QWEN]);
+// The failure event that comes with it keeps the reason.
+assert.deepEqual(downloadEnded(full, QWEN, true).downloadShort, {
+  [QWEN]: 1500000000,
+});
+assert.deepEqual(downloadAsked(full, QWEN).downloadShort, {});
+assert.deepEqual(downloadAsked(full, QWEN).downloadFailed, []);
 
 console.log("speech: ok");

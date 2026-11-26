@@ -539,6 +539,19 @@ function Sheet({
   jump: Jump | null;
 }) {
   const { t, i18n } = useTranslation(NS);
+  // A stand-in transcribed this meeting, and the model it stood in for
+  // is here now: offer to transcribe it again with that one.
+  const readiness = useSeogi((s) => s.readiness);
+  const wanted = meeting.stats?.stood_in_for ?? "";
+  const redoWith =
+    wanted &&
+    meeting.status !== "working" &&
+    meeting.status !== "queued" &&
+    readiness?.speech_models.some(
+      (option) => option.id === wanted && option.downloaded,
+    )
+      ? wanted
+      : null;
   // The speech model, and the one it stood in for when that was not here.
   const speechBy = (meeting: Meeting) =>
     meeting.transcript
@@ -886,6 +899,18 @@ function Sheet({
                   .map((c) => `${c.from} → ${c.to}`)
                   .join(", ")}`
               : null}
+            {redoWith ? (
+              <>
+                {" "}
+                <button
+                  type="button"
+                  className="lnk"
+                  onClick={() => void commands.seogiRetranscribe(meeting.id)}
+                >
+                  {t("minutes.redoWith", { model: shortModel(redoWith) })}
+                </button>
+              </>
+            ) : null}
           </p>
         </Fold>
       </section>

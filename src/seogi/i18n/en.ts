@@ -222,6 +222,9 @@ const en: Strings = {
     title: "A more accurate speech model, {{model}}, is ready to download",
     standIn: "Until then {{model}} transcribes instead",
     later: "Later",
+    chosenMissing:
+      "The speech model you chose is not on this computer: {{model}}",
+    chosenStandIn: "{{model}} transcribes instead",
   },
   home: {
     tomorrow: "Tomorrow",
@@ -437,6 +440,7 @@ const en: Strings = {
     writtenBy: "Transcribed by {{speech}} · minutes by {{summary}}",
     stoodIn: " (in place of {{wanted}}, not downloaded yet)",
     transcribedBy: "Transcribed by {{speech}}",
+    redoWith: "Transcribe again with {{model}}",
   },
   recording: {
     mayStayEmpty: "may stay empty",
@@ -695,6 +699,9 @@ const en: Strings = {
     speechStandIn: "Until then {{model}} transcribes instead.",
     speechNoStandIn: "Until then recordings wait their turn.",
     downloadFailed: "The download failed",
+    noSpace: "{{gb}} GB more space is needed",
+    speechDefault: "default",
+    speechNotHere: "not downloaded, {{gb}} GB",
     downloadAgain: "Try again",
     downloadingLeft: "Downloading {{percent}}% · about {{minutes}} min left",
     download: "Download",

@@ -38,6 +38,7 @@ import {
   shortModel,
 } from "../lib/format";
 import { gigabytes, minutesToDownload, speechAbout } from "../lib/speech";
+import SpeechDownload from "../components/SpeechDownload";
 import {
   KEY_OWNERS,
   keyOwnerOf,
@@ -81,8 +82,6 @@ export default function Settings() {
   const config = useSeogi((s) => s.config);
   const readiness = useSeogi((s) => s.readiness);
   const downloads = useSeogi((s) => s.downloads);
-  const downloadMinutesLeft = useSeogi((s) => s.downloadMinutesLeft);
-  const downloadFailed = useSeogi((s) => s.downloadFailed);
   const saveConfig = useSeogi((s) => s.saveConfig);
   const refreshSetup = useSeogi((s) => s.refreshSetup);
   const go = useSeogi((s) => s.go);
@@ -428,11 +427,12 @@ export default function Settings() {
   const speechPercent = readiness
     ? Math.round(downloads[readiness.speech_model] ?? -1)
     : -1;
-  const speechLeft = readiness
-    ? downloadMinutesLeft[readiness.speech_model]
-    : undefined;
-  const speechFailed =
-    !!readiness && downloadFailed.includes(readiness.speech_model);
+  // The meetings' models to choose from: the default (first), whether or
+  // not it is here, and the others that are downloaded.
+  const speechChoices = (readiness?.speech_models ?? []).filter(
+    (option, index) => index === 0 || option.downloaded,
+  );
+  const chosenSpeech = config.speech_model.trim() || speechChoices[0]?.id || "";
   const about = speechAbout(readiness?.speech_model ?? "");
   // What the row says under the model while it is not here: its size and
   // time, and what transcribes meanwhile.
@@ -867,7 +867,8 @@ export default function Settings() {
                     <div>
                       <div className="l">{t("settings.speechModel")}</div>
                       <div className="h">
-                        {about
+                        {/* With the choices below, each says its own. */}
+                        {about && speechChoices.length <= 1
                           ? t(`settings.speechAbout.${about}`)
                           : t("settings.speechModelHint")}
                       </div>
@@ -879,45 +880,62 @@ export default function Settings() {
                       <span className="t2">
                         {shortModel(readiness?.speech_model ?? "")}
                       </span>
-                      {readiness?.speech_model_ready ? null : speechPercent >=
-                        0 ? (
-                        <span>
-                          {speechLeft
-                            ? t("settings.downloadingLeft", {
-                                percent: speechPercent,
-                                minutes: speechLeft,
-                              })
-                            : t("settings.downloading", {
-                                percent: speechPercent,
-                              })}
-                        </span>
-                      ) : (
-                        <>
-                          {speechFailed ? (
-                            <span className="t3">
-                              {t("settings.downloadFailed")}
-                            </span>
-                          ) : null}
-                          <button
-                            type="button"
-                            className="btn"
-                            onClick={() =>
-                              readiness &&
-                              void commands.downloadModel(
-                                readiness.speech_model,
-                              )
-                            }
-                          >
-                            {t(
-                              speechFailed
-                                ? "settings.downloadAgain"
-                                : "settings.download",
-                            )}
-                          </button>
-                        </>
-                      )}
+                      {readiness && !readiness.speech_model_ready ? (
+                        <SpeechDownload model={readiness.speech_model} />
+                      ) : null}
                     </div>
                   </div>
+                  {speechChoices.length > 1 ? (
+                    <div className="srow !border-t-0 !pt-0">
+                      <div
+                        role="radiogroup"
+                        aria-label={t("settings.speechModel")}
+                        className="flex flex-col gap-2 w-full"
+                      >
+                        {speechChoices.map((option, index) => {
+                          const aboutKey = speechAbout(option.id);
+                          return (
+                            <label
+                              key={option.id}
+                              className="flex items-start gap-2 cursor-pointer"
+                            >
+                              <input
+                                type="radio"
+                                name="speech-model"
+                                checked={chosenSpeech === option.id}
+                                onChange={() =>
+                                  void save({
+                                    ...config,
+                                    // The default is followed, not pinned.
+                                    speech_model: index === 0 ? "" : option.id,
+                                  })
+                                }
+                                className="w-3.5 h-3.5 mt-[3px] m-0 accent-[var(--red)]"
+                              />
+                              <span>
+                                <span className="text-[14px] font-medium">
+                                  {shortModel(option.id)}
+                                  {index === 0
+                                    ? ` · ${t("settings.speechDefault")}`
+                                    : ""}
+                                </span>
+                                <span className="h block">
+                                  {aboutKey
+                                    ? t(`settings.speechAbout.${aboutKey}`)
+                                    : null}
+                                  {option.downloaded
+                                    ? null
+                                    : ` · ${t("settings.speechNotHere", {
+                                        gb: gigabytes(option.bytes),
+                                      })}`}
+                                </span>
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="srow">
                     <div>
                       <div className="l">{t("settings.vocabularyFile")}</div>

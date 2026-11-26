@@ -28,17 +28,21 @@ pub const INBOX_NAME: &str = "녹음함";
 /// Until 0.1.15 it was Whisper turbo ([`STAND_IN_SPEECH_MODELS`]). A user
 /// who never picked a model has an empty `speech_model`, so moves with the
 /// default; one who picked a model keeps it.
-pub const DEFAULT_SPEECH_MODEL: &str =
-    "handy-computer/Qwen3-ASR-1.7B-gguf/Qwen3-ASR-1.7B-Q8_0.gguf";
-/// The models a recording is transcribed with while the chosen one is not
-/// on this computer (still downloading, or its download failed), best first
-/// by the same measurement. A recording is never kept waiting for a better
-/// model when one of these is here.
-pub const STAND_IN_SPEECH_MODELS: &[&str] = &[
-    DEFAULT_SPEECH_MODEL,
-    "handy-computer/whisper-large-v3-turbo-gguf/whisper-large-v3-turbo-Q8_0.gguf",
-    "handy-computer/Fun-ASR-MLT-Nano-2512-gguf/Fun-ASR-MLT-Nano-2512-Q8_0.gguf",
-];
+pub const DEFAULT_SPEECH_MODEL: &str = QWEN3_ASR_1_7B;
+/// Qwen3 ASR 1.7B (2.2 GB): the most accurate of the measured three.
+pub const QWEN3_ASR_1_7B: &str = "handy-computer/Qwen3-ASR-1.7B-gguf/Qwen3-ASR-1.7B-Q8_0.gguf";
+/// Whisper large-v3 turbo (0.9 GB): the meetings' default until 0.1.15.
+pub const WHISPER_TURBO: &str =
+    "handy-computer/whisper-large-v3-turbo-gguf/whisper-large-v3-turbo-Q8_0.gguf";
+/// Fun-ASR Nano (0.9 GB): the fastest, and dictation's default.
+pub const FUN_ASR_NANO: &str =
+    "handy-computer/Fun-ASR-MLT-Nano-2512-gguf/Fun-ASR-MLT-Nano-2512-Q8_0.gguf";
+/// The speech models the settings offer for meetings, and the ones a
+/// recording is transcribed with while the chosen one is not on this
+/// computer (still downloading, or its download failed), best first by the
+/// same measurement. A recording is never kept waiting for a better model
+/// when one of these is here.
+pub const STAND_IN_SPEECH_MODELS: &[&str] = &[QWEN3_ASR_1_7B, WHISPER_TURBO, FUN_ASR_NANO];
 /// The name of the folder meetings are kept in.
 pub const LIBRARY_NAME: &str = "서기";
 

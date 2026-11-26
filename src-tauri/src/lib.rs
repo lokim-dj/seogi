@@ -902,6 +902,7 @@ pub fn run(cli_args: CliArgs) {
             seogi::commands::seogi_templates,
             seogi::commands::seogi_readiness,
             seogi::commands::seogi_download_diarizer,
+            seogi::commands::seogi_download_speech_model,
             seogi::commands::seogi_audio_snippet,
             seogi::commands::seogi_ask,
             seogi::commands::seogi_set_mark_note,

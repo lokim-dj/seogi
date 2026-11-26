@@ -217,6 +217,8 @@ const ko = {
     title: "더 정확한 받아쓰기 모델이 있어요: {{model}}",
     standIn: "받기 전까지는 {{model}} 모델이 대신 받아써요",
     later: "나중에",
+    chosenMissing: "고른 받아쓰기 모델이 이 컴퓨터에 없어요: {{model}}",
+    chosenStandIn: "고른 모델이 없어 {{model}} 모델이 대신 받아써요",
   },
   home: {
     tomorrow: "내일",
@@ -430,6 +432,7 @@ const ko = {
     writtenBy: "받아쓰기 {{speech}} · 회의록 {{summary}}",
     stoodIn: "({{wanted}} 모델을 아직 받지 못해 대신 씀)",
     transcribedBy: "받아쓰기 {{speech}}",
+    redoWith: "{{model}} 모델로 다시 받아쓰기",
   },
   recording: {
     mayStayEmpty: "비워 둬도 돼요",
@@ -683,6 +686,9 @@ const ko = {
     speechStandIn: "받기 전까지는 {{model}} 모델이 대신 받아씁니다.",
     speechNoStandIn: "받기 전까지 녹음은 차례를 기다립니다.",
     downloadFailed: "내려받지 못했어요",
+    noSpace: "공간이 {{gb}} GB 모자라요",
+    speechDefault: "기본",
+    speechNotHere: "아직 받지 않음, {{gb}} GB",
     downloadAgain: "다시 받기",
     downloadingLeft: "내려받는 중 {{percent}}% · 약 {{minutes}}분 남음",
     download: "내려받기",
