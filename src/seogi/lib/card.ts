@@ -72,7 +72,8 @@ export interface Card {
   startedAtMs: number;
   durationMs: number;
   people: CardPerson[];
-  /** Every line the checks put to the person, shown or not. */
+  /** Every line to be checked, shown or not: those the checks put to the
+   *  person and the tasks marked "확인 필요" where they stand. */
   checkCount: number;
   checks: CardList | null;
   decisions: CardList | null;
@@ -167,6 +168,11 @@ const unsure = (entry: Entry) => doubted(entry) || Boolean(entry.faint);
  *  so the pattern reads a line only one way (no runaway backtracking). */
 const MONEY =
   /(?=\d)(?:\d[\d,]*(?:\.\d+)?\s*(?:억|천만|만|천)\s*)*(?:\d[\d,]*(?:\.\d+)?\s*)?원/g;
+/** How much of a line is read for its amount. */
+export const MONEY_SPAN = 500;
+/** A price per something ("평당 250만 원", "㎡당", "단가"): not the whole. */
+const PER =
+  /(?:평|㎡|m²|제곱미터|미터|m|개|장|대|명|시간|일|롤|박스)\s*당|단가/;
 /** A range between two numbers: "4500~5000만원", "4천-5천만 원". */
 const RANGE = /\d\s*(?:(?:억|천만|만|천)\s*)?(?:~|∼|〜|–|—|-|부터)\s*\d/;
 
@@ -176,7 +182,9 @@ const RANGE = /\d\s*(?:(?:억|천만|만|천)\s*)?(?:~|∼|〜|–|—|-|부터)
  * than one ("5000만 원에서 4500만 원으로"), or a range: then which one
  * stands is not for the card to pick.
  */
-export function moneyOf(text: string): { value: string; unit: string } | null {
+export function moneyOf(said: string): { value: string; unit: string } | null {
+  // A budget is said early in a line; a cap keeps the patterns short work.
+  const text = said.slice(0, MONEY_SPAN);
   if (RANGE.test(text)) return null;
   const found = text.match(MONEY) ?? [];
   if (found.length !== 1) return null;
@@ -204,9 +212,10 @@ const AMOUNT =
   /\d[\d,]*(?:\.\d+)?\s*(?:억|천만|만\s*원|만원|천\s*원|원|mm|밀리|cm|센티|미터|m²|㎡|평|%|퍼센트)/;
 
 /** A heading that says its lines are not settled: "아직 안 정한 것",
- *  "결정 보류", "결정할 것", "합의 안 된 것", "결정 전", "미정". */
+ *  "결정 보류", "결정할 것", "합의 안 된 것", "결정 전", "미정". "안"
+ *  counts only as its own word: "제안한 것", "안내한 것" are settled. */
 const NOT_SETTLED =
-  /보류|할\s*것|(?:안|못)\s*(?:된|한|정한|정해진)|않은|정하지|미정|아직|(?:결정|합의|확정)\s*전/;
+  /보류|할\s*것|(?:^|\s)(?:안|못)\s*(?:된|한|정한|정해진)(?:\s|$)|않은|정하지|미정|아직|(?:결정|합의|확정)\s*전/;
 type Heading = { key: string; title: string; kind?: string };
 const isOpen = (section: Heading) =>
   section.key === "open" || NOT_SETTLED.test(section.title);
@@ -347,10 +356,13 @@ export function cardOf(
   const numberSections = sections.filter(isFigures);
   const budget = numberSections.find(isBudget);
   // Drawn large only when the line says it is the budget or the total, and
-  // says one amount, not two or a range.
+  // says one amount, not two, a range or a price per something.
   const leadEntry = budget?.entries.find(
     (entry) =>
-      !unsure(entry) && TOTAL.test(entry.text) && moneyOf(entry.text) !== null,
+      !unsure(entry) &&
+      TOTAL.test(entry.text) &&
+      !PER.test(entry.text) &&
+      moneyOf(entry.text) !== null,
   );
   const leadMoney = leadEntry ? moneyOf(leadEntry.text) : null;
   let lead: CardNumbers["lead"] = null;
@@ -427,6 +439,14 @@ export function cardOf(
       ),
     )
     .filter((group): group is CardList => group !== null);
+  // Tasks marked where they stand count among what is to be checked, so
+  // the number at the top agrees with every red mark below.
+  const flaggedTasks = groups
+    .flatMap(({ section }) => section.entries)
+    .filter(
+      (entry) =>
+        !doubted(entry) && (Boolean(entry.faint) || firstMs(entry) === null),
+    ).length;
 
   // The flow: the story parts that have a title and cite a moment, from the
   // first moment each cites to the next part's. Fewer than two say nothing
@@ -485,7 +505,7 @@ export function cardOf(
     startedAtMs: meeting.started_at_ms,
     durationMs: meeting.duration_ms,
     people,
-    checkCount: toCheck.length,
+    checkCount: toCheck.length + flaggedTasks,
     checks,
     decisions,
     numbers,

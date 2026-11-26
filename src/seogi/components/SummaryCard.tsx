@@ -295,7 +295,7 @@ function CardDrawing({
             <div>
               <div className="sc-lab">
                 <span className="sc-red">{t("card.toCheck")}</span>
-                <em>{card.checkCount}</em>
+                <em>{checks.lines.length + checks.more}</em>
               </div>
               <div className="sc-chk">
                 <Lines lines={checks.lines} more={checks.more} />

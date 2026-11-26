@@ -11,6 +11,7 @@ import {
   cardOf,
   fitSteps,
   LINE_MAX,
+  MONEY_SPAN,
   moneyOf,
   roomAt,
   shorten,
@@ -338,6 +339,49 @@ const without = (meeting: Meeting, keep: (s: MinutesSection) => boolean) => {
   assert.equal(group.lines[1].flagged, true);
   assert.equal(group.lines[1].ms, null);
   assert.equal(group.lines[2].flagged, false);
+}
+
+// Review follow-ups.
+{
+  // A task with no moment behind it is counted at the top too.
+  const meeting = base();
+  for (const section of meeting.minutes![0].sections) {
+    for (const entry of section.entries) entry.reasons = [];
+  }
+  meeting.minutes![0].sections.find(
+    (s) => s.key === "our_tasks",
+  )!.entries[0].sources = [];
+  const card = cardOf(meeting, talk, "kakao", words);
+  assert.equal(card.checks, null);
+  assert.equal(card.checkCount, 1);
+
+  // Only the first MONEY_SPAN letters of a line are read for its amount.
+  assert.equal(moneyOf(`${"가".repeat(MONEY_SPAN)} 예산 4500만 원`), null);
+  assert.equal(moneyOf(`${"9 ".repeat(50000)}원`)?.unit ?? null, null);
+
+  // "제안한 것", "안내한 것" are not headings of what is open.
+  for (const title of ["합의 제안한 것", "결정 안내한 것"]) {
+    const mine = base();
+    const section = mine.minutes![0].sections.find(
+      (s) => s.key === "decisions",
+    )!;
+    section.key = "mine";
+    section.title = title;
+    assert.ok(cardOf(mine, talk, "kakao", words).decisions, title);
+  }
+  const notDone = base();
+  const open = notDone.minutes![0].sections.find((s) => s.key === "decisions")!;
+  open.key = "mine";
+  open.title = "결정 안 한 것";
+  assert.equal(cardOf(notDone, talk, "kakao", words).decisions, null);
+
+  // A price per 평 is not drawn large as the budget.
+  const per = base();
+  per.minutes![0].sections.find((s) => s.key === "budget")!.entries[0].text =
+    "예산은 평당 250만 원으로 잡았다.";
+  const numbers = cardOf(per, talk, "a4", words).numbers;
+  assert.equal(numbers?.lead, null);
+  assert.ok(numbers?.lines.some((line) => /평당 250만 원/.test(line.text)));
 }
 
 // Stepping down takes a line from the fullest part, never below one.
