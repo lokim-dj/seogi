@@ -3,12 +3,14 @@ import { test, expect } from "@playwright/test";
 // Every Seogi screen opens in the browser preview (src/seogi/preview), on
 // made-up data and without the backend, showing something and with no error
 // in the console. Run with `bun run test:playwright`; it starts the dev
-// server itself.
+// server itself, but outside CI it reuses one already on port 1420, so stop
+// another checkout's `bun run dev` first or the test checks that code.
 
 // "waiting" is left out: the preview has no meeting behind the one being
 // worked on, so that screen logs "no such meeting in the preview".
 const screens = [
   "home",
+  "home-going",
   "home-many",
   "minutes",
   "recording",
@@ -19,6 +21,13 @@ const screens = [
   "banner-ready",
   "card",
   "card-empty",
+  "mic-idle",
+  "mic-listening",
+  "mic-working",
+  "indicator-listening",
+  "indicator-tidying",
+  "indicator-note",
+  "indicator-nowhere",
 ];
 
 for (const screen of screens) {
