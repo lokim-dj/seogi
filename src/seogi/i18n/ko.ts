@@ -364,6 +364,8 @@ const ko = {
     showMinutesFile: "회의록 파일 보기",
     showRecording: "원본 녹음 보기",
     thisIsMinutes: "회의록",
+    noiseLine:
+      "받아쓰기가 잘못 들은 것 같은 줄이라 흐리게 보여요. 회의록에는 쓰지 않았어요.",
     customer: "고객",
     startedLate:
       "녹음이 일정보다 {{n}}분 늦게 시작됐어요. 그 앞의 이야기는 회의록에 없어요.",

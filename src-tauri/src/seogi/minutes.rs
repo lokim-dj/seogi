@@ -312,6 +312,23 @@ pub fn write(
             speaker.name = name.clone();
         }
     }
+    // Lines the speech model made up in a Korean meeting (foreign letters,
+    // broken characters) are not something anyone said: nothing rests on
+    // them. The transcript itself keeps them.
+    if korean(transcript) {
+        let heard = named.segments.len();
+        named
+            .segments
+            .retain(|segment| !super::facts::is_gibberish(&segment.text));
+        if named.segments.is_empty() {
+            named.segments = transcript.segments.clone();
+        } else if named.segments.len() < heard {
+            info!(
+                "Left {} noise lines out of the minutes",
+                heard - named.segments.len()
+            );
+        }
+    }
     let index = Index::new(&named);
     // What is said after the meeting ended is not the meeting's.
     let end_ms = super::facts::meeting_end(&named);
@@ -1328,6 +1345,12 @@ fn mark_sums(entries: &mut [(String, Entry)]) {
     for at in super::amounts::sums_disagree(&texts) {
         push_reason(&mut entries[at].1, CheckReason::SumsDisagree);
     }
+}
+
+/// Whether the recording was transcribed as Korean (or the language is not
+/// said, as with older transcripts).
+fn korean(transcript: &Transcript) -> bool {
+    transcript.language.is_empty() || transcript.language.starts_with("ko")
 }
 
 /// Whether everything an item rests on was said after the meeting ended.

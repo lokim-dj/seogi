@@ -48,6 +48,7 @@ import {
 } from "../lib/speakers";
 import { taskLine, titleNeeded } from "../lib/tasks";
 import { lateMinutes, startsMidTalk } from "../lib/opening";
+import { isGibberish } from "../lib/gibberish";
 import { Mark } from "../components/Mark";
 import { useSeogi, type Jump } from "../store";
 
@@ -1568,6 +1569,9 @@ function Transcript({
   );
   // Each speaker's tone, by number: a new name keeps it.
   const tones = useMemo(() => tonesOf(transcript), [transcript]);
+  // In a Korean meeting, a line of foreign letters is the speech model's
+  // noise: shown faintly, and the minutes did not rest on it.
+  const korean = !transcript?.language || transcript.language.startsWith("ko");
   const nowIndex = lines.findIndex(
     (line, index) =>
       player.timeMs >= line.startMs &&
@@ -1613,6 +1617,7 @@ function Transcript({
         // The same speaker going on after a pause: the mark is left out,
         // the name kept quiet (pressing it still names this line).
         const goingOn = index > 0 && lines[index - 1].speaker === line.speaker;
+        const noise = korean && isGibberish(line.text);
         return (
           <div
             key={line.startMs}
@@ -1684,9 +1689,10 @@ function Transcript({
               />
             ) : null}
             <p
+              title={noise ? t("minutes.noiseLine") : undefined}
               className={`mt-1 mb-0 text-[14.5px] leading-[1.7] ${
                 on ? "font-medium" : ""
-              } ${line.unsure ? "underline decoration-dotted decoration-[var(--t3)] underline-offset-4" : ""}`}
+              } ${noise ? "t3 opacity-60" : ""} ${line.unsure ? "underline decoration-dotted decoration-[var(--t3)] underline-offset-4" : ""}`}
             >
               {index === foundIndex ? (
                 <Marked text={line.text} words={words} />

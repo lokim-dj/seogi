@@ -371,6 +371,8 @@ const en: Strings = {
     showMinutesFile: "Show the minutes file",
     showRecording: "Show the original recording",
     thisIsMinutes: "Minutes",
+    noiseLine:
+      "Shown faintly: the transcript seems to have misheard this line. The minutes do not use it.",
     customer: "Customer",
     startedLate:
       "The recording started {{n}} minutes after the event did; what was said before is not in the minutes.",

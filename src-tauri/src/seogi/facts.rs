@@ -416,6 +416,49 @@ pub fn starts_mid_talk(transcript: &Transcript) -> bool {
     !opening
 }
 
+/// Whether a line heard in a Korean meeting is the speech model's noise:
+/// a broken character, mostly letters of a script that is neither Korean
+/// nor Latin, or mostly lowercase Latin words. It is shown faintly and the
+/// minutes do not rest on it; the transcript keeps it as heard. The same
+/// rule as `isGibberish` in src/seogi/lib/gibberish.ts; both are tested
+/// against gibberish.cases.json.
+pub fn is_gibberish(text: &str) -> bool {
+    if text.contains('\u{FFFD}') {
+        return true;
+    }
+    let is_hangul = |c: char| matches!(c, '\u{1100}'..='\u{11FF}' | '\u{3130}'..='\u{318F}' | '\u{AC00}'..='\u{D7AF}');
+    let (mut letters, mut hangul, mut latin, mut foreign) = (0usize, 0usize, 0usize, 0usize);
+    for c in text.chars().filter(|c| c.is_alphabetic()) {
+        letters += 1;
+        if is_hangul(c) {
+            hangul += 1;
+        } else if c.is_ascii_alphabetic() {
+            latin += 1;
+        } else {
+            foreign += 1;
+        }
+    }
+    if letters < 4 {
+        return false;
+    }
+    let share = hangul as f32 / letters as f32;
+    if share < 0.5 && foreign >= 2 {
+        return true;
+    }
+    // A lowercase Latin word of three letters or more, not an acronym.
+    let chars: Vec<char> = text.chars().collect();
+    let lower_word = (0..chars.len()).any(|i| {
+        (i == 0 || !chars[i - 1].is_ascii_alphabetic())
+            && chars[i..]
+                .iter()
+                .take(3)
+                .filter(|c| c.is_ascii_lowercase())
+                .count()
+                == 3
+    });
+    share < 0.3 && latin >= 4 && lower_word
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -588,5 +631,20 @@ mod tests {
             (2, "네"),
         ]);
         assert!(!starts_mid_talk(&opened));
+    }
+
+    #[test]
+    fn noise_lines_are_told_from_korean_with_a_few_latin_words() {
+        #[derive(serde::Deserialize)]
+        struct Case {
+            text: String,
+            gibberish: bool,
+        }
+        let cases: Vec<Case> =
+            serde_json::from_str(include_str!("../../../src/seogi/lib/gibberish.cases.json"))
+                .unwrap();
+        for case in cases {
+            assert_eq!(is_gibberish(&case.text), case.gibberish, "{}", case.text);
+        }
     }
 }
