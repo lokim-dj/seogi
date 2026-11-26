@@ -423,7 +423,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private companion object {
-        const val PRIVACY_URL = "https://github.com/lokim-dj/seogi/blob/main/docs/privacy.md"
+        const val PRIVACY_URL = "https://lokim-dj.github.io/seogi/privacy/"
         const val FEEDBACK_URL = "https://github.com/lokim-dj/seogi/issues/new/choose"
     }
 }
