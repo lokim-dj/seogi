@@ -18,6 +18,7 @@ pub mod diarize;
 pub mod dictation;
 pub mod documents;
 pub mod evidence;
+pub mod facts;
 pub mod feedback;
 pub mod focus;
 pub mod llm;

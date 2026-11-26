@@ -2037,7 +2037,17 @@ export type CheckReason =
 /**
  * The checker could not be asked about it.
  */
-"unchecked"
+"unchecked" | 
+/**
+ * Something else said about the same matter disagrees with it, and
+ * which stands could not be told.
+ */
+"conflicting" | 
+/**
+ * The words it rests on may be about another site or person (a past
+ * case, the speaker's own home), not this meeting's.
+ */
+"other_subject"
 /**
  * Script applied to Mandarin and Cantonese output. Traditional carries its region
  * (Taiwan vs Hong Kong forms, e.g. 裡/裏) rather than guessing it.

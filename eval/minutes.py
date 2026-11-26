@@ -94,19 +94,20 @@ def parse_scene(path: Path) -> dict:
         elif key == "midstart":
             scene["midstart"] = value.lower() in ("yes", "true", "1")
         elif key == "task":
-            text, _, owner = value.partition("|")
+            text, _, owner = value.partition(" | ")
             scene["tasks"].append({"text": text.strip(), "owner": owner.strip()})
         elif key == "expect":
-            sections, _, pattern = value.partition("|")
+            sections, _, pattern = value.partition(" | ")
             scene["expect"].append({"sections": split_sections(sections), "pattern": pattern.strip()})
         elif key in ("trap", "trap-num"):
-            parts = [p.strip() for p in value.split("|")]
+            # Fields are parted by " | "; a pattern's own "|" has no spaces.
+            parts = [p.strip() for p in re.split(r"\s\|\s", value)]
             unless = ""
             if len(parts) > 2 and parts[-1].startswith("unless:"):
                 unless = parts.pop().removeprefix("unless:").strip()
             scene["traps"].append({"kind": "num" if key == "trap-num" else "fact",
                                    "sections": split_sections(parts[0]),
-                                   "pattern": "|".join(parts[1:]), "unless": unless})
+                                   "pattern": parts[1], "unless": unless})
         elif key == "trap-quote":
             scene["traps"].append({"kind": "quote", "sections": ["*"], "pattern": value, "unless": ""})
     for line in script:
@@ -169,7 +170,7 @@ def score(scene: dict, out: Path) -> dict:
     found = owners_right = owners_wanted = 0
     for wanted in scene["tasks"]:
         best = max(free, key=lambda t: likeness(wanted["text"], t[1]["text"]), default=None)
-        if best is None or likeness(wanted["text"], best[1]["text"]) < 0.4:
+        if best is None or likeness(wanted["text"], best[1]["text"]) < 0.3:
             continue
         free.remove(best)
         found += 1
@@ -268,7 +269,18 @@ def main() -> None:
     parser.add_argument("--label", default="")
     parser.add_argument("--jobs", type=int, default=3, help="scenes written at once")
     parser.add_argument("--repeat", type=int, default=1, help="write each scene this many times")
+    parser.add_argument("--rescore", type=Path,
+                        help="score the minutes of an earlier run (its folder) again, without writing")
     args = parser.parse_args()
+
+    if args.rescore:
+        rows = []
+        for run in sorted(args.rescore.glob("run*")):
+            for path in sorted(SCENES.glob("*.txt")):
+                if (run / path.stem / "minutes.json").exists():
+                    rows.append(score(parse_scene(path), run / path.stem))
+        print_table(rows)
+        return
 
     binary = args.binary or find_binary()
     paths = sorted(SCENES.glob("*.txt"))

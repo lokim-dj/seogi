@@ -334,6 +334,9 @@ const en: Strings = {
       said_differently: "Written a little differently from what was said",
       numbers_differ: "Different amounts or numbers were said",
       unchecked: "The machine could not check it",
+      conflicting:
+        "Something else was said about it too; listen for which stands",
+      other_subject: "It may be about another site or person",
       unsure_speech: "The transcript was unsure here",
       overlapping_speech: "Two people spoke at once here",
       number_not_in_source: "The number is not in the words it rests on",

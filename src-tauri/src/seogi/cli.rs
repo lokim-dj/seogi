@@ -147,13 +147,15 @@ fn run_inner(app: &AppHandle, args: &CliArgs) -> Result<(), Failure> {
     let cancelled = AtomicBool::new(false);
     let no_secrets = |_: &str| None;
     let mut people: Vec<String> = Vec::new();
-    let (mut recorded_on, mut context) = (String::new(), String::new());
+    let (mut recorded_on, mut context, mut customer) =
+        (String::new(), String::new(), String::new());
     let mut template_id = args.seogi_template.clone();
     if let Some(meeting) = &meeting {
         people = meeting.people.clone();
         if !meeting.customer.is_empty() && !people.contains(&meeting.customer) {
             people.push(meeting.customer.clone());
         }
+        customer = meeting.customer.clone();
         recorded_on = meeting.recorded_on();
         context = meeting.context();
         if template_id.is_none() && !meeting.template_id.is_empty() {
@@ -167,6 +169,7 @@ fn run_inner(app: &AppHandle, args: &CliArgs) -> Result<(), Failure> {
         marks_ms: &marks,
         mark_notes: &[],
         people: &people,
+        customer: &customer,
         recorded_on: &recorded_on,
         context: &context,
         feedback_rules: super::feedback::EXAMPLE_RULES,
