@@ -151,7 +151,7 @@ To try things without touching your own meetings, point a development run at its
 
 **Errors the user must see** while not looking at the window go through `notices::raise` (`src-tauri/src/notices.rs`); Rust sends codes, the frontend maps them to text in `src/lib/notices.ts`.
 
-**Security checks (all free):** CI's `text` job runs `bun run check:deps` (bun audit, cargo audit): a high or critical advisory fails unless `KNOWN` in `scripts/check-deps.ts` lists it with a reason why it cannot reach the installed app; upgrade instead of listing whenever you can. CodeQL (`.github/workflows/codeql.yml`) scans TypeScript and Rust; Dependabot (`.github/dependabot.yml`) opens pull requests only for security fixes and for the actions' pins. Every `uses:` in a workflow names a commit SHA with its tag in a comment (`@<sha> # v5.1.0`), never a bare tag.
+**Security checks (all free):** CI's `text` job runs `bun run check:deps` (bun audit, cargo audit): a high or critical advisory fails unless `KNOWN` in `scripts/check-deps.ts` lists it with a reason why it cannot reach the installed app; upgrade instead of listing whenever you can. A Rust advisory without a CVSS 3 score (many RustSec ones) only warns, so read the warnings too. CodeQL (`.github/workflows/codeql.yml`) scans TypeScript and Rust; Dependabot (`.github/dependabot.yml`) opens pull requests only for security fixes (for npm it sees only the packages named in `package.json`) and for the actions' pins. Every `uses:` in a workflow names a commit SHA with its tag in a comment (`@<sha> # v5.1.0`), never a bare tag.
 
 **Commits:** conventional prefixes (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`). Say why, not what.
 

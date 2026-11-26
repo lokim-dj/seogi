@@ -1,10 +1,14 @@
-# Dependabot, kept quiet on purpose. For npm (bun.lock) and Rust (Cargo.lock)
-# it opens a pull request only for a security fix (the repository's
-# "Dependabot security updates" setting), all fixes of one ecosystem in one
-# pull request: open-pull-requests-limit 0 turns off routine version bumps
-# but not security updates. For the workflows it moves the pinned commits of
-# the actions (uses: owner/action@<sha> # vX.Y.Z) once a week, all in one pull
-# request.
+# Dependabot, kept quiet on purpose. For npm and Rust it opens a pull request
+# only for a security fix (the repository's "Dependabot security updates"
+# setting), all fixes of one ecosystem in one pull request:
+# open-pull-requests-limit 0 turns off routine version bumps but not security
+# updates. GitHub reads Cargo.lock fully, but for npm only the packages named
+# in package.json (not the ones bun.lock pulls in under them); those are
+# caught by `bun run check:deps` in CI. For the workflows it moves the pinned
+# commits of the actions (uses: owner/action@<sha> # vX.Y.Z) once a week, all
+# in one pull request. dtolnay/rust-toolchain is pinned to its "stable"
+# branch, which has no tag; the steps name `toolchain: stable` so a moved pin
+# still installs the same thing.
 
 version: 2
 updates:
