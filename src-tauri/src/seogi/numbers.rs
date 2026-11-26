@@ -92,7 +92,8 @@ const fn unit(
 /// Every unit a number is written before. The one-syllable lists leave out
 /// what makes a common phrase: 이 (this) everywhere, 칠 (paint) and 팔 (arm)
 /// before time and sides, 열 (open) before 시, and 한 and 네 (yes) always.
-/// "프로" is left out: after a product name it is part of the name.
+/// "프로" only counts where no product name can come before the number
+/// (`plain_before`): "아이폰 십오 프로" is a name.
 const UNITS: &[Unit] = &[
     unit(
         "퍼센트",
@@ -103,6 +104,7 @@ const UNITS: &[Unit] = &[
         ANY,
         true,
     ),
+    unit("프로", false, false, "일삼사오육칠팔구십백", "", ANY, true),
     unit(
         "개월",
         true,
@@ -143,13 +145,13 @@ const UNITS: &[Unit] = &[
     unit("일", false, false, "", "", 366, false),
     unit("주", true, false, "", "", ANY, false),
     unit("원", false, true, "십백천", "", ANY, false),
-    unit("층", false, false, "일삼사오육십", "", 300, false),
+    unit("층", false, false, "일삼사오육구십", "", 300, false),
     unit("평", false, true, "", "", ANY, true),
     unit("동", false, false, "", "", 9999, false),
     unit("호", false, false, "", "", 9999, false),
     unit("차", false, false, "", "", ANY, false),
     unit("회", false, false, "", "", ANY, false),
-    unit("번", true, false, "", "", ANY, false),
+    unit("번", true, false, "", "세", ANY, false),
     unit("위", false, false, "", "", ANY, false),
     unit("세", false, false, "", "", 150, false),
     unit("점", false, false, "", "", ANY, false),
@@ -257,7 +259,7 @@ const UNIT_ENDINGS: &[(&str, &[&str])] = &[
 const UNIT_WORDS: &[&str] = &[
     "시도", "시가", "세로", "세가", "세대", "도로", "분과", "분만", "차이", "차도", "차로", "회의",
     "회가", "평가", "평이", "주가", "주요", "주의", "주도", "호가", "위도", "점도", "명도", "대가",
-    "대로", "장도",
+    "대로", "장도", "층간",
 ];
 
 /// Words that read as numbers but are words: never a number, or only before
@@ -293,6 +295,13 @@ const RANGE_BEFORE: &[&str] = &[
     "여러",
     "대여섯",
     "예닐곱",
+];
+
+/// Words before a number that leave no room for a product name, so "프로"
+/// after it is percent ("약 오 프로").
+const PERCENT_BEFORE: &[&str] = &[
+    "약", "대략", "거의", "무려", "최대", "최소", "총", "겨우", "고작", "딱", "연", "월", "평균",
+    "대충", "얼추",
 ];
 
 /// Times of day, before a number of o'clock ("오후 한 시").
@@ -758,7 +767,7 @@ fn spaced(
         let Some((unit, unit_len)) = unit_then_end(unit_letters) else {
             continue;
         };
-        if !fits(&number, unit) {
+        if !fits(&number, unit) || (unit.word == "프로" && !plain_before(chars, words, i)) {
             continue;
         }
         // "삼십 일 차" (thirtieth day, or 31st?) and "오십 대 오십" (a ratio):
@@ -792,6 +801,23 @@ fn spaced(
         });
     }
     None
+}
+
+/// Nothing before the number at `i` can be a product name: it starts the
+/// text or follows punctuation, the word before ends in a particle
+/// ("가격이 삼십 프로"), or it is a word such as "약" or "최대". A word of
+/// its own before it ("아이폰 십오 프로"), or one with letters other than
+/// Hangul, may be the name.
+fn plain_before(chars: &[char], words: &[Word], i: usize) -> bool {
+    if i == 0 || words[i - 1].closed {
+        return true;
+    }
+    let prev = letters(chars, &words[i - 1]);
+    if prev.is_empty() || !prev.iter().all(|&c| is_hangul(c)) {
+        return false;
+    }
+    let word: String = prev.iter().collect();
+    PERCENT_BEFORE.contains(&word.as_str()) || without_particle(prev).len() < prev.len()
 }
 
 /// `word` without a particle at its end ("오십으로" → "오십").
@@ -861,7 +887,10 @@ fn attached(chars: &[char], words: &[Word], i: usize) -> Option<Found> {
             continue;
         };
         // "오십도 안 남았어요": 도 written on is "even", not degrees.
-        if unit.word == "도" || !fits(&number, unit) {
+        if unit.word == "도"
+            || !fits(&number, unit)
+            || (unit.word == "프로" && !plain_before(chars, words, i))
+        {
             continue;
         }
         if number.kind == Kind::Native && !unit.native {
@@ -1027,7 +1056,7 @@ fn grouped(n: u64, comma: bool) -> String {
 
 /// The number and unit as written: "3,500원", "50만 원", "3.5%".
 fn written(number: &Spoken, unit: &Unit) -> String {
-    let unit_text = if unit.word == "퍼센트" {
+    let unit_text = if matches!(unit.word, "퍼센트" | "프로") {
         "%"
     } else {
         unit.word
@@ -1098,6 +1127,15 @@ mod tests {
         ("스물 다섯 살이에요", "25살이에요"),
         ("서른 명 정도 모였어요", "30명 정도 모였어요"),
         ("삼십 퍼센트 할인", "30% 할인"),
+        ("이십 프로가 남았어요", "20%가 남았어요"),
+        ("가격이 삼십 프로 올랐어요", "가격이 30% 올랐어요"),
+        ("약 오 프로 정도", "약 5% 정도"),
+        ("이십프로 할인", "20% 할인"),
+        ("삼 점 오 프로 올랐어요", "3.5% 올랐어요"),
+        ("백 프로 확실해요", "100% 확실해요"),
+        ("세 번이나 말했어요", "3번이나 말했어요"),
+        ("세 번 넘게 물어봤어요", "3번 넘게 물어봤어요"),
+        ("구 층에 살아요", "9층에 살아요"),
         ("삼 점 오 퍼센트 올랐어요", "3.5% 올랐어요"),
         ("영 점 오 킬로 줄었어요", "0.5킬로 줄었어요"),
         ("삼 년 동안 다녔어요", "3년 동안 다녔어요"),
@@ -1200,6 +1238,18 @@ mod tests {
         "이 월에 봐요",
         "삼 월",
         "아이폰 십오 프로",
+        "아이폰 십오 프로가 나왔어요",
+        "아이폰 십오프로",
+        "갤럭시 이십 프로",
+        "맥북 십사 프로 샀어요",
+        "iPhone 십오 프로",
+        "이 프로 재밌어요",
+        "이십 프로그램",
+        "세 번째 손님",
+        "첫 번째 두 번째 세 번째",
+        "두 세 번",
+        "한 세 번 정도",
+        "구 층간 소음 기준",
         "총 세대 수는",
         "세대 간 갈등",
         "최대 오차는",
