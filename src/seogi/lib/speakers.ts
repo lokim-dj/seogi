@@ -148,6 +148,13 @@ const SAME_PERSON_MEETS = 0.1;
  *  same list as `shared_name` in src-tauri/src/seogi/transcript.rs). */
 const ROLE = /고객|손님|남편|아내|부인|사모님|사장님|직원|담당|상담|우리|저희/;
 
+/** Whether two people can share `name` (a role, no name, or a number), so
+ *  naming a speaker with it never joins two speakers. */
+export function sharedName(name: string): boolean {
+  const n = name.trim();
+  return !n || n.startsWith("화자") || ROLE.test(n);
+}
+
 /** Each must take at least this many turns for the pattern to mean much. */
 const SAME_PERSON_TURNS = 3;
 

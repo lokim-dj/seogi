@@ -31,7 +31,7 @@ use super::power::KeepAwake;
 use super::recorder;
 use super::store::{self, EventRef, Found, Library, Meeting, MeetingSummary, Origin, Status};
 use super::templates;
-use super::transcript::NameScope;
+use super::transcript::{LineSpeaker, NameScope, Speaker};
 use super::vocab::Vocabulary;
 use super::watch::{self, Ledger, Look, Settling};
 
@@ -759,6 +759,16 @@ impl Secretary {
                 }
             }
         }
+        self.save(&meeting, &folder)
+    }
+
+    /// Puts a naming back: the speakers, who said each line and who was
+    /// given each task, as the screen kept them just before it named
+    /// someone. Refused, changing nothing, when the transcript or the
+    /// minutes are no longer the ones kept (written again since).
+    pub fn restore_naming(&self, id: &str, naming: &Naming) -> Result<()> {
+        let (mut meeting, folder) = self.editable(id)?;
+        put_back_naming(&mut meeting, naming)?;
         self.save(&meeting, &folder)
     }
 
@@ -2618,6 +2628,48 @@ pub fn tidy_names(names: Vec<String>) -> Vec<String> {
     kept
 }
 
+/// Who said what and who was given each task, kept by the screen just
+/// before it names a speaker, so the naming can be put back.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct Naming {
+    pub speakers: Vec<Speaker>,
+    /// Every line of the transcript, in order.
+    pub lines: Vec<LineSpeaker>,
+    /// Every entry's owner, in order: each minutes, its sections, their
+    /// entries.
+    pub owners: Vec<String>,
+}
+
+/// [`Naming`] put back into `meeting`; nothing changes when it does not fit.
+fn put_back_naming(meeting: &mut Meeting, naming: &Naming) -> Result<()> {
+    let entries = meeting
+        .minutes
+        .iter()
+        .flat_map(|m| &m.sections)
+        .map(|section| section.entries.len())
+        .sum::<usize>();
+    if entries != naming.owners.len() {
+        bail!("the minutes have changed since");
+    }
+    let mut transcript = meeting
+        .transcript
+        .clone()
+        .ok_or_else(|| anyhow!("it has not been transcribed yet"))?;
+    transcript
+        .put_back_speakers(&naming.speakers, &naming.lines)
+        .map_err(|e| anyhow!(e))?;
+    meeting.transcript = Some(transcript);
+    let entries = meeting
+        .minutes
+        .iter_mut()
+        .flat_map(|m| m.sections.iter_mut())
+        .flat_map(|section| section.entries.iter_mut());
+    for (entry, owner) in entries.zip(&naming.owners) {
+        entry.owner = owner.clone();
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2634,6 +2686,96 @@ mod tests {
         from_trash(&dir, landed.as_deref()).unwrap();
         assert!(dir.join("녹음.wav").exists());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_naming_is_put_back_with_the_tasks_or_not_at_all() {
+        use crate::seogi::minutes::{Entry, Minutes, MinutesSection, Source};
+        use crate::seogi::templates::SectionKind;
+        use crate::seogi::transcript::{Segment, Transcript};
+        let task = |owner: &str, ms: u64| Entry {
+            text: "도면 다시 그려 보내기".into(),
+            owner: owner.into(),
+            due: String::new(),
+            sources: vec![Source {
+                ms,
+                quote: "도면".into(),
+            }],
+            reasons: vec![],
+            done: false,
+            faint: false,
+        };
+        let mut meeting = Meeting::new(0, store::Origin::Recorded, "녹음.wav");
+        meeting.transcript = Some(Transcript {
+            segments: [(0, 1), (1_000, 2), (2_000, 1)]
+                .iter()
+                .map(|&(start_ms, speaker)| Segment {
+                    start_ms,
+                    end_ms: start_ms + 900,
+                    speaker,
+                    text: "말".into(),
+                    ..Default::default()
+                })
+                .collect(),
+            speakers: vec![
+                Speaker {
+                    id: 1,
+                    name: "화자 1".into(),
+                },
+                Speaker {
+                    id: 2,
+                    name: "화자 2".into(),
+                },
+            ],
+            ..Default::default()
+        });
+        meeting.minutes = vec![Minutes {
+            template_id: "consult".into(),
+            template_name: "상담".into(),
+            title: String::new(),
+            summary: String::new(),
+            story: vec![],
+            feedback: None,
+            sections: vec![MinutesSection {
+                key: "our_tasks".into(),
+                title: "우리 숙제".into(),
+                kind: SectionKind::Actions,
+                entries: vec![task("화자 1", 0), task("화자 2", 1_000)],
+            }],
+            verified: 0,
+            to_check: 0,
+            dropped: 0,
+            not_rechecked: false,
+            written_by: String::new(),
+        }];
+        let before = meeting.clone();
+        let transcript = before.transcript.as_ref().unwrap();
+        let naming = Naming {
+            speakers: transcript.speakers.clone(),
+            lines: transcript
+                .segments
+                .iter()
+                .map(|s| LineSpeaker {
+                    start_ms: s.start_ms,
+                    speaker: s.speaker,
+                })
+                .collect(),
+            owners: vec!["화자 1".into(), "화자 2".into()],
+        };
+        // Named as the screen does it, tasks following.
+        let named = meeting.transcript.as_mut().unwrap();
+        named.name_speaker(1, "김서윤 실장", NameScope::All, 0, 0);
+        meeting.minutes[0].sections[0].entries[0].owner = "김서윤 실장".into();
+        put_back_naming(&mut meeting, &naming).unwrap();
+        assert_eq!(meeting, before);
+        // Minutes written again since (another number of entries): refused,
+        // nothing changed.
+        let mut rewritten = before.clone();
+        rewritten.minutes[0].sections[0].entries.pop();
+        rewritten.transcript.as_mut().unwrap().speakers[0].name = "김서윤 실장".into();
+        let kept = rewritten.clone();
+        assert!(put_back_naming(&mut rewritten, &naming).is_err());
+        assert_eq!(rewritten, kept);
     }
 
     #[test]

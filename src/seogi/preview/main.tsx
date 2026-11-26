@@ -33,6 +33,7 @@ import type {
   FoundPlace,
   Meeting,
   MeetingSummary,
+  Naming,
   Readiness,
   RecordingState,
   SignIn,
@@ -675,6 +676,16 @@ mockIPC(
           (one) => one.id === args.speaker,
         );
         if (speaker && args.scope === "all") speaker.name = String(args.name);
+        return null;
+      }
+      case "seogi_restore_naming": {
+        const naming = args.naming as Naming;
+        if (done.transcript) {
+          done.transcript.speakers = naming.speakers.map((one) => ({ ...one }));
+          done.transcript.segments.forEach((line, i) => {
+            line.speaker = naming.lines[i]?.speaker ?? line.speaker;
+          });
+        }
         return null;
       }
       case "seogi_talk":

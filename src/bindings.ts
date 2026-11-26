@@ -1473,6 +1473,13 @@ async seogiCopyLastDictation() : Promise<Result<null, string>> {
 }
 },
 /**
+ * Downloads the default dictation model for a new install, from the
+ * first-run screen. Dictation moves to it once it is here.
+ */
+async seogiDownloadDictationModel() : Promise<void> {
+    await TAURI_INVOKE("seogi_download_dictation_model");
+},
+/**
  * Forgets dictations from the recent list (by id), or every one with
  * `None`. They are gone from this computer; returns how many went.
  */
@@ -1483,13 +1490,6 @@ async seogiForgetDictations(ids: number[] | null) : Promise<Result<number, strin
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
-},
-/**
- * Downloads the default dictation model for a new install, from the
- * first-run screen. Dictation moves to it once it is here.
- */
-async seogiDownloadDictationModel() : Promise<void> {
-    await TAURI_INVOKE("seogi_download_dictation_model");
 },
 /**
  * The floating key's menu, with its two lines in the user's language.
@@ -1685,6 +1685,18 @@ async seogiTalk(id: string) : Promise<Result<TalkStats, string>> {
 async seogiNameSpeaker(id: string, speaker: number, name: string, scope: NameScope, fromMs: number, toMs: number) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("seogi_name_speaker", { id, speaker, name, scope, fromMs, toMs }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Puts back a naming of speakers just made: who said what and who was
+ * given each task, as kept before it.
+ */
+async seogiRestoreNaming(id: string, naming: Naming) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_restore_naming", { id, naming }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2525,6 +2537,11 @@ export type LanguageStatus =
  * Auto can't work here; `language` is used instead.
  */
 { kind: "auto_unavailable"; language: string; reason: AutoUnavailableReason }
+/**
+ * Who said one line, by when it starts: part of a naming kept so it can
+ * be put back.
+ */
+export type LineSpeaker = { start_ms: number; speaker: number }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 /**
  * Whether the system will open the app at login, as the system says, not
@@ -2820,6 +2837,20 @@ export type NameScope =
  * The speaker's lines in one stretch (a paragraph on the screen).
  */
 "here"
+/**
+ * Who said what and who was given each task, kept by the screen just
+ * before it names a speaker, so the naming can be put back.
+ */
+export type Naming = { speakers: Speaker[]; 
+/**
+ * Every line of the transcript, in order.
+ */
+lines: LineSpeaker[]; 
+/**
+ * Every entry's owner, in order: each minutes, its sections, their
+ * entries.
+ */
+owners: string[] }
 export type Notice = { code: NoticeCode; level: NoticeLevel; source: NoticeSource; 
 /**
  * What only Rust knows, such as a model name or a raw error.
@@ -2828,19 +2859,7 @@ detail: string | null }
 /**
  * The frontend maps each code to its text in `src/lib/notices.ts`.
  */
-export type NoticeCode = "TranscriptionFailed" | "PasteFailed" | "PasteBlockedElevated" | "NoMicrophone" | "MicrophoneSilent" | "MicPermissionDenied" | "RecordingFailed" | "ModelLoadFailed" | "NoModelSelected" | "PostProcessFailed" | "FileTranscriptionFailed" | "FilePostProcessFailed" | 
-/**
- * Dictation is on but macOS no longer lets Seogi type (Accessibility),
- * as after an update whose signature macOS did not recognize.
- */
-"TypingPermissionLost" | 
-/**
- * Calendars from macOS's Calendar app were chosen, but macOS no longer
- * lets Seogi read them, for the same reason. The detail is the access
- * as `mac_calendar::access` says it: `not_determined` (macOS no longer
- * knows Seogi, so it is asked again) or `denied`.
- */
-"CalendarPermissionLost"
+export type NoticeCode = "TranscriptionFailed" | "PasteFailed" | "PasteBlockedElevated" | "NoMicrophone" | "MicrophoneSilent" | "MicPermissionDenied" | "RecordingFailed" | "ModelLoadFailed" | "NoModelSelected" | "PostProcessFailed" | "FileTranscriptionFailed" | "FilePostProcessFailed" | "TypingPermissionLost" | "CalendarPermissionLost"
 export type NoticeLevel = 
 /**
  * Nothing came out, or Handy can't do its job.
@@ -2855,16 +2874,7 @@ export type NoticeLevel =
  * overlay: a file job finishes while the user is doing something else, and
  * `Model` is a switch the user made in Settings or the tray.
  */
-export type NoticeSource = "dictation" | "file" | "model" | 
-/**
- * Reading the calendars, every few minutes in the background.
- */
-"calendar" | 
-/**
- * Whether the system lets dictation type. Its own slot, so a take's
- * notice neither replaces nor clears it.
- */
-"typing"
+export type NoticeSource = "dictation" | "file" | "model" | "calendar" | "typing"
 export type NoticesChanged = { 
 /**
  * Every active notice, newest first.
@@ -3192,26 +3202,6 @@ export type ShortcutActivation =
 "hold_or_toggle"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 /**
- * Where a tool stands on this computer.
- */
-export type SignIn = 
-/**
- * The tool is not installed.
- */
-"missing" | 
-/**
- * Installed, not signed in.
- */
-"signed_out" | 
-/**
- * Installed and signed in.
- */
-"signed_in"
-/**
- * Where both tools stand.
- */
-export type SignIns = { claude: SignIn; codex: SignIn }
-/**
  * A document that could not be read.
  */
 export type Skipped = { 
@@ -3272,6 +3262,26 @@ questions: number;
  * Times the speaker took over before the one talking had finished.
  */
 cut_ins: number }
+/**
+ * Where a tool stands on this computer.
+ */
+export type SignIn = 
+/**
+ * The tool is not installed.
+ */
+"missing" | 
+/**
+ * Installed, not signed in.
+ */
+"signed_out" | 
+/**
+ * Installed and signed in.
+ */
+"signed_in"
+/**
+ * Where both tools stand.
+ */
+export type SignIns = { claude: SignIn; codex: SignIn }
 /**
  * A speech model the user can pick for dictation.
  */

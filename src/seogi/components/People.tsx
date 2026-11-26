@@ -199,16 +199,19 @@ export function NamePicker({
   meeting,
   current,
   onPick,
+  more = [],
   children,
 }: {
   meeting: Meeting;
   /** The speaker's present name, not offered again. */
   current: string;
   onPick: (name: string) => void;
+  /** Names typed a moment ago, offered as keys after the people. */
+  more?: string[];
   /** More keys after the names, such as "모르겠어요". */
   children?: ReactNode;
 }) {
-  const people = unique(meeting.people ?? [], [current]);
+  const people = unique([...(meeting.people ?? []), ...more], [current]);
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {people.map((name) => (

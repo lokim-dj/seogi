@@ -11,6 +11,7 @@ import {
   type Meeting,
   type MinutesSection,
   type NameScope,
+  type Naming,
   type Segment,
   type TalkStats,
   type Template,
@@ -47,10 +48,14 @@ import {
   ASK_LINES,
   askLines,
   askMore,
+  joinsWith,
+  keptNaming,
   linesLeft,
   named,
+  nameKey,
   namingSteps,
   QUIET_SHARE,
+  quotedWithWa,
   SAME_ENOUGH,
   speakerQueue,
   startAsking,
@@ -1291,9 +1296,9 @@ function TalkShare({
  * the minutes (never a window after the recording ends): up to five of the
  * speaker's lines to hear, one at a time, each given a name or "모르겠어요";
  * when four agree the whole speaker becomes that person on a press, and the
- * lines given someone else go to that one. Opened from the line
- * "N명에 이름이 없어요" for the unnamed, or from "말한 사람 이름 바꾸기"
- * for everyone.
+ * lines given someone else go to that one. What was just done can be put
+ * back once. Opened from the line "N명에 이름이 없어요" for the unnamed, or
+ * from "말한 사람 이름 바꾸기" for everyone.
  */
 function NameSpeakers({
   meeting,
@@ -1308,38 +1313,100 @@ function NameSpeakers({
   const refreshDetail = useSeogi((s) => s.refreshDetail);
   // Who is being asked about: the unnamed only, or everyone.
   const [open, setOpen] = useState<false | "unnamed" | "all">(false);
-  // Speakers seen this round (named or skipped), and the names given.
+  // Speakers seen this round (named or skipped), and those there when it
+  // began (a speaker made by moving a line is not asked about).
   const [seen, setSeen] = useState<number[]>([]);
-  const [given, setGiven] = useState<string[]>([]);
+  const [from, setFrom] = useState<number[] | null>(null);
+  // Names typed this round, offered as keys from then on.
+  const [typed, setTyped] = useState<string[]>([]);
+  // The naming just made, to put back once.
+  const [undo, setUndo] = useState<{
+    naming: Naming;
+    said: string;
+    speaker: number;
+    who: "unnamed" | "all";
+  } | null>(null);
+  const [undoing, setUndoing] = useState(false);
+  const [said, setSaid] = useState("");
   if (!meeting.transcript) return null;
   const speakers = meeting.transcript.speakers;
   const share: Record<number, number> = {};
   for (const s of talk?.speakers ?? []) share[s.speaker] = s.share;
 
-  const everyone = speakerQueue(speakers, share, "all", isUnnamed, [], []);
-  const unnamed = speakerQueue(speakers, share, "unnamed", isUnnamed, [], []);
+  const everyone = speakerQueue(speakers, share, "all", isUnnamed, [], null);
+  const unnamed = speakerQueue(speakers, share, "unnamed", isUnnamed, [], null);
   const queue = open
-    ? speakerQueue(speakers, share, open, isUnnamed, seen, given)
+    ? speakerQueue(speakers, share, open, isUnnamed, seen, from)
     : [];
   const current = queue[0];
 
   const begin = (who: "unnamed" | "all") => {
     setSeen([]);
-    setGiven([]);
+    setFrom(speakers.map((s) => s.id));
+    setTyped([]);
+    setUndo(null);
+    setSaid("");
     setOpen(who);
   };
   // On to the next speaker; after the last, done.
-  const next = (names: string[] = []) => {
+  const next = () => {
     if (!current) return;
     setSeen((now) => [...now, current.id]);
-    setGiven((now) => [...now, ...names]);
     if (queue.length <= 1) setOpen(false);
   };
+  const settled = (naming: Naming, text: string, done: boolean) => {
+    if (!current || !open) return;
+    setUndo({ naming, said: text, speaker: current.id, who: open });
+    setSaid("");
+    if (done) next();
+  };
+  const putBack = async () => {
+    if (!undo) return;
+    setUndoing(true);
+    const result = await commands.seogiRestoreNaming(meeting.id, undo.naming);
+    setUndoing(false);
+    if (result.status === "error") {
+      setSaid(t("failed", { reason: result.error }));
+      return;
+    }
+    // The speaker is asked about again.
+    setSeen((now) => now.filter((id) => id !== undo.speaker));
+    setOpen(undo.who);
+    setUndo(null);
+    setSaid(t("names.undone"));
+    await refreshDetail();
+  };
+
+  const undoLine =
+    undo || said ? (
+      <div
+        className="flex flex-wrap items-center gap-x-3 mt-3 text-[13.5px]"
+        aria-live="polite"
+      >
+        {undo ? <span className="t2">{undo.said}</span> : null}
+        {undo ? (
+          <button
+            type="button"
+            className="lnk"
+            disabled={undoing}
+            onClick={() => void putBack()}
+          >
+            {t("names.undo")}
+          </button>
+        ) : null}
+        {said ? (
+          <span role={undo ? undefined : "status"} className="t2">
+            {said}
+          </span>
+        ) : null}
+      </div>
+    ) : null;
 
   if (!current) {
     const loud = unnamed.filter((s) => (share[s.id] ?? 0) >= QUIET_SHARE);
     return (
       <>
+        {undoLine}
         {everyone.length > 0 ? (
           <button
             type="button"
@@ -1367,16 +1434,30 @@ function NameSpeakers({
     );
   }
   return (
-    <AskSpeaker
-      key={current.id}
-      meeting={meeting}
-      player={player}
-      speaker={current}
-      share={share[current.id] ?? 0}
-      left={queue.length}
-      onNext={next}
-      onLater={() => setOpen(false)}
-    />
+    <>
+      {undoLine}
+      <AskSpeaker
+        key={current.id}
+        meeting={meeting}
+        player={player}
+        speaker={current}
+        share={share[current.id] ?? 0}
+        left={queue.length}
+        typed={typed}
+        onTyped={(name) => setTyped((now) => [...now, name])}
+        onSettled={settled}
+        onNext={() => {
+          setUndo(null);
+          setSaid("");
+          next();
+        }}
+        onLater={() => {
+          setUndo(null);
+          setSaid("");
+          setOpen(false);
+        }}
+      />
+    </>
   );
 }
 
@@ -1387,6 +1468,9 @@ function AskSpeaker({
   speaker,
   share,
   left,
+  typed,
+  onTyped,
+  onSettled,
   onNext,
   onLater,
 }: {
@@ -1395,13 +1479,28 @@ function AskSpeaker({
   speaker: { id: number; name: string };
   share: number;
   left: number;
-  onNext: (names?: string[]) => void;
+  /** Names typed earlier this round. */
+  typed: string[];
+  onTyped: (name: string) => void;
+  /** A naming was made (`done`: all of it, on to the next speaker); what
+   *  was kept before it, and what to say about it. */
+  onSettled: (naming: Naming, said: string, done: boolean) => void;
+  onNext: () => void;
   onLater: () => void;
 }) {
   const { t } = useTranslation(NS);
   const speakerName = useSpeakerName();
   const refreshDetail = useSeogi((s) => s.refreshDetail);
   const transcript = meeting.transcript;
+  // The names already written down: a name given as one of these, "님" or
+  // not, is written the same way.
+  const known = [
+    ...(meeting.people ?? []),
+    ...(transcript?.speakers ?? [])
+      .map((s) => s.name)
+      .filter((name) => !isUnnamed(name)),
+    ...typed,
+  ];
   const [state, setState] = useState(() =>
     startAsking(
       askLines(
@@ -1411,26 +1510,51 @@ function AskSpeaker({
         meeting.duration_ms,
       ),
       isUnnamed(speaker.name) ? "" : speaker.name,
+      known,
     ),
   );
   const [working, setWorking] = useState(false);
   const [trouble, setTrouble] = useState("");
+  const settleKey = useRef<HTMLButtonElement>(null);
+  const v = verdict(state);
+  // When the answers say something, the key to act on it takes the focus.
+  useEffect(() => {
+    if (v.kind !== "asking") settleKey.current?.focus();
+  }, [v.kind]);
   if (!transcript) return null;
 
   const tone = tonesOf(transcript).get(speaker.id) ?? 1;
   const shown = speakerName(speaker.name);
   const quietOne = isUnnamed(speaker.name) && share < QUIET_SHARE;
-  const v = verdict(state);
   const count = named(state);
   const line = v.kind === "asking" ? state.lines[state.answers.length] : null;
   const canMore = linesLeft(state) > 0 && count < ASK_LINES;
   const listen = (at: { start_ms: number; end_ms: number }) =>
     player.seek(at.start_ms, at.end_ms - at.start_ms + 500);
+  // Typed names offered as keys: those the people list does not have.
+  const people = meeting.people ?? [];
+  const more = typed.filter(
+    (name) => !people.some((p) => nameKey(p) === nameKey(name)),
+  );
+  const pick = (name: string | null) => {
+    if (working) return;
+    if (name && !known.some((k) => nameKey(k) === nameKey(name))) {
+      onTyped(name.trim());
+    }
+    setState((now) => answer(now, name));
+  };
+  const joins =
+    v.kind === "decide"
+      ? joinsWith(speaker.id, v.name, transcript.speakers)
+      : null;
 
-  // Gives the names, single lines first; a failure stops there and says so.
-  const settle = async (steps: NameStep[]) => {
+  // Gives the names, single lines first, keeping what was there before so it
+  // can be put back; a failure stops there and says so.
+  const settle = async (steps: NameStep[], said: string) => {
+    const naming = keptNaming(transcript, meeting.minutes ?? []);
     setWorking(true);
     setTrouble("");
+    let done = 0;
     for (const step of steps) {
       const result = await commands.seogiNameSpeaker(
         meeting.id,
@@ -1443,14 +1567,39 @@ function AskSpeaker({
       if (result.status === "error") {
         setTrouble(t("failed", { reason: result.error }));
         setWorking(false);
+        if (done > 0) onSettled(naming, t("names.partial"), false);
         await refreshDetail();
         return;
       }
+      done += 1;
     }
     setWorking(false);
-    onNext(steps.map((step) => step.name));
+    onSettled(naming, said, true);
     await refreshDetail();
   };
+  const settleSaid =
+    v.kind === "decide"
+      ? t("names.settled", {
+          speaker: shown,
+          name: v.name,
+          nameRo: withRo(v.name),
+        })
+      : v.kind === "mixed"
+        ? t("names.moved", { n: v.move.length })
+        : "";
+  const headline =
+    v.kind === "decide"
+      ? t("names.agreed", {
+          of: v.of,
+          agree: v.agree,
+          name: v.name,
+          nameIs: withIs(v.name),
+        })
+      : v.kind === "mixed"
+        ? t("names.mixed", { n: v.move.length })
+        : v.kind === "none"
+          ? t("names.unknown")
+          : "";
 
   // One person the speaker model may have heard as two: offered, never done.
   const sameId = maybeSamePerson(
@@ -1460,7 +1609,7 @@ function AskSpeaker({
     isUnnamed,
   );
   const same = transcript.speakers.find((s) => s.id === sameId);
-  const noPeople = (meeting.people ?? []).length === 0;
+  const noPeople = people.length === 0;
 
   return (
     <section
@@ -1487,13 +1636,15 @@ function AskSpeaker({
           <button
             type="button"
             className="lnk text-[13px] !text-t3"
-            onClick={() => onNext()}
+            disabled={working}
+            onClick={onNext}
           >
             {t("names.skip")}
           </button>
           <button
             type="button"
             className="lnk text-[13px] !text-t3"
+            disabled={working}
             onClick={onLater}
           >
             {t("names.later")}
@@ -1523,6 +1674,10 @@ function AskSpeaker({
           {t("names.progress", { n: count, of: ASK_LINES })}
         </span>
       </div>
+      {/* What the answers say, read out when it comes. */}
+      <div className="sr-only" aria-live="polite">
+        {headline}
+      </div>
 
       {line ? (
         <div className="mt-2 pt-2.5 border-t border-line">
@@ -1536,12 +1691,13 @@ function AskSpeaker({
           <NamePicker
             meeting={meeting}
             current=""
-            onPick={(name) => setState((now) => answer(now, name))}
+            more={more}
+            onPick={(name) => pick(name)}
           >
             <button
               type="button"
               className="lnk text-[13px] !text-t3 px-1"
-              onClick={() => setState((now) => answer(now, null))}
+              onClick={() => pick(null)}
             >
               {t("names.dontKnow")}
             </button>
@@ -1551,46 +1707,41 @@ function AskSpeaker({
 
       {v.kind !== "asking" ? (
         <div className="mt-3 pt-3 border-t border-line">
+          <div aria-hidden="true" className="text-[15px] font-bold mb-0.5">
+            {headline}
+          </div>
           {v.kind === "decide" ? (
-            <>
-              <div className="text-[15px] font-bold mb-0.5">
-                {t("names.agreed", {
-                  of: v.of,
-                  agree: v.agree,
-                  name: v.name,
-                  nameIs: withIs(v.name),
-                })}
-              </div>
-              <div className="t2 font-medium">
-                {t("names.settleAsk", {
-                  speaker: shown,
-                  name: v.name,
-                  nameRo: withRo(v.name),
-                })}
-              </div>
-            </>
+            <div className="t2 font-medium">
+              {t("names.settleAsk", {
+                speaker: shown,
+                name: v.name,
+                nameRo: withRo(v.name),
+              })}
+              {joins ? (
+                <>
+                  {" "}
+                  {t("names.joins", {
+                    name: joins.name,
+                    nameWa: quotedWithWa(joins.name),
+                  })}
+                </>
+              ) : null}
+            </div>
           ) : v.kind === "mixed" ? (
-            <>
-              <div className="text-[15px] font-bold mb-0.5">
-                {t("names.mixed", { n: v.move.length })}
-              </div>
-              <div className="t2 font-medium">{t("names.mixedHint")}</div>
-            </>
+            <div className="t2 font-medium">{t("names.mixedHint")}</div>
           ) : (
-            <>
-              <div className="text-[15px] font-bold mb-0.5">
-                {t("names.unknown")}
-              </div>
-              <div className="t2 font-medium">{t("names.unknownHint")}</div>
-            </>
+            <div className="t2 font-medium">{t("names.unknownHint")}</div>
           )}
           <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 mt-2.5 mb-1.5">
             <button
+              ref={settleKey}
               type="button"
               className="btn solid !h-[28px] shadow-[0_0_0_4px_var(--redfaint)]"
               disabled={working}
               onClick={() =>
-                v.kind === "none" ? onNext() : void settle(namingSteps(v))
+                v.kind === "none"
+                  ? onNext()
+                  : void settle(namingSteps(v), settleSaid)
               }
             >
               {v.kind === "decide"
@@ -1603,6 +1754,7 @@ function AskSpeaker({
               <button
                 type="button"
                 className="lnk"
+                disabled={working}
                 onClick={() => setState((now) => askMore(now))}
               >
                 {t("names.oneMore")}
@@ -1640,13 +1792,25 @@ function AskSpeaker({
             type="button"
             className="lnk"
             disabled={working}
-            onClick={() => void settle([{ name: same.name, line: null }])}
+            onClick={() =>
+              void settle(
+                [{ name: same.name, line: null }],
+                t("names.merged", {
+                  name: same.name,
+                  nameRo: withRo(same.name),
+                }),
+              )
+            }
           >
             {t("names.merge", { name: same.name })}
           </button>
         </div>
       ) : null}
-      {trouble ? <p className="m-0 mt-1.5 text-[13px] rt">{trouble}</p> : null}
+      {trouble ? (
+        <p role="alert" className="m-0 mt-1.5 text-[13px] rt">
+          {trouble}
+        </p>
+      ) : null}
 
       {state.answers.length > 0 ? (
         <ol

@@ -5,7 +5,12 @@ import {
   answer,
   askLines,
   askMore,
+  joinsWith,
+  keptNaming,
+  knownAs,
   named,
+  nameKey,
+  quotedWithWa,
   namingSteps,
   speakerQueue,
   startAsking,
@@ -122,22 +127,73 @@ assert.equal(verdict(ask(["지우", "지우", "하린", "지우"])).kind, "askin
   assert.equal(verdict(ask(["하린", "지우"], seven.slice(0, 2))).kind, "mixed");
 }
 
-// A line answered with the speaker's present name stays where it is (a
-// second speaker of that name is never made for it).
+// A speaker already named "지우" heard as someone else: the speaker becomes
+// 하린 throughout, and the line answered "지우" goes to 지우 first (the single
+// lines always before the whole speaker).
 {
   const s = ["지우", "하린", "하린", "하린", "하린"].reduce(
     (now, name) => answer(now, name),
     startAsking(seven, "지우"),
   );
-  assert.deepEqual(namingSteps(verdict(s)), [{ name: "하린", line: null }]);
+  assert.deepEqual(
+    namingSteps(verdict(s)).map((step) => [step.name, step.line?.start_ms]),
+    [
+      ["지우", 0],
+      ["하린", undefined],
+    ],
+  );
+  // Answers that go different ways: the number keeps its name, so the lines
+  // answered with it stay where they are.
   const split = ["지우", "하린", "지우", "도윤", "하린"].reduce(
     (now, name) => answer(now, name),
     startAsking(seven, "지우"),
   );
+  assert.equal(verdict(split).kind, "mixed");
   assert.deepEqual(
     namingSteps(verdict(split)).map((step) => step.name),
     ["하린", "도윤", "하린"],
   );
+}
+
+// "님" or not, the same person; written the way the people list has it, or
+// as first typed.
+{
+  const s = ["지우님", "지우", " 지우 ", "지우님"].reduce(
+    (now, name) => answer(now, name),
+    startAsking(seven, "", ["지우님", "하린"]),
+  );
+  const v = verdict(s);
+  assert.equal(v.kind, "decide");
+  if (v.kind !== "decide") throw new Error();
+  assert.equal(v.name, "지우님");
+  assert.equal(v.agree, 4);
+  assert.deepEqual(namingSteps(v), [{ name: "지우님", line: null }]);
+  // A new name typed once is written the same way when given again.
+  const typed = ["서연", "서연님", "서연", "서연"].reduce(
+    (now, name) => answer(now, name),
+    startAsking(seven),
+  );
+  assert.deepEqual(
+    typed.answers.map((a) => a.name),
+    ["서연", "서연", "서연", "서연"],
+  );
+  assert.equal(nameKey(" 서연  님 "), nameKey("서연"));
+  assert.equal(knownAs("하린님", ["하린"]), "하린");
+  assert.equal(knownAs("도윤", ["하린"]), "도윤");
+}
+
+// Named throughout with a name another speaker has: the two become one,
+// unless two people can share it (a role, a number).
+{
+  const speakers = [
+    { id: 1, name: "화자 1" },
+    { id: 2, name: "지우" },
+    { id: 3, name: "고객" },
+  ];
+  assert.equal(joinsWith(1, "지우", speakers)?.id, 2);
+  assert.equal(joinsWith(2, "지우", speakers), null);
+  assert.equal(joinsWith(1, "고객", speakers), null);
+  assert.equal(joinsWith(1, "하린", speakers), null);
 }
 
 // No more lines than there are; a name is tidied.
@@ -149,7 +205,8 @@ assert.equal(verdict(ask(["지우", "지우", "하린", "지우"])).kind, "askin
 }
 
 // The queue: those who said most first, the quiet last; skipping moves on to
-// the next without naming anyone; a name just given is not asked again.
+// the next without naming anyone; a speaker made this round (lines moved to a
+// person) is not asked about, one that was there all along is.
 {
   const speakers = [
     { id: 1, name: "화자 1" },
@@ -158,27 +215,56 @@ assert.equal(verdict(ask(["지우", "지우", "하린", "지우"])).kind, "askin
     { id: 4, name: "고객" },
     { id: 5, name: "화자 5" },
   ];
-  const share = { 1: 20, 2: 0.5, 3: 33, 4: 24, 5: 0 };
+  const share = { 1: 20, 2: 0.5, 3: 33, 4: 24, 5: 0, 6: 3 };
   const unnamed = (name: string) => /^화자 \d+$/.test(name);
   const ids = (list: { id: number }[]) => list.map((s) => s.id);
+  const round = [1, 2, 3, 4, 5];
   assert.deepEqual(
-    ids(speakerQueue(speakers, share, "unnamed", unnamed, [], [])),
+    ids(speakerQueue(speakers, share, "unnamed", unnamed, [], null)),
     [3, 1, 2],
   );
   assert.deepEqual(
-    ids(speakerQueue(speakers, share, "all", unnamed, [], [])),
+    ids(speakerQueue(speakers, share, "all", unnamed, [], round)),
     [3, 4, 1, 2],
   );
   // 건너뛰기: speaker 3 is seen and left as it was.
   assert.deepEqual(
-    ids(speakerQueue(speakers, share, "unnamed", unnamed, [3], [])),
+    ids(speakerQueue(speakers, share, "unnamed", unnamed, [3], round)),
     [1, 2],
   );
-  // Lines given "고객" this round: that speaker is not asked about.
+  // 3 named "고객" this round and a line moved to a new "지우" (6): the
+  // "고객" there all along is still asked about, the new one is not.
+  const after = [...speakers, { id: 6, name: "지우" }];
   assert.deepEqual(
-    ids(speakerQueue(speakers, share, "all", unnamed, [3], ["고객"])),
-    [1, 2],
+    ids(speakerQueue(after, share, "all", unnamed, [3], round)),
+    [4, 1, 2],
   );
+}
+
+// What is kept before a naming: every line's speaker in order, every task's
+// owner in order, and a copy of the speakers (not the same objects).
+{
+  const speakers = [{ id: 1, name: "화자 1" }];
+  const kept = keptNaming(
+    {
+      speakers,
+      segments: [
+        { start_ms: 0, speaker: 1 },
+        { start_ms: 900, speaker: 2 },
+      ],
+    },
+    [
+      { sections: [{ entries: [{ owner: "지우" }] }, { entries: [] }] },
+      { sections: [{ entries: [{ owner: "" }, { owner: "하린" }] }] },
+    ],
+  );
+  assert.deepEqual(kept.lines, [
+    { start_ms: 0, speaker: 1 },
+    { start_ms: 900, speaker: 2 },
+  ]);
+  assert.deepEqual(kept.owners, ["지우", "", "하린"]);
+  speakers[0].name = "도윤";
+  assert.equal(kept.speakers[0].name, "화자 1");
 }
 
 // Korean particles after a name.
@@ -189,5 +275,10 @@ assert.equal(withIs("하린"), "하린이에요");
 assert.equal(withRo("말한 사람 3"), "말한 사람 3으로");
 assert.equal(withIs("지우"), "지우예요");
 assert.equal(withIs("회장님"), "회장님이에요");
+// An English name: both particles, as Korean writes it when unsure.
+assert.equal(withRo("Alex"), "Alex(으)로");
+assert.equal(quotedWithWa("지우"), "'지우'와");
+assert.equal(quotedWithWa("회장님"), "'회장님'과");
+assert.equal(withIs("Sam"), "Sam(이)에요");
 
 console.log("naming: ok");
