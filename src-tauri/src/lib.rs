@@ -146,9 +146,14 @@ pub(crate) fn show_main_window(app: &AppHandle) {
 /// back (`RunEvent::Reopen`); the menu bar icon only shows the recording
 /// state. Must sit between `build()` and `run()`, where the initial policy is
 /// set before launch.
+///
+/// A headless run (`--seogi-*`, `--transcribe-file`, the lists) has no window
+/// and is often started several at a time by scripts such as `eval/`: it is
+/// an accessory process, so it never puts an icon in the Dock.
 #[cfg(target_os = "macos")]
 fn apply_startup_activation_policy(app: &mut tauri::App, headless_mode: bool) {
     if headless_mode {
+        app.set_activation_policy(tauri::ActivationPolicy::Accessory);
         return;
     }
     app.set_activation_policy(tauri::ActivationPolicy::Regular);

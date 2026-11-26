@@ -267,7 +267,8 @@ def main() -> None:
     parser.add_argument("--scenes", nargs="+", help="scene names (default: all)")
     parser.add_argument("--binary", type=Path)
     parser.add_argument("--label", default="")
-    parser.add_argument("--jobs", type=int, default=3, help="scenes written at once")
+    parser.add_argument("--jobs", type=int, default=2,
+                        help="scenes written at once (each is an app process; keep it small)")
     parser.add_argument("--repeat", type=int, default=1, help="write each scene this many times")
     parser.add_argument("--rescore", type=Path,
                         help="score the minutes of an earlier run (its folder) again, without writing")
