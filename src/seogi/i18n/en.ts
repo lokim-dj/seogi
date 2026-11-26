@@ -342,6 +342,7 @@ const en: Strings = {
       other_subject: "It may be about another site or person",
       unit_odd: "The amount is written oddly; it may have been misheard",
       sums_disagree: "The amounts do not add up",
+      after_the_end: "It may have been said after the meeting ended",
       unsure_speech: "The transcript was unsure here",
       overlapping_speech: "Two people spoke at once here",
       number_not_in_source: "The number is not in the words it rests on",

@@ -2056,7 +2056,12 @@ export type CheckReason =
 /**
  * A change it states does not add up with the amounts said for it.
  */
-"sums_disagree"
+"sums_disagree" | 
+/**
+ * It was said after the meeting seems to have ended (after the
+ * farewells, once someone had left): it may be chat, or another call.
+ */
+"after_the_end"
 /**
  * Script applied to Mandarin and Cantonese output. Traditional carries its region
  * (Taiwan vs Hong Kong forms, e.g. 裡/裏) rather than guessing it.

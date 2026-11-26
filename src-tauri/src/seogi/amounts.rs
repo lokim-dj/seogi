@@ -96,7 +96,26 @@ fn chain(text: &str, start: usize) -> (f64, usize, bool) {
         }
         let bare = caps.get(3).is_some();
         let sub_unit = caps.get(2).or(caps.get(3)).map_or("", |m| m.as_str());
-        let big_unit = caps.get(4).map_or("", |m| m.as_str());
+        let mut big_unit = caps.get(4).map_or("", |m| m.as_str());
+        let mut whole_text = whole.as_str();
+        // "100 조금" is a hundred and a little, not a hundred trillion.
+        if big_unit == "조" {
+            let next = text[whole.end()..].chars().next();
+            if next.is_some_and(|c| ('가'..='힣').contains(&c)) {
+                big_unit = "";
+                let unit_at = whole_text.rfind('조').unwrap_or(whole_text.len());
+                whole_text = &whole_text[..unit_at];
+            }
+        }
+        // "2만 3만 원" is a range, two amounts: the same big unit again with
+        // no thousands before it ends the chain ("1억 5천억" does not).
+        if !first
+            && !big_unit.is_empty()
+            && sub_unit.is_empty()
+            && bigs.last().is_some_and(|&b| same(b, big(big_unit)))
+        {
+            break;
+        }
         // A bare 천 or 백 goes on a chain, never starts one, and is no
         // number when a word goes on after it ("2억, 천장 포함"); a plain
         // number after a chain is a number of its own ("3m에 48만").
@@ -105,7 +124,7 @@ fn chain(text: &str, start: usize) -> (f64, usize, bool) {
         }
         if bare && big_unit.is_empty() {
             const AFTER: &str = "원만이을은에으로정쯤가까짜대선";
-            let next = text[pos + whole.as_str().trim_end().len()..].chars().next();
+            let next = text[pos + whole_text.trim_end().len()..].chars().next();
             if next.is_some_and(|c| ('가'..='힣').contains(&c) && !AFTER.contains(c)) {
                 break;
             }
@@ -119,7 +138,7 @@ fn chain(text: &str, start: usize) -> (f64, usize, bool) {
             odd = true;
         }
         group += number * sub(sub_unit);
-        end = pos + whole.as_str().trim_end().len();
+        end = pos + whole_text.trim_end().len();
         first = false;
         if big_unit.is_empty() {
             break;
@@ -316,58 +335,113 @@ fn has_run(runs: &str, run: &str) -> bool {
 /// A price per something: "자당 25만", "평당 300만", or a length and its
 /// price, "3m에 48만" (per metre).
 static PER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"([가-힣a-zA-Z]{1,3})당\s?(\d[\d,]*(?:\.\d+)?)\s?(만|천)?")
-        .expect("a valid pattern")
+    Regex::new(
+        r"(?:(?P<what>[가-힣A-Za-z]+)\s+)?(?P<per>[가-힣a-zA-Z]{1,3})당\s?(?P<n>\d[\d,]*(?:\.\d+)?)\s?(?P<scale>만|천)?",
+    )
+    .expect("a valid pattern")
 });
+/// A length in metres and its price; "1200mm" and "120cm" are no metres.
 static LENGTH_PRICE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(\d+(?:\.\d+)?)\s?(?:m|미터)\s?(?:에|씩|짜리|당)?[^\d.]{0,12}?(\d[\d,]*)\s?만")
-        .expect("a valid pattern")
+    Regex::new(
+        r"(?:(?P<what>[가-힣A-Za-z]+)\s+)?(?P<len>\d+(?:\.\d+)?)\s?(?:m(?:[^a-zA-Z]|$)|미터)\s?(?:에|씩|짜리|당)?[^\d.]{0,12}?(?P<price>\d[\d,]*)\s?만",
+    )
+    .expect("a valid pattern")
 });
 
-/// The rates `text` gives: (what it is per, value per one).
-pub fn rates(text: &str) -> Vec<(String, f64)> {
+/// Words before a price that point rather than name ("여기도 자당 25만",
+/// "각각 1m씩"): the price may be of the same thing as another.
+const POINTING: &[&str] = &[
+    "여기", "거기", "저기", "이것", "그것", "이쪽", "그쪽", "각각", "각", "다", "모두", "전부",
+];
+
+/// What a price is of, from the word before it, without its particle; `None`
+/// when no word names it.
+fn priced(word: Option<regex::Match<'_>>) -> Option<String> {
+    let word = word?.as_str();
+    let mut bare = word.to_string();
+    for particle in [
+        "에서는",
+        "에는",
+        "은",
+        "는",
+        "도",
+        "이",
+        "가",
+        "을",
+        "를",
+        "의",
+        "에",
+        "만",
+    ] {
+        if bare.chars().count() > particle.chars().count() && bare.ends_with(particle) {
+            bare.truncate(bare.len() - particle.len());
+            break;
+        }
+    }
+    (!POINTING.contains(&bare.as_str())).then_some(bare)
+}
+
+/// One price per something a text gives.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Rate {
+    /// What it is per: "자", "평", "m".
+    pub per: String,
+    /// The price for one.
+    pub value: f64,
+    /// What it is the price of, when the words say ("강마루").
+    pub what: Option<String>,
+}
+
+/// The rates `text` gives.
+pub fn rates(text: &str) -> Vec<Rate> {
     let mut found = Vec::new();
     for caps in PER.captures_iter(text) {
-        let Ok(number) = caps[2].replace(',', "").parse::<f64>() else {
+        let Ok(number) = caps["n"].replace(',', "").parse::<f64>() else {
             continue;
         };
         // "자당 20" and "자당 25만" are compared as said: a bare number is
         // the same scale as the others are.
-        let scale = match caps.get(3).map(|m| m.as_str()) {
-            Some("만") => 1e4,
+        let scale = match caps.name("scale").map(|m| m.as_str()) {
             Some("천") => 1e3,
-            _ => 0.0,
+            _ => 1e4,
         };
-        found.push((
-            caps[1].to_string(),
-            if scale > 0.0 {
-                number * scale
-            } else {
-                number * 1e4
-            },
-        ));
+        found.push(Rate {
+            per: caps["per"].to_string(),
+            value: number * scale,
+            what: priced(caps.name("what")),
+        });
     }
     for caps in LENGTH_PRICE.captures_iter(text) {
         let (Ok(length), Ok(price)) = (
-            caps[1].parse::<f64>(),
-            caps[2].replace(',', "").parse::<f64>(),
+            caps["len"].parse::<f64>(),
+            caps["price"].replace(',', "").parse::<f64>(),
         ) else {
             continue;
         };
         if length > 0.0 {
-            found.push(("m".to_string(), price * 1e4 / length));
+            found.push(Rate {
+                per: "m".to_string(),
+                value: price * 1e4 / length,
+                what: priced(caps.name("what")),
+            });
         }
     }
     found
 }
 
 /// Whether a rate `stated` gives is said with another value nearby in
-/// `around`: the same thing priced two ways.
+/// `around`: the same thing priced two ways. Prices of things named
+/// differently ("강마루 평당 12만", "원목마루 평당 18만") are two prices.
 pub fn rates_differ(stated: &str, around: &str) -> bool {
     let near = rates(around);
-    rates(stated).iter().any(|(per, value)| {
-        near.iter()
-            .any(|(other_per, other)| other_per == per && !same(*other, *value))
+    rates(stated).iter().any(|mine| {
+        near.iter().any(|other| {
+            let same_thing = match (&mine.what, &other.what) {
+                (Some(a), Some(b)) => a == b,
+                _ => true,
+            };
+            other.per == mine.per && same_thing && !same(other.value, mine.value)
+        })
     })
 }
 
@@ -481,6 +555,10 @@ mod tests {
         assert!(values("천장은 새로").is_empty());
         assert_eq!(values("견적 2억 천장 포함"), [200_000_000.0]);
         assert_eq!(values("2억 천이 나왔다"), [210_000_000.0]);
+        // Rough words: a range, and "a little".
+        assert_eq!(values("2만 3만 원"), [20_000.0, 30_000.0]);
+        assert!(!odd_units("2만 3만 원 정도"));
+        assert_eq!(values("100 조금 넘게"), [100.0]);
     }
 
     #[test]
@@ -518,6 +596,14 @@ mod tests {
             "벽체는 3m에 48만 원",
             "벽체는 3m에 48만 원, 6m면 96만 원"
         ));
+        // Two things priced differently are two prices.
+        assert!(!rates_differ(
+            "강마루 평당 12만",
+            "강마루 평당 12만, 원목마루 평당 18만"
+        ));
+        // Millimetres are no metres.
+        assert!(rates("1200mm 상판 80만").is_empty());
+        assert!(rates("120cm 선반 30만").is_empty());
     }
 
     #[test]

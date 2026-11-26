@@ -486,6 +486,12 @@ impl Meeting {
         lines.join("\n")
     }
 
+    /// Whether the meeting is with a customer: one is named, or it is
+    /// written as a consultation.
+    pub fn with_customer(&self) -> bool {
+        !self.customer.trim().is_empty() || self.template_id == "consult"
+    }
+
     /// Minutes after its event began that a recording may start without
     /// having missed anything worth saying.
     const LATE_AFTER_MS: i64 = 3 * 60_000;
@@ -772,10 +778,13 @@ impl Meeting {
             place: self.place.clone(),
             customer: self.customer.clone(),
             late_minutes: self.late_minutes(),
-            mid_talk: self
-                .transcript
-                .as_ref()
-                .is_some_and(super::facts::starts_mid_talk),
+            // Only for a consultation: a meeting among colleagues or a memo
+            // often starts straight into talk.
+            mid_talk: self.with_customer()
+                && self
+                    .transcript
+                    .as_ref()
+                    .is_some_and(super::facts::starts_mid_talk),
             source_file: self.audio_file.clone(),
             sha256: self.sha256.clone(),
             transcribed_by: self
@@ -814,6 +823,28 @@ mod tests {
         meeting.title = "주간 회의".to_string();
         meeting.duration_ms = 60_000;
         meeting
+    }
+
+    #[test]
+    fn only_a_consultation_says_it_started_in_the_middle_of_talk() {
+        use crate::seogi::transcript::{Segment, Transcript};
+        let mut meeting = Meeting::new(0, Origin::Recorded, "녹음.wav");
+        meeting.transcript = Some(Transcript {
+            segments: vec![Segment {
+                start_ms: 0,
+                end_ms: 9_000,
+                speaker: 1,
+                text: "그래서 이 벽을 이렇게 옮기면 거실이 훨씬 넓어 보이는 구조가 되는 거고요"
+                    .into(),
+                confidence: None,
+                unsure: false,
+                overlap: false,
+            }],
+            ..Default::default()
+        });
+        assert!(!meeting.header().mid_talk);
+        meeting.customer = "이서진".into();
+        assert!(meeting.header().mid_talk);
     }
 
     #[test]

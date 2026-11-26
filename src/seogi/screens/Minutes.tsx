@@ -48,7 +48,7 @@ import {
 } from "../lib/speakers";
 import { taskLine, titleNeeded } from "../lib/tasks";
 import { lateMinutes, startsMidTalk } from "../lib/opening";
-import { isGibberish } from "../lib/gibberish";
+import { isGibberish, koreanMeeting } from "../lib/gibberish";
 import { Mark } from "../components/Mark";
 import { useSeogi, type Jump } from "../store";
 
@@ -556,7 +556,10 @@ function Sheet({
   const start = meeting.started_at_ms;
   const end = start + meeting.duration_ms;
   const late = lateMinutes(meeting);
-  const midTalk = startsMidTalk(meeting.transcript?.segments ?? []);
+  // Only for a consultation: colleagues and memos often start straight in.
+  const midTalk =
+    (!!meeting.customer?.trim() || meeting.template_id === "consult") &&
+    startsMidTalk(meeting.transcript?.segments ?? []);
   const setDone = async (section: string, index: number, done: boolean) => {
     await commands.seogiSetActionDone(meeting.id, section, index, done);
     await refreshDetail();
@@ -1569,9 +1572,12 @@ function Transcript({
   );
   // Each speaker's tone, by number: a new name keeps it.
   const tones = useMemo(() => tonesOf(transcript), [transcript]);
-  // In a Korean meeting, a line of foreign letters is the speech model's
-  // noise: shown faintly, and the minutes did not rest on it.
-  const korean = !transcript?.language || transcript.language.startsWith("ko");
+  // A line the speech model made up is shown faintly; the minutes did not
+  // rest on it. Stray foreign letters count only in a Korean meeting.
+  const korean = useMemo(
+    () => koreanMeeting(transcript?.segments ?? []),
+    [transcript],
+  );
   const nowIndex = lines.findIndex(
     (line, index) =>
       player.timeMs >= line.startMs &&
@@ -1617,7 +1623,7 @@ function Transcript({
         // The same speaker going on after a pause: the mark is left out,
         // the name kept quiet (pressing it still names this line).
         const goingOn = index > 0 && lines[index - 1].speaker === line.speaker;
-        const noise = korean && isGibberish(line.text);
+        const noise = isGibberish(line.text, korean);
         return (
           <div
             key={line.startMs}

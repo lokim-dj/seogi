@@ -108,6 +108,9 @@ assert.deepEqual(shareBar([]), []);
   // Two who answer each other are two people.
   const talking = [1, 3, 1, 3, 2, 1, 3, 2, 3, 1, 2];
   assert.equal(maybeSamePerson(3, named, talking, unnamed), null);
+  // A role is no one to join.
+  const roles = named.map((s) => (s.id === 1 ? { id: 1, name: "고객" } : s));
+  assert.equal(maybeSamePerson(3, roles, order, unnamed), null);
   // Too little said to tell.
   assert.equal(maybeSamePerson(3, named, [1, 2, 3, 2], unnamed), null);
 }

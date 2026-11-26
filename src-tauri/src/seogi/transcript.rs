@@ -75,8 +75,9 @@ impl Transcript {
     /// Gives the name `name` to `speaker`'s lines within `scope`: from
     /// `from_ms` on, or from `from_ms` to before `to_ms` for one stretch.
     /// Lines that move to another name go to the speaker already called that,
-    /// or to a new one; named throughout with a name another speaker has,
-    /// the two are one person and become one speaker. Returns the times (start, end) the change covers,
+    /// or to a new one. Named throughout with the person's name another
+    /// speaker already has, the two are one person and become one speaker
+    /// (never for a role such as "고객", which two people can share). Returns the times (start, end) the change covers,
     /// and the speaker's name before, so what refers to it can follow.
     pub fn name_speaker(
         &mut self,
@@ -95,7 +96,7 @@ impl Transcript {
             if let Some(entry) = self.speakers.iter_mut().find(|s| s.id == speaker) {
                 entry.name = name;
             }
-            self.merge_same_names(false);
+            self.join_named(speaker);
             return Some((old, 0, u64::MAX));
         }
         let (from, to) = match scope {
@@ -126,51 +127,50 @@ impl Transcript {
     }
 }
 
+/// Names that two people can share: a role, or no name at all.
+fn shared_name(name: &str) -> bool {
+    const ROLES: [&str; 12] = [
+        "고객",
+        "손님",
+        "남편",
+        "아내",
+        "부인",
+        "사모님",
+        "사장님",
+        "직원",
+        "담당",
+        "상담",
+        "우리",
+        "저희",
+    ];
+    name.trim().is_empty()
+        || name.starts_with("화자")
+        || ROLES.iter().any(|role| name.contains(role))
+}
+
 impl Transcript {
-    /// Makes speakers with the same name one speaker: the speaker model
-    /// heard one person as two, and the name says they are one (the minutes
-    /// found it said to both, or the user gave it). The lines go to the
-    /// first of them. Default names ("화자 3") are never the same person;
-    /// with `people_only`, neither are roles ("고객", "남편"), which two
-    /// people can share: only the user merges those, by naming them so.
-    /// Returns the pairs (merged, into).
-    pub fn merge_same_names(&mut self, people_only: bool) -> Vec<(u32, u32)> {
-        const ROLES: [&str; 12] = [
-            "고객",
-            "손님",
-            "남편",
-            "아내",
-            "부인",
-            "사모님",
-            "사장님",
-            "직원",
-            "담당",
-            "상담",
-            "우리",
-            "저희",
-        ];
-        let mut merged: Vec<(u32, u32)> = Vec::new();
-        let mut kept: Vec<Speaker> = Vec::new();
-        for speaker in std::mem::take(&mut self.speakers) {
-            let default = speaker.name.trim().is_empty()
-                || speaker.name == Self::default_speaker_name(speaker.id)
-                || speaker.name.starts_with("화자")
-                || (people_only && ROLES.iter().any(|role| speaker.name.contains(role)));
-            match kept
-                .iter()
-                .find(|other| !default && other.name == speaker.name)
-            {
-                Some(other) => merged.push((speaker.id, other.id)),
-                None => kept.push(speaker),
-            }
+    /// Puts `speaker`'s lines with the other speaker who has its name, when
+    /// that name is a person's: the user named them the same, so they are
+    /// one person the speaker model heard as two. Only the speaker just
+    /// named moves; nothing is merged on the machine's word. Returns the
+    /// speaker the lines went to.
+    fn join_named(&mut self, speaker: u32) -> Option<u32> {
+        let name = self.speakers.iter().find(|s| s.id == speaker)?.name.clone();
+        if shared_name(&name) {
+            return None;
         }
-        self.speakers = kept;
+        let into = self
+            .speakers
+            .iter()
+            .find(|s| s.id != speaker && s.name == name)?
+            .id;
         for segment in &mut self.segments {
-            if let Some((_, into)) = merged.iter().find(|(from, _)| *from == segment.speaker) {
-                segment.speaker = *into;
+            if segment.speaker == speaker {
+                segment.speaker = into;
             }
         }
-        merged
+        self.speakers.retain(|s| s.id != speaker);
+        Some(into)
     }
 }
 
@@ -522,18 +522,12 @@ mod tests {
         assert_eq!(speakers_of(&heard), [1, 2, 1, 1]);
         assert_eq!(heard.speakers.len(), 2);
 
-        // Two that only have default names stay apart.
-        let mut plain = spoken(&lines);
-        plain.speakers[1].name = "화자 1".into();
-        assert!(plain.merge_same_names(true).is_empty());
-        assert_eq!(plain.speakers.len(), 2);
-
-        // Two given the same role by the minutes may be two people.
+        // Two given the same role stay two people.
         let mut couple = spoken(&lines);
-        couple.speakers[0].name = "고객".into();
-        couple.speakers[1].name = "고객".into();
-        assert!(couple.merge_same_names(true).is_empty());
-        assert_eq!(couple.merge_same_names(false), [(2, 1)]);
+        couple.name_speaker(1, "고객", NameScope::All, 0, 0);
+        couple.name_speaker(2, "고객", NameScope::All, 0, 0);
+        assert_eq!(speakers_of(&couple), [1, 2, 3, 1]);
+        assert_eq!(couple.speakers.len(), 2);
     }
 
     fn segment(start_ms: u64, end_ms: u64, speaker: u32, text: &str) -> Segment {

@@ -144,6 +144,10 @@ export function shareBar(
 /** At most this share of the turns two speakers take may follow each other
  *  for them to look like one person heard as two. */
 const SAME_PERSON_MEETS = 0.1;
+/** Names two people can share, which pressing "합치기" would not join (the
+ *  same list as `shared_name` in src-tauri/src/seogi/transcript.rs). */
+const ROLE = /고객|손님|남편|아내|부인|사모님|사장님|직원|담당|상담|우리|저희/;
+
 /** Each must take at least this many turns for the pattern to mean much. */
 const SAME_PERSON_TURNS = 3;
 
@@ -184,7 +188,9 @@ export function maybeSamePerson(
   if (count(id) < SAME_PERSON_TURNS) return null;
   let best: { id: number; ratio: number } | null = null;
   for (const other of speakers) {
-    if (other.id === id || unnamed(other.name)) continue;
+    if (other.id === id || unnamed(other.name) || ROLE.test(other.name)) {
+      continue;
+    }
     if (count(other.id) < SAME_PERSON_TURNS) continue;
     if (withOthers(id, other.id) < 2 || withOthers(other.id, id) < 2) continue;
     const ratio = meets(id, other.id) / Math.min(count(id), count(other.id));
