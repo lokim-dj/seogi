@@ -1,6 +1,7 @@
 package io.github.lokimdj.seogi
 
 import io.github.lokimdj.seogi.upload.DriveApi
+import io.github.lokimdj.seogi.upload.DriveFile
 import io.github.lokimdj.seogi.upload.Http
 import io.github.lokimdj.seogi.upload.HttpResponse
 import io.github.lokimdj.seogi.upload.UploadStatus
@@ -110,5 +111,39 @@ class DriveApiTest {
         DriveApi(http).cancelSession("https://up/s1")
         assertEquals("DELETE", http.sent[0].first)
         assertEquals("https://up/s1", http.sent[0].second)
+    }
+
+    /** Looks only in the folder, by exact names, with quotes kept inside the search. */
+    @Test fun findsFilesByNameInTheFolder() {
+        val http = Fake(
+            HttpResponse(
+                200, emptyMap(),
+                """{"files":[{"id":"J1","name":"it's.json","appProperties":{"seogi_rec":"r1"},"createdTime":"2026-11-26T09:42:55.000Z"},{"id":"A1","name":"a.m4a","sha256Checksum":"ab"}]}""",
+            ),
+        )
+        val found = DriveApi(http).findByName("t", "F", listOf("it's.json", "a.m4a"))
+        assertEquals(
+            listOf(DriveFile("J1", "it's.json", null, "r1", 1_795_686_175_000), DriveFile("A1", "a.m4a", "ab", null)),
+            found,
+        )
+        val url = decoded(http.sent[0].second)
+        assertTrue(url, url.contains("'F' in parents and trashed = false and (name = 'it\\'s.json' or name = 'a.m4a')"))
+        assertTrue(url.contains("orderBy=createdTime"))
+    }
+
+    @Test fun updatingASmallFileReplacesItsContentOnly() {
+        val http = Fake(HttpResponse(200, emptyMap(), """{"id":"J1"}"""))
+        DriveApi(http).updateSmall("t", "J1", "application/json", "{}".toByteArray())
+        assertEquals("PATCH", http.sent[0].first)
+        assertTrue(http.sent[0].second, http.sent[0].second.startsWith("https://www.googleapis.com/upload/drive/v3/files/J1?uploadType=media"))
+    }
+
+    @Test fun uploadsCarryTheirRecording() {
+        val mark = "\"appProperties\":{\"seogi_rec\":\"rec-1\"}"
+        val http = Recording(HttpResponse(200, mapOf("location" to "https://up/s1"), ""), HttpResponse(200, emptyMap(), """{"id":"J1"}"""))
+        DriveApi(http).startSession("t", "F", "a.m4a", "audio/mp4", 100, "rec-1")
+        assertTrue(http.lastBody!!, http.lastBody!!.contains(mark))
+        DriveApi(http).uploadSmall("t", "F", "a.json", "application/json", "{}".toByteArray(), "rec-1")
+        assertTrue(http.lastBody!!, http.lastBody!!.contains(mark))
     }
 }

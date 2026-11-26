@@ -147,8 +147,7 @@ class Uploader(
         val r = store.get(start.id) ?: return // re-read: a new folder clears old sessions
         if (skip(r.id)) throw Skipped()
         if (r.sidecarFileId == null) {
-            val bytes = Sidecar.json(r, device, appVersion).toByteArray()
-            val fileId = io { drive.uploadSmall(token, folderId, Sidecar.fileName(r.fileName), "application/json", bytes) }
+            val fileId = sidecar(token, folderId, r)
             store.update(r.id) { it.copy(sidecarFileId = fileId, account = account) }
         }
         val size = src.size
@@ -163,7 +162,7 @@ class Uploader(
             }
         }
         if (session == null) {
-            val made = io { drive.startSession(token, folderId, r.fileName, r.mimeType, size) }
+            val made = io { drive.startSession(token, folderId, r.fileName, r.mimeType, size, r.id) }
             session = made
             store.update(r.id) { it.copy(sessionUri = made, progress = 0f) }
         }
@@ -193,6 +192,24 @@ class Uploader(
                 }
             }
         }
+    }
+
+    /**
+     * Puts the sidecar JSON in the folder and returns its file id. A sidecar
+     * an earlier try already made (its answer lost to a cut connection, a
+     * stopped run, or a list that forgot the id) is updated and reused, never
+     * made a second time; any further copies of it go to the Drive trash.
+     */
+    private suspend fun sidecar(token: String, folderId: String, r: Recording): String {
+        val name = Sidecar.fileName(r.fileName)
+        val bytes = Sidecar.json(r, device, appVersion).toByteArray()
+        val mine = io { drive.findByName(token, folderId, listOf(name)) }
+            .filter { it.name == name && it.isOf(r) }
+        val keep = mine.firstOrNull()
+            ?: return io { drive.uploadSmall(token, folderId, name, JSON_MIME, bytes, r.id) }
+        io { drive.updateSmall(token, keep.id, JSON_MIME, bytes) }
+        mine.drop(1).forEach { extra -> io { drive.trash(token, extra.id) } }
+        return keep.id
     }
 
     private suspend fun backToWaiting(id: String) = withContext(NonCancellable) {
@@ -244,5 +261,6 @@ class Uploader(
     companion object {
         /** A multiple of 256 KiB, as Drive asks for every piece but the last. */
         const val CHUNK = 8 * 1024 * 1024
+        private const val JSON_MIME = "application/json"
     }
 }

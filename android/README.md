@@ -63,5 +63,10 @@ secret is in the app.
 - With "드라이브에 올린 것도 휴지통으로" (on by default) the recording and its
   JSON go to the Drive trash with `files.update trashed=true`, never a permanent
   delete. An upload still under way is stopped, and either trashed (if it had
-  just finished) or given up. A file uploaded with another account is left
-  alone and the user is told.
+  just finished) or given up. Every file in the folder that belongs to the
+  recording goes, found by name and by the recording id each upload carries
+  (`appProperties seogi_rec`), so a copy the list lost track of is not left
+  behind. A file uploaded with another account is left alone and the user is
+  told.
+- A sidecar JSON is made once: a retry first looks for the one an earlier try
+  made (its answer lost, or the list forgot its id) and updates it.

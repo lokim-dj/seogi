@@ -1,5 +1,6 @@
 package io.github.lokimdj.seogi.upload
 
+import io.github.lokimdj.seogi.data.Recording
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -10,6 +11,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.net.URLEncoder
+import java.time.Instant
 
 /** A status Drive answered with that is not what the call expects. */
 class DriveHttpException(val code: Int, message: String) : Exception("Drive $code: $message")
@@ -23,15 +25,50 @@ sealed interface UploadStatus {
     data object Expired : UploadStatus
 }
 
+/**
+ * A file the app made in the recordings folder, as a lookup by name finds it.
+ * [recordingId] is the recording it was uploaded for (`appProperties
+ * seogi_rec`), null on files uploaded before that was written.
+ */
+data class DriveFile(
+    val id: String,
+    val name: String,
+    val sha256: String? = null,
+    val recordingId: String? = null,
+    /** When Drive made it, in milliseconds since 1970. */
+    val createdMs: Long? = null,
+) {
+    /**
+     * Whether this file is [r]'s: it carries [r]'s id, or (made before files
+     * carried one) it has [r]'s name and was made after [r] ended, so an
+     * older recording that had the same name is not taken for it.
+     */
+    fun isOf(r: Recording): Boolean {
+        if (recordingId != null) return recordingId == r.id
+        val ended = r.startedAt + r.durationMs - CLOCK_SLACK_MS
+        return createdMs != null && createdMs >= ended
+    }
+
+    companion object {
+        /** The phone's clock may be a little ahead of Drive's. */
+        const val CLOCK_SLACK_MS = 5_000L
+    }
+}
+
 /** The Drive calls the uploader makes, with the `drive.file` scope only. */
 interface Drive {
     /** The app-made `서기 폰 녹음` folder; made when there is none. */
     fun ensureFolder(token: String): String
     /** The saved folder still exists, is a marked folder, and is not in the trash. */
     fun folderUsable(token: String, folderId: String): Boolean
-    fun uploadSmall(token: String, folderId: String, name: String, mime: String, bytes: ByteArray): String
+    /** Uploads a small file; [recordingId] is written on it, so it can be found again. */
+    fun uploadSmall(token: String, folderId: String, name: String, mime: String, bytes: ByteArray, recordingId: String? = null): String
+    /** Replaces the content of a small file the app made. */
+    fun updateSmall(token: String, fileId: String, mime: String, bytes: ByteArray)
+    /** The app's files in [folderId] called one of [names], not in the trash, oldest first. */
+    fun findByName(token: String, folderId: String, names: List<String>): List<DriveFile>
     /** Opens a resumable upload; returns the session address. */
-    fun startSession(token: String, folderId: String, name: String, mime: String, size: Long): String
+    fun startSession(token: String, folderId: String, name: String, mime: String, size: Long, recordingId: String? = null): String
     fun status(token: String, session: String, size: Long): UploadStatus
     fun putChunk(token: String, session: String, bytes: ByteArray, from: Long, size: Long): UploadStatus
     fun email(token: String): String?
@@ -81,9 +118,9 @@ class DriveApi(private val http: Http = OkHttpHttp) : Drive {
         return isFolder && !trashed && marked
     }
 
-    override fun uploadSmall(token: String, folderId: String, name: String, mime: String, bytes: ByteArray): String {
+    override fun uploadSmall(token: String, folderId: String, name: String, mime: String, bytes: ByteArray, recordingId: String?): String {
         val boundary = "seogi-" + System.nanoTime()
-        val meta = metadata(name, folderId)
+        val meta = metadata(name, folderId, recordingId)
         val head = "--$boundary\r\nContent-Type: $JSON_UTF8\r\n\r\n$meta\r\n--$boundary\r\nContent-Type: $mime\r\n\r\n"
         val body = head.toByteArray() + bytes + "\r\n--$boundary--\r\n".toByteArray()
         val r = call(
@@ -93,7 +130,33 @@ class DriveApi(private val http: Http = OkHttpHttp) : Drive {
         return idOf(r.body)
     }
 
-    override fun startSession(token: String, folderId: String, name: String, mime: String, size: Long): String {
+    override fun updateSmall(token: String, fileId: String, mime: String, bytes: ByteArray) {
+        call("PATCH", "$UPLOAD/files/${enc(fileId)}?uploadType=media&fields=id", token, mapOf("Content-Type" to mime), bytes)
+    }
+
+    override fun findByName(token: String, folderId: String, names: List<String>): List<DriveFile> {
+        if (names.isEmpty()) return emptyList()
+        val q = "'${quote(folderId)}' in parents and trashed = false and (" +
+            names.joinToString(" or ") { "name = '${quote(it)}'" } + ")"
+        val r = call(
+            "GET",
+            "$API/files?spaces=drive&orderBy=createdTime&pageSize=100&fields=files(id,name,sha256Checksum,appProperties,createdTime)&q=${enc(q)}",
+            token,
+        )
+        val files = json.parseToJsonElement(r.body).jsonObject["files"]?.jsonArray ?: return emptyList()
+        return files.map { f ->
+            val o = f.jsonObject
+            DriveFile(
+                id = o["id"]!!.jsonPrimitive.content,
+                name = o["name"]?.jsonPrimitive?.content.orEmpty(),
+                sha256 = o["sha256Checksum"]?.jsonPrimitive?.content,
+                recordingId = (o["appProperties"] as? JsonObject)?.get(REC_KEY)?.jsonPrimitive?.content,
+                createdMs = o["createdTime"]?.jsonPrimitive?.content?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() },
+            )
+        }
+    }
+
+    override fun startSession(token: String, folderId: String, name: String, mime: String, size: Long, recordingId: String?): String {
         val r = call(
             "POST", "$UPLOAD/files?uploadType=resumable&fields=id", token,
             mapOf(
@@ -101,7 +164,7 @@ class DriveApi(private val http: Http = OkHttpHttp) : Drive {
                 "X-Upload-Content-Type" to mime,
                 "X-Upload-Content-Length" to size.toString(),
             ),
-            metadata(name, folderId).toByteArray(),
+            metadata(name, folderId, recordingId).toByteArray(),
         )
         return r.headers["location"] ?: throw DriveHttpException(r.code, "no upload address")
     }
@@ -151,9 +214,10 @@ class DriveApi(private val http: Http = OkHttpHttp) : Drive {
 
     private fun auth(token: String) = mapOf("Authorization" to "Bearer $token")
 
-    private fun metadata(name: String, folderId: String) = buildJsonObject {
+    private fun metadata(name: String, folderId: String, recordingId: String?) = buildJsonObject {
         put("name", name)
         put("parents", JsonArray(listOf(JsonPrimitive(folderId))))
+        if (recordingId != null) put("appProperties", buildJsonObject { put(REC_KEY, recordingId) })
     }.toString()
 
     private fun idOf(body: String) = json.parseToJsonElement(body).jsonObject["id"]!!.jsonPrimitive.content
@@ -164,12 +228,17 @@ class DriveApi(private val http: Http = OkHttpHttp) : Drive {
         /** The marker every Seogi app looks for (Android, and the Mac and Windows app). */
         const val MARK_KEY = "seogi"
         const val MARK_VALUE = "recordings-root"
+        /** On each uploaded file: the recording it belongs to. */
+        const val REC_KEY = "seogi_rec"
         const val SCOPE = "https://www.googleapis.com/auth/drive.file"
         private const val API = "https://www.googleapis.com/drive/v3"
         private const val UPLOAD = "https://www.googleapis.com/upload/drive/v3"
         private const val JSON_UTF8 = "application/json; charset=UTF-8"
 
         private fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+
+        /** A value inside single quotes in a Drive search. */
+        internal fun quote(s: String) = s.replace("\\", "\\\\").replace("'", "\\'")
 
         /** `bytes=0-1023` → 1024; no header → 0. */
         fun nextFromRange(range: String?): Long =
