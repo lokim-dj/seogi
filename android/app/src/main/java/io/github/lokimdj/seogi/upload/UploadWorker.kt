@@ -37,6 +37,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             },
             device = "${Build.MANUFACTURER} ${Build.MODEL}",
             appVersion = BuildConfig.VERSION_NAME,
+            skip = { it in app.pendingDeletes.value },
         )
         val outcome = uploader.runAll()
         if (app.store.all.value.count { it.error == UploadError.MISSING_ON_PHONE } > before) {

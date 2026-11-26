@@ -1,16 +1,22 @@
 package io.github.lokimdj.seogi
 
 import android.app.Application
+import android.net.Uri
 import io.github.lokimdj.seogi.data.RecordingStore
 import io.github.lokimdj.seogi.data.Settings
 import io.github.lokimdj.seogi.record.Finalizer
 import io.github.lokimdj.seogi.record.Notifications
 import io.github.lokimdj.seogi.record.RecorderService
 import io.github.lokimdj.seogi.record.SessionDir
+import io.github.lokimdj.seogi.upload.Deleter
+import io.github.lokimdj.seogi.upload.DriveApi
+import io.github.lokimdj.seogi.upload.GoogleAuth
+import io.github.lokimdj.seogi.upload.TokenResult
 import io.github.lokimdj.seogi.upload.UploadQueue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -23,6 +29,9 @@ class SeogiApp : Application() {
     lateinit var settings: Settings
         private set
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** Recordings in their few seconds of "되돌리기": hidden, and not uploaded. */
+    val pendingDeletes = MutableStateFlow<Set<String>>(emptySet())
     private val saving = Mutex()
 
     override fun onCreate() {
@@ -70,6 +79,24 @@ class SeogiApp : Application() {
             android.util.Log.w("Seogi", "saving $id failed; kept for the next start", e)
         }
     }
+
+    /** Deletes a recording the user confirmed: Drive trash (optional), phone file, list line. */
+    fun deleter() = Deleter(
+        store = store,
+        drive = DriveApi(),
+        tokens = { settings.email.value?.let { GoogleAuth.token(this, it.ifEmpty { null }) } ?: TokenResult.NeedLogin },
+        deleteOnPhone = { r ->
+            val uri = r.mediaUri?.let(Uri::parse)
+            when {
+                uri == null -> Deleter.PhoneResult.ALREADY_GONE
+                else -> try {
+                    if (contentResolver.delete(uri, null, null) > 0) Deleter.PhoneResult.DELETED else Deleter.PhoneResult.ALREADY_GONE
+                } catch (e: SecurityException) {
+                    Deleter.PhoneResult.FAILED
+                }
+            }
+        },
+    )
 
     /** Finishes recordings a crash left behind. Safe to call any time. */
     fun recoverLeftovers() {

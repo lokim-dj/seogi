@@ -33,6 +33,16 @@ class RecordingStoreTest {
         assertEquals(UploadState.UPLOADED, b.get("a")!!.upload)
     }
 
+    @Test fun removeTakesTheLineOffForGood() = runTest {
+        val f = File(tmp.root, "r.json")
+        RecordingStore(f).apply {
+            upsert(recording("a", 1))
+            upsert(recording("b", 2))
+            remove("a")
+        }
+        assertEquals(listOf("b"), RecordingStore(f).all.value.map { it.id })
+    }
+
     @Test fun brokenFileIsMovedAsideNotLost() {
         val f = File(tmp.root, "r.json").apply { writeText("{not json") }
         val s = RecordingStore(f)

@@ -82,6 +82,22 @@
     <string name="stop_long_press">길게 누르기</string>
     <string name="saving">저장하는 중</string>
 
+    <!-- discard and delete -->
+    <string name="discard">버리기</string>
+    <string name="discard_title">이 녹음을 버릴까요?</string>
+    <string name="discard_body">저장하지 않고 끝냅니다. 되돌릴 수 없어요.</string>
+    <string name="keep_recording">계속 녹음</string>
+    <string name="delete_title">이 녹음을 지울까요?</string>
+    <string name="delete_body">폰에서 지워집니다.</string>
+    <string name="delete_trash_drive">드라이브에 올린 것도 휴지통으로</string>
+    <string name="delete_confirm">지우기</string>
+    <string name="cancel">취소</string>
+    <string name="deleted">녹음을 지웠어요</string>
+    <string name="undo">되돌리기</string>
+    <string name="delete_hint">줄을 길게 누르면 지울 수 있어요</string>
+    <string name="delete_phone_failed">폰 파일을 지우지 못했어요. 내 파일 › Recordings › 서기 에서 지워 주세요.</string>
+    <string name="delete_drive_failed">드라이브 휴지통으로 보내지 못했어요. 드라이브에서 직접 지워 주세요.</string>
+
     <!-- uploads -->
     <string name="uploads">올리기</string>
     <string name="upload_dest">올리는 곳</string>

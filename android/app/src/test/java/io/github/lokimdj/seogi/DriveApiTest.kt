@@ -93,4 +93,15 @@ class DriveApiTest {
         assertEquals(false, d.folderUsable("t", "F")) // same name, no marker
         assertTrue(http.sent[0].second.contains("trashed"))
     }
+
+    /** Delete sends the file to the Drive trash (PATCH trashed=true), never a permanent delete. */
+    @Test fun trashIsAPatchNotADelete() {
+        val http = Fake(HttpResponse(200, emptyMap(), """{"id":"A"}"""), HttpResponse(404, emptyMap(), ""))
+        val d = DriveApi(http)
+        d.trash("t", "A")
+        d.trash("t", "GONE") // already gone: fine
+        assertEquals("POST", http.sent[0].first)
+        assertEquals("PATCH", http.sent[0].third["X-HTTP-Method-Override"])
+        assertTrue(http.sent.none { it.first == "DELETE" })
+    }
 }

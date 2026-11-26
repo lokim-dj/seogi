@@ -68,6 +68,7 @@ class RecorderService : LifecycleService() {
             ACTION_START -> if (_state.value == RecState.Idle) begin() else if (_state.value is RecState.Recording) showNotification()
             ACTION_MARK -> mark()
             ACTION_STOP -> finish()
+            ACTION_DISCARD -> discard()
         }
         // A mark or stop that arrives with nothing running (an old notification).
         if (_state.value == RecState.Idle) stopSelf()
@@ -167,6 +168,21 @@ class RecorderService : LifecycleService() {
         }
     }
 
+    /** "버리기": stop without saving; the stream and its notes are removed. */
+    private fun discard() {
+        val s = _state.value as? RecState.Recording ?: return
+        ticker?.cancel()
+        try { recorder?.stop() } catch (e: Exception) {}
+        recorder?.release()
+        recorder = null
+        wakeLock?.takeIf { it.isHeld }?.release()
+        sessions.clear(s.id)
+        activeId = null
+        _state.value = RecState.Idle
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
     private fun fail(message: Int) {
         activeId = null
         _state.value = RecState.Idle
@@ -232,6 +248,7 @@ class RecorderService : LifecycleService() {
         const val ACTION_START = "io.github.lokimdj.seogi.START"
         const val ACTION_MARK = "io.github.lokimdj.seogi.MARK"
         const val ACTION_STOP = "io.github.lokimdj.seogi.STOP"
+        const val ACTION_DISCARD = "io.github.lokimdj.seogi.DISCARD"
         /** AAC-LC mono for speech: 48 kHz, 64 kbps (about 29 MB an hour). */
         const val SAMPLE_RATE = 48_000
         const val BIT_RATE = 64_000
@@ -260,6 +277,8 @@ class RecorderService : LifecycleService() {
         )
 
         fun mark(context: Context) = context.startService(Intent(context, RecorderService::class.java).setAction(ACTION_MARK))
+
+        fun discard(context: Context) = context.startService(Intent(context, RecorderService::class.java).setAction(ACTION_DISCARD))
 
         fun stop(context: Context) = context.startService(Intent(context, RecorderService::class.java).setAction(ACTION_STOP))
     }

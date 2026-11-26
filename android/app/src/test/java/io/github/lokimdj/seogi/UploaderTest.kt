@@ -64,6 +64,7 @@ class UploaderTest {
             return if (out.size().toLong() == size) UploadStatus.Complete("A-$session") else UploadStatus.Incomplete(out.size().toLong())
         }
         override fun email(token: String) = null
+        override fun trash(token: String, fileId: String) {}
     }
 
     private class Bytes(val data: ByteArray) : AudioSource {
@@ -86,12 +87,13 @@ class UploaderTest {
         token: TokenResult = TokenResult.Ok("t"),
         missing: Set<String> = emptySet(),
         folder: Uploader.FolderCache = Folder(),
+        skip: Set<String> = emptySet(),
     ) =
         Uploader(
             store = store, drive = drive, tokens = { token },
             open = { r: Recording -> if (r.id in missing) null else Bytes(audio) },
             folder = folder,
-            device = "Phone X", appVersion = "0.1.0", chunkSize = 1024,
+            device = "Phone X", appVersion = "0.1.0", chunkSize = 1024, skip = { it in skip },
         )
 
     private fun store() = RecordingStore(File(tmp.root, "r.json"))
@@ -244,5 +246,17 @@ class UploaderTest {
         assertEquals(0, d.folderCalls)
         assertEquals(1, d.usableChecks)
         assertEquals(List(4) { "KEEP" }, d.parents)
+    }
+
+    /** A recording in its "되돌리기" seconds is not uploaded. */
+    @Test fun recordingsBeingDeletedAreSkipped() = runTest {
+        val s = store().apply {
+            upsert(recording("gone", startedAt = 1))
+            upsert(recording("keep", startedAt = 2))
+        }
+        val d = FakeDrive()
+        uploader(s, d, skip = setOf("gone")).runAll()
+        assertEquals(listOf("keep.json"), d.small)
+        assertEquals(UploadState.WAITING, s.get("gone")!!.upload)
     }
 }

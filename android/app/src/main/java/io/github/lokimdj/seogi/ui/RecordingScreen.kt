@@ -30,6 +30,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,7 +55,21 @@ import kotlinx.coroutines.delay
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun RecordingScreen(rec: RecState, onBack: () -> Unit, onMark: () -> Unit, onStop: () -> Unit) {
+fun RecordingScreen(rec: RecState, onBack: () -> Unit, onMark: () -> Unit, onStop: () -> Unit, onDiscard: () -> Unit = {}) {
+    var askDiscard by remember { mutableStateOf(false) }
+    if (askDiscard) {
+        ConfirmDialog(
+            title = stringResource(R.string.discard_title),
+            body = stringResource(R.string.discard_body),
+            confirm = stringResource(R.string.discard),
+            cancel = stringResource(R.string.keep_recording),
+            onConfirm = {
+                askDiscard = false
+                onDiscard()
+            },
+            onDismiss = { askDiscard = false },
+        )
+    }
     val r = rec as? RecState.Recording
     var elapsed by remember { mutableLongStateOf(0L) }
     val levels = remember { mutableStateListOf<Float>().apply { repeat(BARS) { add(0f) } } }
@@ -136,7 +151,7 @@ fun RecordingScreen(rec: RecState, onBack: () -> Unit, onMark: () -> Unit, onSto
             // so the keys never fall off the screen.
             Column(Modifier.fillMaxSize()) {
                 Spacer(Modifier.height(10.dp))
-                BackBar(null, onBack)
+                BackBar(null, onBack, stringResource(R.string.discard)) { askDiscard = true }
                 Row(Modifier.weight(1f)) {
                     Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) { head() }
                     Spacer(Modifier.width(40.dp))
@@ -150,7 +165,7 @@ fun RecordingScreen(rec: RecState, onBack: () -> Unit, onMark: () -> Unit, onSto
         } else {
             Column(Modifier.fillMaxSize()) {
                 Spacer(Modifier.height(10.dp))
-                BackBar(null, onBack)
+                BackBar(null, onBack, stringResource(R.string.discard)) { askDiscard = true }
                 head()
                 Spacer(Modifier.height(30.dp))
                 marks(Modifier.weight(1f).heightIn(min = 60.dp))

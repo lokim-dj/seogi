@@ -31,6 +31,12 @@ class RecordingStore(private val file: File) {
         save((rest + recording).sortedByDescending { it.startedAt })
     }
 
+    /** Takes a recording off the list (after its file was deleted). */
+    suspend fun remove(id: String) = lock.withLock {
+        if (state.value.none { it.id == id }) return@withLock
+        save(state.value.filterNot { it.id == id })
+    }
+
     /** Changes one recording; does nothing when it is gone. */
     suspend fun update(id: String, change: (Recording) -> Recording) = lock.withLock {
         if (state.value.none { it.id == id }) return@withLock

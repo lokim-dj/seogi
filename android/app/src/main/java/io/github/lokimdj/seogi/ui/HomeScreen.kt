@@ -56,6 +56,7 @@ fun HomeScreen(
     onUploads: () -> Unit,
     onRetry: (Recording) -> Unit,
     onLogin: () -> Unit,
+    onDelete: (Recording) -> Unit = {},
 ) {
     val zone = ZoneId.systemDefault()
     val eventLine: @Composable () -> Unit = {
@@ -108,6 +109,8 @@ fun HomeScreen(
                 ListLine(
                     r.title, l.state, l.sub, l.color, l.medium, l.progress,
                     onClick = if (r.upload == UploadState.FAILED) ({ onRetry(r) }) else onUploads,
+                    onLongClick = { onDelete(r) },
+                    longClickLabel = stringResource(R.string.delete_confirm),
                 )
                 Hairline()
             }

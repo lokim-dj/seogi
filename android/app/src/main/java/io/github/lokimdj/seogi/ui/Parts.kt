@@ -6,9 +6,17 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraintsScope
@@ -71,7 +79,7 @@ fun BrandBar(right: @Composable () -> Unit = {}) {
 
 /** The top bar of the inner screens: "← 홈" and a quiet name on the right. */
 @Composable
-fun BackBar(title: String?, onBack: () -> Unit) {
+fun BackBar(title: String?, onBack: () -> Unit, action: String? = null, onAction: () -> Unit = {}) {
     Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
         Row(
             Modifier.clickable(role = Role.Button, onClick = onBack).padding(vertical = 8.dp),
@@ -83,6 +91,12 @@ fun BackBar(title: String?, onBack: () -> Unit) {
         }
         Spacer(Modifier.weight(1f))
         if (title != null) T(title, size = 12.5.sp, color = pal.t3, medium = true)
+        if (action != null) {
+            T(
+                action, size = 13.5.sp, color = pal.t3, medium = true,
+                modifier = Modifier.clickable(role = Role.Button, onClick = onAction).padding(vertical = 10.dp, horizontal = 4.dp),
+            )
+        }
     }
 }
 
@@ -114,6 +128,7 @@ fun Label(text: String, link: String? = null, onLink: () -> Unit = {}) {
  * One line of a list: a name, a state on the right, a quiet line under it and
  * an optional thin progress line, between hairlines.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ListLine(
     name: String,
@@ -123,10 +138,18 @@ fun ListLine(
     stateMedium: Boolean = false,
     progress: Float? = null,
     onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
+    longClickLabel: String? = null,
 ) {
     Column(
         Modifier.fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(
+                if (onClick != null || onLongClick != null) {
+                    Modifier.combinedClickable(onClick = onClick ?: {}, onLongClick = onLongClick, onLongClickLabel = longClickLabel)
+                } else {
+                    Modifier
+                },
+            )
             .padding(vertical = 11.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -183,5 +206,72 @@ fun StepLine(name: String, action: String, why: String, done: Boolean, onClick: 
         if (why.isNotEmpty()) {
             T(why, size = 12.5.sp, color = pal.t3, medium = true, modifier = Modifier.padding(top = 3.dp, end = 40.dp))
         }
+    }
+}
+
+/**
+ * A quiet in-app question: a title, a line, an optional check, and two text
+ * keys. Used before anything that cannot be undone later.
+ */
+@Composable
+fun ConfirmDialog(
+    title: String,
+    body: String,
+    confirm: String,
+    cancel: String,
+    onConfirm: (Boolean) -> Unit,
+    onDismiss: () -> Unit,
+    check: String? = null,
+    checkedAtFirst: Boolean = true,
+) {
+    var checked by remember { mutableStateOf(checkedAtFirst) }
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(pal.s1)
+                .padding(start = 22.dp, end = 22.dp, top = 20.dp, bottom = 8.dp),
+        ) {
+            T(title, size = 16.sp)
+            T(body, size = 13.sp, color = pal.t2, medium = true, modifier = Modifier.padding(top = 6.dp))
+            if (check != null) {
+                Row(
+                    Modifier.padding(top = 16.dp).clickable(role = Role.Checkbox) { checked = !checked },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        Modifier.size(18.dp).clip(RoundedCornerShape(4.dp))
+                            .border(1.5.dp, pal.t1, RoundedCornerShape(4.dp))
+                            .background(if (checked) pal.t1 else Color.Transparent),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    T(check, size = 13.sp)
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.End) {
+                T(
+                    cancel, size = 14.sp, color = pal.t3, medium = true,
+                    modifier = Modifier.clickable(role = Role.Button, onClick = onDismiss).padding(12.dp),
+                )
+                T(
+                    confirm, size = 14.sp, color = pal.rt,
+                    modifier = Modifier.clickable(role = Role.Button) { onConfirm(checked) }.padding(12.dp),
+                )
+            }
+        }
+    }
+}
+
+/** The bar at the bottom after a delete: what happened, and "되돌리기" for a few seconds. */
+@Composable
+fun UndoBar(text: String, action: String, onAction: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)
+            .clip(RoundedCornerShape(14.dp)).background(pal.s2).padding(start = 18.dp, end = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        T(text, size = 14.sp, modifier = Modifier.weight(1f).padding(vertical = 14.dp))
+        T(
+            action, size = 14.sp, color = pal.rt,
+            modifier = Modifier.clickable(role = Role.Button, onClick = onAction).padding(12.dp),
+        )
     }
 }

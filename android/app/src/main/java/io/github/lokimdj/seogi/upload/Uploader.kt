@@ -44,6 +44,8 @@ class Uploader(
     private val device: String,
     private val appVersion: String,
     private val chunkSize: Int = CHUNK,
+    /** Recordings the user is deleting right now (the few seconds of "되돌리기"). */
+    private val skip: (String) -> Boolean = { false },
 ) {
     /** Remembers the Drive folder between runs. */
     interface FolderCache {
@@ -63,7 +65,7 @@ class Uploader(
         while (true) {
             currentCoroutineContext().ensureActive()
             val next = store.all.value
-                .filter { it.needsUpload && it.id !in tried }
+                .filter { it.needsUpload && it.id !in tried && !skip(it.id) }
                 .minByOrNull { it.startedAt } ?: break
             tried += next.id
             when (uploadOne(next)) {

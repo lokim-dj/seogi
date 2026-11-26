@@ -32,9 +32,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.lifecycleScope
+import androidx.work.WorkManager
 import com.google.android.gms.auth.api.identity.AuthorizationResult
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.CommonStatusCodes
@@ -46,7 +48,9 @@ import io.github.lokimdj.seogi.record.CalendarPick
 import io.github.lokimdj.seogi.record.CalendarReader
 import io.github.lokimdj.seogi.record.RecState
 import io.github.lokimdj.seogi.record.RecorderService
+import io.github.lokimdj.seogi.ui.ConfirmDialog
 import io.github.lokimdj.seogi.ui.DictationScreen
+import io.github.lokimdj.seogi.ui.UndoBar
 import io.github.lokimdj.seogi.ui.HomeScreen
 import io.github.lokimdj.seogi.ui.OnboardingScreen
 import io.github.lokimdj.seogi.ui.Perms
@@ -56,6 +60,7 @@ import io.github.lokimdj.seogi.ui.SeogiTheme
 import io.github.lokimdj.seogi.ui.SettingsScreen
 import io.github.lokimdj.seogi.ui.UploadsScreen
 import io.github.lokimdj.seogi.ui.pal
+import io.github.lokimdj.seogi.upload.Deleter
 import io.github.lokimdj.seogi.upload.DriveApi
 import io.github.lokimdj.seogi.upload.GoogleAuth
 import io.github.lokimdj.seogi.upload.UploadQueue
@@ -68,6 +73,11 @@ private enum class Screen { ONBOARDING, HOME, RECORDING, UPLOADS, SETTINGS, DICT
 class MainActivity : ComponentActivity() {
     private val app get() = application as SeogiApp
     private var pickedEmail: String? = null
+
+    /** A delete the user confirmed, waiting out its few seconds of "되돌리기". */
+    private data class PendingDelete(val recording: Recording, val trashInDrive: Boolean)
+    private var pendingDelete by mutableStateOf<PendingDelete?>(null)
+    private var deleteTarget by mutableStateOf<Recording?>(null)
 
     /** Why the last sign-in did not work, shown in red until the next try. */
     private var loginMessage by mutableStateOf<String?>(null)
@@ -178,6 +188,44 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Confirmed: hide it and keep it from uploading; the real delete waits for the undo window. */
+    private fun startDelete(r: Recording, trashInDrive: Boolean) {
+        pendingDelete?.let { commitDelete(it) }
+        app.pendingDeletes.value = app.pendingDeletes.value + r.id
+        if (app.store.get(r.id)?.upload == UploadState.UPLOADING) {
+            // Stop the upload under way; the queue comes back after the delete or the undo.
+            WorkManager.getInstance(this).cancelUniqueWork(UploadQueue.NAME)
+        }
+        pendingDelete = PendingDelete(r, trashInDrive)
+    }
+
+    private fun undoDelete() {
+        val p = pendingDelete ?: return
+        pendingDelete = null
+        app.pendingDeletes.value = app.pendingDeletes.value - p.recording.id
+        UploadQueue.enqueue(this, UploadQueue.Mode.APPEND)
+    }
+
+    private fun commitDelete(p: PendingDelete) {
+        if (pendingDelete == p) pendingDelete = null
+        val app = app
+        app.scope.launch {
+            val current = app.store.get(p.recording.id) ?: p.recording
+            val result = try {
+                app.deleter().delete(current, p.trashInDrive)
+            } finally {
+                app.pendingDeletes.value = app.pendingDeletes.value - p.recording.id
+                UploadQueue.enqueue(app, UploadQueue.Mode.APPEND)
+            }
+            val problem = when {
+                !result.phoneDeleted -> R.string.delete_phone_failed
+                result.drive == Deleter.DriveResult.FAILED -> R.string.delete_drive_failed
+                else -> null
+            }
+            if (problem != null) withContext(Dispatchers.Main) { Toast.makeText(app, problem, Toast.LENGTH_LONG).show() }
+        }
+    }
+
     private fun retry(r: Recording) {
         lifecycleScope.launch {
             if (r.error == UploadError.NEED_LOGIN || app.settings.email.value == null) {
@@ -220,7 +268,9 @@ class MainActivity : ComponentActivity() {
         var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
         var events by remember { mutableStateOf(emptyList<CalendarEvent>()) }
         val rec by RecorderService.state.collectAsState()
-        val recordings by app.store.all.collectAsState()
+        val all by app.store.all.collectAsState()
+        val hidden by app.pendingDeletes.collectAsState()
+        val recordings = all.filter { it.id !in hidden }
         val account by settings.email.collectAsState()
         val wifiOnly by settings.wifiOnly.collectAsState()
         val error by RecorderService.error.collectAsState()
@@ -231,6 +281,15 @@ class MainActivity : ComponentActivity() {
             lifecycleScope.launch { events = withContext(Dispatchers.IO) { CalendarReader.today(this@MainActivity) } }
         }
         LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh() }
+        // Leaving the app ends the undo window: the delete happens now.
+        LifecycleEventEffect(Lifecycle.Event.ON_STOP) { pendingDelete?.let { commitDelete(it) } }
+        val pending = pendingDelete
+        LaunchedEffect(pending) {
+            if (pending != null) {
+                kotlinx.coroutines.delay(UNDO_MS)
+                commitDelete(pending)
+            }
+        }
         LaunchedEffect(Unit) {
             while (true) {
                 kotlinx.coroutines.delay(30_000)
@@ -312,12 +371,14 @@ class MainActivity : ComponentActivity() {
                     onUploads = { screen = Screen.UPLOADS },
                     onRetry = ::retry,
                     onLogin = ::login,
+                    onDelete = { deleteTarget = it },
                 )
                 Screen.RECORDING -> RecordingScreen(
                     rec = rec,
                     onBack = { screen = Screen.HOME },
                     onMark = { RecorderService.mark(this@MainActivity) },
                     onStop = { RecorderService.stop(this@MainActivity) },
+                    onDiscard = { RecorderService.discard(this@MainActivity) },
                 )
                 Screen.UPLOADS -> UploadsScreen(
                     recordings = recordings,
@@ -331,6 +392,7 @@ class MainActivity : ComponentActivity() {
                     },
                     onLogin = ::login,
                     onWifiOnly = ::setWifiOnly,
+                    onDelete = { deleteTarget = it },
                 )
                 Screen.SETTINGS -> SettingsScreen(
                     account = account,
@@ -347,10 +409,33 @@ class MainActivity : ComponentActivity() {
                 Screen.DICTATION -> DictationScreen(onBack = { screen = Screen.HOME })
             }
           }
+            if (pending != null) {
+                UndoBar(
+                    stringResource(R.string.deleted), stringResource(R.string.undo), ::undoDelete,
+                    Modifier.align(Alignment.BottomCenter).widthIn(max = ReadingWidth),
+                )
+            }
+        }
+        deleteTarget?.let { r ->
+            val uploaded = r.driveFileId != null || r.sidecarFileId != null
+            ConfirmDialog(
+                title = stringResource(R.string.delete_title),
+                body = stringResource(R.string.delete_body),
+                confirm = stringResource(R.string.delete_confirm),
+                cancel = stringResource(R.string.cancel),
+                check = if (uploaded) stringResource(R.string.delete_trash_drive) else null,
+                checkedAtFirst = true,
+                onConfirm = { trash ->
+                    deleteTarget = null
+                    startDelete(r, trash && uploaded)
+                },
+                onDismiss = { deleteTarget = null },
+            )
         }
     }
 
     private companion object {
+        const val UNDO_MS = 5_000L
         const val PRIVACY_URL = "https://github.com/lokim-dj/seogi/blob/main/docs/privacy.md"
         const val FEEDBACK_URL = "https://github.com/lokim-dj/seogi/issues/new/choose"
     }

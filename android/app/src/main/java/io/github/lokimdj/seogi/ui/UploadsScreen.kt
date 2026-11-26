@@ -31,6 +31,7 @@ fun UploadsScreen(
     onOpenFolder: () -> Unit,
     onLogin: () -> Unit,
     onWifiOnly: (Boolean) -> Unit,
+    onDelete: (Recording) -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize().padding(horizontal = Gutter)) {
         Spacer(Modifier.height(10.dp))
@@ -61,6 +62,8 @@ fun UploadsScreen(
                 ListLine(
                     r.title, l.state, l.sub, l.color, l.medium, l.progress,
                     onClick = if (r.upload == UploadState.FAILED) ({ onRetry(r) }) else null,
+                    onLongClick = { onDelete(r) },
+                    longClickLabel = stringResource(R.string.delete_confirm),
                 )
             }
             if (recordings.isNotEmpty()) item { Hairline() }
@@ -71,6 +74,7 @@ fun UploadsScreen(
                 T(stringResource(if (wifiOnly) R.string.on else R.string.off), size = 14.sp, color = if (wifiOnly) pal.t1 else pal.t3, medium = !wifiOnly)
             }
             T(stringResource(R.string.originals_stay), size = 11.5.sp, color = pal.t3, medium = true)
+            T(stringResource(R.string.delete_hint), size = 11.5.sp, color = pal.t3, medium = true)
         }
     }
 }
