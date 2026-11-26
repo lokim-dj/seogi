@@ -122,6 +122,24 @@ assert.equal(verdict(ask(["지우", "지우", "하린", "지우"])).kind, "askin
   assert.equal(verdict(ask(["하린", "지우"], seven.slice(0, 2))).kind, "mixed");
 }
 
+// A line answered with the speaker's present name stays where it is (a
+// second speaker of that name is never made for it).
+{
+  const s = ["지우", "하린", "하린", "하린", "하린"].reduce(
+    (now, name) => answer(now, name),
+    startAsking(seven, "지우"),
+  );
+  assert.deepEqual(namingSteps(verdict(s)), [{ name: "하린", line: null }]);
+  const split = ["지우", "하린", "지우", "도윤", "하린"].reduce(
+    (now, name) => answer(now, name),
+    startAsking(seven, "지우"),
+  );
+  assert.deepEqual(
+    namingSteps(verdict(split)).map((step) => step.name),
+    ["하린", "도윤", "하린"],
+  );
+}
+
 // No more lines than there are; a name is tidied.
 {
   const s = ask([" 지우 ", "지우"], seven.slice(0, 2));

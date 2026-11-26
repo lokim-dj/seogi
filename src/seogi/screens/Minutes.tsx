@@ -1410,6 +1410,7 @@ function AskSpeaker({
         ),
         meeting.duration_ms,
       ),
+      isUnnamed(speaker.name) ? "" : speaker.name,
     ),
   );
   const [working, setWorking] = useState(false);

@@ -38,10 +38,12 @@ export interface Asking<T> {
   answers: Answer<T>[];
   /** "하나 더 들어 볼게요" was pressed and no line answered since. */
   more: boolean;
+  /** The speaker's present name: a line answered with it stays put. */
+  current: string;
 }
 
-export function startAsking<T>(lines: T[]): Asking<T> {
-  return { lines, answers: [], more: false };
+export function startAsking<T>(lines: T[], current = ""): Asking<T> {
+  return { lines, answers: [], more: false, current: current.trim() };
 }
 
 /** The line now asked about gets `name` (null: "모르겠어요"). */
@@ -109,7 +111,7 @@ export function verdict<T>(state: Asking<T>): Verdict<T> {
     name,
     agree,
     of: given.length,
-    move: given.filter((a) => a.name !== name),
+    move: given.filter((a) => a.name !== name && a.name !== state.current),
   });
   if (best && agree >= SAME_ENOUGH) return decide(best);
   if (given.length < ASK_LINES && left > 0) return { kind: "asking" };
@@ -117,7 +119,10 @@ export function verdict<T>(state: Asking<T>): Verdict<T> {
   if (!best) return { kind: "none" };
   // Every name given the same (a speaker with few lines): that one.
   if (agree === given.length) return decide(best);
-  return { kind: "mixed", move: given };
+  return {
+    kind: "mixed",
+    move: given.filter((a) => a.name !== state.current),
+  };
 }
 
 /** One call to name a speaker: the whole speaker (`line` null) or one line. */
