@@ -684,9 +684,11 @@ export function SummaryCardDialog({
           >
             {t("card.copy")}
           </button>
+          {/* The picture is always 4:5 and the PDF always A4: the save
+              that matches the chosen shape is the strong one. */}
           <button
             type="button"
-            className="btn"
+            className={format === "a4" ? "btn solid" : "btn"}
             disabled={busy}
             onClick={() => void save("pdf")}
           >
@@ -694,7 +696,7 @@ export function SummaryCardDialog({
           </button>
           <button
             type="button"
-            className="btn solid"
+            className={format === "kakao" ? "btn solid" : "btn"}
             autoFocus
             disabled={busy}
             onClick={() => void save("png")}

@@ -14,6 +14,7 @@ import {
 } from "tauri-plugin-macos-permissions-api";
 import { commands } from "@/bindings";
 import { NS } from "../i18n";
+import { useSeogi } from "../store";
 
 type Allowed = "checking" | "yes" | "no";
 
@@ -27,6 +28,11 @@ export default function Permissions({ firstRun }: { firstRun: boolean }) {
   const mac = os === "macos";
   const windows = os === "windows";
 
+  // Typing into other apps matters only while dictation is on; off, its
+  // missing permission is told quietly, not in red.
+  const dictating = useSeogi(
+    (state) => state.config?.dictation.enabled ?? true,
+  );
   const [microphone, setMicrophone] = useState<Allowed>("checking");
   const [micAsked, setMicAsked] = useState(false);
   const [typing, setTyping] = useState<Allowed>("checking");
@@ -125,12 +131,19 @@ export default function Permissions({ firstRun }: { firstRun: boolean }) {
     windows ? "permissions.openWindows" : "permissions.openSettings",
   );
 
-  /** The name, and whether it is needed or up to the user. */
-  const name = (label: string, needed: boolean) => (
+  /** The name, and whether it is needed, needed only for typing into
+   *  other apps (dictation), or up to the user. */
+  const name = (label: string, needed: boolean | "typing") => (
     <div className="l">
       {label}
       <span className="t3 text-[13px] ml-2">
-        {t(needed ? "permissions.needed" : "permissions.optional")}
+        {t(
+          needed === "typing"
+            ? "permissions.forTyping"
+            : needed
+              ? "permissions.needed"
+              : "permissions.optional",
+        )}
       </span>
     </div>
   );
@@ -181,11 +194,11 @@ export default function Permissions({ firstRun }: { firstRun: boolean }) {
         <>
           <div className="srow">
             <div>
-              {name(t("permissions.typing"), true)}
+              {name(t("permissions.typing"), "typing")}
               <div className="h">{t("permissions.typingFor")}</div>
             </div>
             <div className="v">
-              {state(typing, true)}
+              {state(typing, dictating)}
               {typing === "no" ? (
                 <button
                   type="button"

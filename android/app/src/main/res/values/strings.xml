@@ -42,12 +42,12 @@
     <string name="onb_notif">알림</string>
     <string name="onb_notif_why">녹음 중임을 알림 줄에 띄우고, 거기서 중요 표시 · 끝내기.</string>
     <string name="onb_cal">캘린더</string>
-    <string name="onb_optional">골라도 됨</string>
+    <string name="onb_optional">선택</string>
     <string name="onb_cal_why">지금 일정 이름을 회의 이름으로 붙입니다.</string>
     <string name="onb_drive">구글 드라이브</string>
     <string name="onb_drive_why">\'서기 폰 녹음\' 폴더를 만들어 거기에만 올립니다. 내 다른 파일은 보지 못합니다. 컴퓨터 드라이브와 같은 계정으로.</string>
     <string name="onb_dictation_later">받아쓰기(떠 있는 단추)는 처음 켤 때 따로 묻습니다.</string>
-    <string name="onb_done_count">%1$d / 4 됨</string>
+    <string name="onb_done_count">4개 중 %1$d개 완료</string>
     <string name="onb_start">시작하기</string>
 
     <!-- home -->
@@ -62,13 +62,13 @@
     <string name="recent">최근 녹음</string>
     <string name="see_all">모두 보기</string>
     <string name="no_recordings">아직 녹음이 없어요</string>
-    <string name="need_login_line">드라이브에 로그인해야 올라가요</string>
+    <string name="need_login_line">드라이브에 로그인해야 녹음이 올라가요</string>
 
     <!-- upload states -->
     <string name="st_waiting">기다림</string>
     <string name="st_waiting_wifi">기다림 · 와이파이</string>
     <string name="st_uploading">올리는 중 %1$d%%</string>
-    <string name="st_uploaded">올림</string>
+    <string name="st_uploaded">드라이브에 올림</string>
     <string name="st_failed_retry">실패 · 다시</string>
     <string name="st_retry_now">지금 다시</string>
     <string name="err_offline">인터넷 끊김</string>
@@ -84,7 +84,7 @@
 
     <!-- recording -->
     <string name="recording_now">녹음 중</string>
-    <string name="from_calendar">캘린더 이름</string>
+    <string name="from_calendar">캘린더 일정 이름</string>
     <string name="recording_note">화면을 꺼도, 다른 앱을 써도 계속 녹음합니다. 갑자기 꺼져도 그때까지는 남아요.</string>
     <string name="marks_count">중요 표시 %1$d</string>
     <string name="mark">중요</string>
