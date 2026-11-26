@@ -751,9 +751,11 @@ function Row({
   const from =
     meeting.origin === "watched"
       ? t("home.fromInbox")
-      : meeting.origin === "imported"
-        ? t("home.fromFile")
-        : "";
+      : meeting.origin === "phone"
+        ? t("home.fromPhone")
+        : meeting.origin === "imported"
+          ? t("home.fromFile")
+          : "";
   const sub = [meeting.duration_ms > 0 ? length(meeting.duration_ms) : "", from]
     .filter(Boolean)
     .join(", ");

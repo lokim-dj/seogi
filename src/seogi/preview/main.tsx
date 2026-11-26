@@ -34,6 +34,7 @@ import type {
   Meeting,
   MeetingSummary,
   Naming,
+  PhoneStatus,
   Readiness,
   RecordingState,
   SignIn,
@@ -650,6 +651,17 @@ const readinessNow = (): Readiness => {
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 Object.assign(window, { __seogiCalls: calls });
 let isRecording = screen === "recording";
+const phone: PhoneStatus = {
+  available: true,
+  account: "someone@example.com",
+  connected: true,
+  needs_reconnect: false,
+  connecting: false,
+  pulling: false,
+  last_look_ms: Date.now() - 4 * 60_000,
+  brought_in: 2,
+  trouble: "",
+};
 let atLogin = true;
 const trashedRows: MeetingSummary[] = [];
 
@@ -676,6 +688,17 @@ mockIPC(
       }
       case "seogi_sign_ins":
         return { ...signIns };
+      case "seogi_phone_status":
+        return { ...phone };
+      case "seogi_phone_connect":
+        Object.assign(phone, {
+          connected: true,
+          account: "someone@example.com",
+        });
+        return { ...phone };
+      case "seogi_phone_disconnect":
+        Object.assign(phone, { connected: false, account: "" });
+        return { ...phone };
       case "seogi_sign_in": {
         const tool = args.tool as Tool;
         window.setTimeout(() => (signIns[tool] = "signed_in"), 4000);

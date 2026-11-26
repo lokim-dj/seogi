@@ -38,6 +38,8 @@ pub enum Origin {
     Imported,
     /// Picked up from a watched folder.
     Watched,
+    /// Recorded on the phone and brought in from the user's Drive.
+    Phone,
 }
 
 impl Origin {
@@ -46,6 +48,7 @@ impl Origin {
             Origin::Recorded => "recorded",
             Origin::Imported => "imported",
             Origin::Watched => "watched",
+            Origin::Phone => "phone",
         }
     }
 }

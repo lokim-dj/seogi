@@ -222,12 +222,16 @@
             이메일 주소만 씁니다.
           </li>
           <li>
-            컴퓨터의 서기는 '데스크톱용 Google Drive'가 내 컴퓨터에 동기화한
-            폴더를 읽어 폰 녹음을 가져옵니다(이때 서기에 따로 로그인하지 않음).
-            나중에 컴퓨터의 서기에 구글 로그인으로 드라이브를 연결하는 기능이
-            생기면, 그때도 같은 <code>drive.file</code> 권한만 쓰고 서기가 만든
-            폴더의 녹음을 찾아 내 컴퓨터로 내려받는 데만 씁니다. 그 기능이 생길
-            때 이 방침에 무엇을 어디에 두는지 더 적습니다.
+            컴퓨터의 서기에서 설정 › 보관과 일정 › 폰 녹음으로 구글을 연결하면,
+            같은 <code>drive.file</code> 권한 하나로 서기가 만든
+            <code>서기 폰 녹음</code> 폴더를 찾고(없으면 폰과 똑같이 만들고), 그
+            안의 녹음과 설명 파일을 내 컴퓨터로 내려받고, 어느 계정인지 보여
+            주려고 이메일 주소를 읽습니다. 드라이브의 파일은 고치거나 지우지
+            않습니다. 로그인은 내 브라우저에서 하고, 그 결과(갱신 토큰)와 계정
+            주소는 그 컴퓨터의 서기 데이터 폴더(<code>google.json</code>, 나만
+            읽을 수 있게)에만 둡니다. '연결 끊기'를 누르면 그 파일을 지우고
+            구글에 그 로그인을 거두라고 알립니다. '데스크톱용 Google Drive'가
+            동기화한 폴더를 녹음함으로 지켜보는 방법도 그대로 쓸 수 있습니다.
           </li>
           <li>
             폰의 구글 로그인은 구글 계정 시스템이 폰 안에서 관리하고, 서기는
@@ -251,7 +255,11 @@
 
         <h3>밖으로 나가는 연결, 전부</h3>
         <ul>
-          <li>내 구글 드라이브(안드로이드 앱, 내가 로그인한 계정).</li>
+          <li>
+            내 구글 드라이브(안드로이드 앱, 그리고 컴퓨터 앱에서 구글을 연결했을
+            때. 내가 로그인한 계정)와 구글
+            로그인(<code>oauth2.googleapis.com</code>).
+          </li>
           <li>회의록 · 다듬기 모델을 클라우드로 골랐을 때 그 회사(위 설명).</li>
           <li>캘린더 iCal 주소를 넣었을 때 그 주소의 서버.</li>
           <li>
@@ -460,13 +468,18 @@
             the email address from it.
           </li>
           <li>
-            Seogi on your computer brings phone recordings in by reading the
-            folder that Google Drive for desktop syncs to your computer (no
-            sign-in to Seogi is involved). If the desktop app later offers
-            connecting Drive by signing in with Google, it will use the same
-            <code>drive.file</code> scope, only to find the recordings in the
-            folder Seogi created and download them to your computer. This policy
-            will say more about it when that feature ships.
+            If you connect Google in Seogi on your computer (Settings › Storage
+            and calendar › Phone recordings), it uses the same single
+            <code>drive.file</code> scope to find the <code>서기 폰 녹음</code>
+            folder Seogi created (making it the way the phone does if there is
+            none), download the recordings and description files in it to your
+            computer, and read your email address to show which account is in
+            use. It never changes or deletes files in Drive. You sign in in your
+            own browser; the result (a refresh token) and the account address
+            are kept only in Seogi's data folder on that computer
+            (<code>google.json</code>, readable by you only). "Disconnect"
+            deletes that file and asks Google to revoke the sign-in. Watching
+            the folder Google Drive for desktop syncs still works too.
           </li>
           <li>
             On the phone, your Google sign-in is handled by Google's account
@@ -492,7 +505,9 @@
         <h3>Every connection that leaves your device</h3>
         <ul>
           <li>
-            Your Google Drive (the Android app, the account you signed in with).
+            Your Google Drive (the Android app, and the desktop app once you
+            connect Google; the account you signed in with) and Google sign-in
+            (<code>oauth2.googleapis.com</code>).
           </li>
           <li>
             The company you chose, if you chose a cloud model for minutes or

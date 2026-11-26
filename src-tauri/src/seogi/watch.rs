@@ -56,6 +56,11 @@ pub struct Ledger {
     /// brought back in.
     #[serde(default)]
     pub deleted: HashSet<String>,
+    /// Recordings brought in from the phone's Drive folder, by Drive file id
+    /// and SHA-256 (`phone::key`), and their meeting (empty when the
+    /// recording was already in the library).
+    #[serde(default)]
+    pub phone: HashMap<String, String>,
 }
 
 /// What came of noting what a watched folder already holds.
@@ -299,6 +304,9 @@ mod tests {
         ledger
             .seen
             .insert(Ledger::key(Path::new("/녹음함/a.m4a"), look), "abc".into());
+        ledger
+            .phone
+            .insert("drive-file-id|abc".into(), "20261124-140000-0001".into());
         ledger.save(dir.path()).unwrap();
         assert_eq!(Ledger::load(dir.path()), ledger);
         // The same path with another size is another file.
