@@ -57,13 +57,20 @@ package ships its license text in its source distribution. Notable ones:
 - transcribe.cpp and ggml (MIT): the on-device speech engine.
 - Tauri (MIT or Apache-2.0): the desktop application framework.
 - React (MIT), Tailwind CSS (MIT), Lucide icons (ISC).
+- The Android app (`android/`): AndroidX, Jetpack Compose, WorkManager and
+  Credential Manager (Apache-2.0), Kotlin and kotlinx libraries (Apache-2.0),
+  Google Identity Services (`play-services-auth`) and the Google ID library
+  under the Android Software Development Kit License, for Google sign-in.
+  Versions are pinned in `android/gradle/libs.versions.toml`.
 
 ## Fonts
 
 - Gmarket Sans (G마켓 산스) Medium and Bold (SIL Open Font License 1.1),
   Copyright (c) 2019 eBay Korea Co., Ltd. (now Gmarket), with Reserved Font
   Name "Gmarket Sans Font". Source: <https://corp.gmarket.com/fonts/>. The
-  original OpenType files are bundled unchanged in `src/seogi/fonts/`, with
+  original OpenType files are bundled unchanged in `src/seogi/fonts/` (and,
+  under lower-case file names Android requires, in
+  `android/app/src/main/res/font/`), with
   the license text in `src/seogi/fonts/GmarketSans-OFL.txt`. The license
   allows bundling with software and commercial use; selling the font on its
   own is not allowed, and a modified version may not use the font's name.

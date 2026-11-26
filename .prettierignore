@@ -8,6 +8,11 @@ dist
 target
 *.bundle.*
 
+# Android build output
+android/.gradle
+android/build
+android/app/build
+
 # Tauri
 src-tauri/target
 src-tauri/gen

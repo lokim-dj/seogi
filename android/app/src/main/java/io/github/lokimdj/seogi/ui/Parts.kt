@@ -160,7 +160,7 @@ fun RecDot(size: Dp, modifier: Modifier = Modifier, blink: Boolean = true) {
     Box(modifier.size(size).alpha(alpha).clip(CircleShape).background(pal.red))
 }
 
-/** A line of two texts: a setting's name and its value. */
+/** A step or setting: its name, an action or value on the right, and why (may be empty). */
 @Composable
 fun StepLine(name: String, action: String, why: String, done: Boolean, onClick: () -> Unit, tag: String? = null) {
     Column(Modifier.fillMaxWidth().clickable(enabled = !done, onClick = onClick).padding(vertical = 13.dp)) {
@@ -170,6 +170,8 @@ fun StepLine(name: String, action: String, why: String, done: Boolean, onClick: 
             Spacer(Modifier.weight(1f))
             T(action, size = 13.5.sp, color = if (done) pal.t3 else pal.t1, medium = done, maxLines = 1)
         }
-        T(why, size = 12.5.sp, color = pal.t3, medium = true, modifier = Modifier.padding(top = 3.dp, end = 40.dp))
+        if (why.isNotEmpty()) {
+            T(why, size = 12.5.sp, color = pal.t3, medium = true, modifier = Modifier.padding(top = 3.dp, end = 40.dp))
+        }
     }
 }
