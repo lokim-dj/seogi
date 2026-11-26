@@ -3,7 +3,7 @@
 The phone app: it records a meeting and uploads the recording to the user's own
 Google Drive, into a folder `서기 폰 녹음` that the app makes. The computer's
 Seogi watches that folder and writes the minutes. Design:
-[`docs/superpowers/specs/2026-11-24-galaxy-app-design.md`](../docs/superpowers/specs/2026-11-24-galaxy-app-design.md).
+[`docs/specs/2026-11-24-galaxy-app-design.md`](../docs/specs/2026-11-24-galaxy-app-design.md).
 
 Kotlin and Jetpack Compose, minimum Android 13 (API 33), target API 35.
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Kotlin 2.0, Jetpack Compose(BOM), AndroidX WorkManager · Credentials, Google Identity Services(AuthorizationClient), kotlinx.serialization, AGP 8.7 / Gradle 8.11, minSdk 33 · targetSdk 35 · build-tools 35.0.0.
 
-**Spec:** `docs/superpowers/specs/2026-11-24-galaxy-app-design.md`
+**Spec:** `docs/specs/2026-11-24-galaxy-app-design.md`
 
 ## Global Constraints
 
