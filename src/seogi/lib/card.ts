@@ -163,11 +163,12 @@ const doubted = (entry: Entry) => (entry.reasons ?? []).length > 0;
 const unsure = (entry: Entry) => doubted(entry) || Boolean(entry.faint);
 
 /** One amount of money as said, whole: "4500만원", "1억 2천만 원",
- *  "3억 5000만원", "280만 원". */
+ *  "3억 5000만원", "280만 원". Every number but the last ends in its unit,
+ *  so the pattern reads a line only one way (no runaway backtracking). */
 const MONEY =
-  /\d[\d,]*(?:\.\d+)?\s*(?:억|천만|만|천)?(?:\s*\d[\d,]*(?:\.\d+)?\s*(?:천만|만|천)?)*\s*원/g;
+  /(?=\d)(?:\d[\d,]*(?:\.\d+)?\s*(?:억|천만|만|천)\s*)*(?:\d[\d,]*(?:\.\d+)?\s*)?원/g;
 /** A range between two numbers: "4500~5000만원", "4천-5천만 원". */
-const RANGE = /\d\s*(?:억|천만|만|천)?\s*(?:~|∼|〜|–|—|-|부터)\s*\d/;
+const RANGE = /\d\s*(?:(?:억|천만|만|천)\s*)?(?:~|∼|〜|–|—|-|부터)\s*\d/;
 
 /**
  * The one amount of money a line says, split for drawing large: "1억
