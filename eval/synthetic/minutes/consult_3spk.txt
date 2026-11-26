@@ -1,0 +1,15 @@
+# 연습 대본 consult_3spk 의 회의록 기대값 (대본은 ../scripts/consult_3spk.txt)
+# 실제 사람·회사·현장과 무관한 가상의 내용입니다.
+# script: ../scripts/consult_3spk.txt
+# template: consult
+# people: 김서윤 실장, 박도현 소장
+# customer: 이서진
+# task: 신발장 도면 다시 그려 보내기 | 김서윤
+# task: 주방 가구 견적 업체에 확인해 드리기 | 박도현
+# task: 공사 신고와 엘리베이터 보양 처리하기 | 박도현
+# task: 계약금과 계약서 메일로 안내하기 | 김서윤
+# task: 냉장고 크기 재서 알려 주기 | 이서진
+# expect: decisions | 여닫이
+# expect: decisions | 샷시
+# trap: decisions | 상부장.{0,10}(없애|빼) | unless: 견적|아직
+# trap: decisions | 중문 | unless: 고민|생각|아직|도면

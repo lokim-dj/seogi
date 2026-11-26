@@ -7,11 +7,15 @@
 //            settings | waiting | banner-starting | banner-ready | settings-dictation |
 //            mic-idle | mic-listening | mic-working |
 //            indicator-listening | indicator-tidying | indicator-note |
-//            indicator-nowhere
+//            indicator-nowhere | card | card-empty
 //   &claude=missing|signed_out|signed_in&codex=… sets where the two
 //   subscription tools stand (settings, onboarding).
 //   &summary=key starts on '내 API 키' (Anthropic); &key=anthropic has its
 //   key saved.
+//   card opens the one-page summary of the made-up consultation; card-empty
+//   the same meeting with no decisions, no numbers, nothing to check and a
+//   long title. What the card's save keys would write is kept in
+//   window.__savedCard (for scripts/seogi-screens.mjs).
 
 import React from "react";
 import ReactDOM from "react-dom/client";
@@ -56,6 +60,25 @@ const today = (hours: number, minutes: number) => {
 
 const done = consultMeeting as unknown as Meeting;
 done.started_at_ms = today(10, 30);
+if (screen === "card-empty") {
+  // Nothing decided, no amounts, nothing doubted, and a long title.
+  done.customer = "";
+  done.title =
+    "한빛아파트 103동 1502호 거실 천장과 바닥, 주방 상부장과 붙박이장까지 길게 이야기한 두 번째 상담";
+  const minutes = done.minutes?.[0];
+  if (minutes) {
+    minutes.title = done.title;
+    minutes.sections = minutes.sections.filter(
+      (section) =>
+        section.kind === "actions" ||
+        section.key === "open" ||
+        section.key === "concerns",
+    );
+    for (const section of minutes.sections) {
+      for (const entry of section.entries) entry.reasons = [];
+    }
+  }
+}
 
 // Whether the preview may read the Mac's calendars: asked once, like the
 // system does.
@@ -753,6 +776,14 @@ mockIPC(
               ...meetings,
             ]
           : [...meetings];
+      case "seogi_save_summary_card":
+        (window as unknown as { __savedCard: unknown }).__savedCard = {
+          kind: args.kind,
+          data: args.data,
+        };
+        return `/Users/me/Documents/서기/${done.id}/한 장 요약.${String(args.kind)}`;
+      case "seogi_copy_image":
+        return null;
       case "seogi_meeting":
         if (args.id === "recording") return recordingMeeting;
         // A fresh copy each time, as the backend gives.
@@ -1003,6 +1034,16 @@ async function show() {
     if (!state.loaded) return;
     stop();
     if (screen === "minutes") state.open(done.id);
+    if (screen.startsWith("card")) {
+      state.open(done.id);
+      // Press "한 장 요약" once the minutes are on the screen.
+      const press = window.setInterval(() => {
+        const key = document.querySelector<HTMLElement>("[data-card-open]");
+        if (!key) return;
+        window.clearInterval(press);
+        key.click();
+      }, 50);
+    }
     if (screen === "settings") state.go({ name: "settings" });
     if (screen === "settings-dictation")
       state.go({ name: "settings", part: "dictation" });

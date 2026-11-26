@@ -86,6 +86,32 @@ const en: Strings = {
         "Pictures are read only when minutes are written by a signed-in plan (Claude, ChatGPT). They are skipped with a model on this computer.",
     },
   },
+  card: {
+    open: "One-page summary",
+    title: "One-page summary",
+    shape: "Shape",
+    kakao: "Phone 4:5",
+    paper: "Paper",
+    dark: "Dark",
+    light: "Light",
+    lead: "Only what the minutes say. PNG saves a 4:5 picture for chats, PDF one A4 page, both in this meeting's folder.",
+    making: "Making it…",
+    saved: "Saved {{name}} in the meeting's folder.",
+    copied: "Picture copied. Paste it into a chat.",
+    failed: "Could not make it. Try once more.",
+    showInFolder: "Show in folder",
+    close: "Close",
+    copy: "Copy picture",
+    savePdf: "Save PDF",
+    savePng: "Save PNG",
+    customer: "{{name}} (customer)",
+    toCheck: "to check",
+    numbers: "Numbers",
+    flow: "Flow",
+    share: "Who talked",
+    more: "{{n}} more",
+    foot: "Only what the minutes say · small numbers are places in the recording",
+  },
   talkShare: {
     label: "Who talked how much",
     hover: "{{name}} · talked {{length}}",
@@ -122,6 +148,9 @@ const en: Strings = {
     cancel: "Close",
     followHint:
       "Tasks given to this person in the minutes follow the new name.",
+    samePerson:
+      "Could this be '{{name}}'? The two hardly ever talk to each other.",
+    merge: "Make them one: '{{name}}'",
   },
   feedback: {
     talkMore: "Talking in detail",
@@ -334,6 +363,12 @@ const en: Strings = {
       said_differently: "Written a little differently from what was said",
       numbers_differ: "Different amounts or numbers were said",
       unchecked: "The machine could not check it",
+      conflicting:
+        "Something else was said about it too; listen for which stands",
+      other_subject: "It may be about another site or person",
+      unit_odd: "The amount is written oddly; it may have been misheard",
+      sums_disagree: "The amounts do not add up",
+      after_the_end: "It may have been said after the meeting ended",
       unsure_speech: "The transcript was unsure here",
       overlapping_speech: "Two people spoke at once here",
       number_not_in_source: "The number is not in the words it rests on",
@@ -363,6 +398,13 @@ const en: Strings = {
     showMinutesFile: "Show the minutes file",
     showRecording: "Show the original recording",
     thisIsMinutes: "Minutes",
+    noiseLine:
+      "Shown faintly: the transcript seems to have misheard this line. The minutes do not use it.",
+    customer: "Customer",
+    startedLate:
+      "The recording started {{n}} minutes after the event did; what was said before is not in the minutes.",
+    startedMidTalk:
+      "The recording seems to start in the middle of talk; what was said before is not in the minutes.",
     noTasksPlain: "Nothing to do came out of this meeting.",
     nothingToTell:
       "It was short or quiet, so there was no story to write. The transcript is under 'More' below.",

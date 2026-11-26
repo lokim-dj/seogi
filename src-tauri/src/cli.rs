@@ -88,7 +88,8 @@ pub struct CliArgs {
     pub seogi_minutes: bool,
 
     /// Write minutes from a transcript.json made earlier, without
-    /// transcribing again (needs --seogi-out).
+    /// transcribing again (needs --seogi-out). A meeting.json works too, and
+    /// brings its people, customer, place and calendar event.
     #[arg(long, value_name = "JSON")]
     pub seogi_minutes_from: Option<PathBuf>,
 

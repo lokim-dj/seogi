@@ -1,7 +1,12 @@
 // bun src/seogi/lib/speakers.test.ts
 
 import assert from "node:assert/strict";
-import { sampleLines, shareBar, speakerTones } from "./speakers";
+import {
+  maybeSamePerson,
+  sampleLines,
+  shareBar,
+  speakerTones,
+} from "./speakers";
 
 // The first four speakers by number, in order, whatever order they speak in.
 const four = speakerTones([3, 1, 2, 4], [2, 1, 3, 4]);
@@ -88,5 +93,26 @@ assert.deepEqual(
   ],
 );
 assert.deepEqual(shareBar([]), []);
+
+// The designer heard as speakers 1 and 3: each talks with the customer (2),
+// never with each other. The customer answers both, so is no match.
+{
+  const named = [
+    { id: 1, name: "김서윤 실장" },
+    { id: 2, name: "고객" },
+    { id: 3, name: "화자 3" },
+  ];
+  const unnamed = (name: string) => /^화자 \d+$/.test(name);
+  const order = [1, 2, 1, 2, 1, 2, 3, 2, 3, 2, 3, 2, 3, 2];
+  assert.equal(maybeSamePerson(3, named, order, unnamed), 1);
+  // Two who answer each other are two people.
+  const talking = [1, 3, 1, 3, 2, 1, 3, 2, 3, 1, 2];
+  assert.equal(maybeSamePerson(3, named, talking, unnamed), null);
+  // A role is no one to join.
+  const roles = named.map((s) => (s.id === 1 ? { id: 1, name: "고객" } : s));
+  assert.equal(maybeSamePerson(3, roles, order, unnamed), null);
+  // Too little said to tell.
+  assert.equal(maybeSamePerson(3, named, [1, 2, 3, 2], unnamed), null);
+}
 
 console.log("speakers: ok");
