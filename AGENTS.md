@@ -128,7 +128,7 @@ The frontend in `src/seogi/`:
 
 The look is fixed by the chosen design ("A안 한 줄로 비운 화면"): one quiet column on a warm ink black that is the first impression (a light system gets the same layout on paper), small type, thin lines, red only for recording and for what needs a look; the record key and the meetings on the home, finding, importing and settings behind three icons; the minutes as tasks, then the story, then everything else folded under "자세히", with a thin playing line at the bottom; timestamp keys on every line, quotes in 「 」. No cards, pills, glows, emoji or heavy boxes. The tokens and shared classes are in `seogi.css`.
 
-To look at a screen while changing it, run `bun run dev` and open `http://localhost:1420/src/seogi/preview/index.html?screen=home` (or `minutes`, `recording`, `onboarding`, `settings`, `banner-starting`, `banner-ready`). `node scripts/seogi-screens.mjs out/` photographs all of them.
+To look at a screen while changing it, run `bun run dev` and open `http://localhost:1420/src/seogi/preview/index.html?screen=home` (or `minutes`, `recording`, `onboarding`, `settings`, `banner-starting`, `banner-ready`, `card`, `card-empty`). `node scripts/seogi-screens.mjs out/` photographs all of them.
 
 To try things without touching your own meetings, point a development run at its own data folder: `SEOGI_DATA_DIR=/some/dir bun run tauri dev` (put a `seogi.json` with `library_dir` there), or use the headless `--seogi-library` runs.
 

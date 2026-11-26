@@ -57,6 +57,9 @@ package ships its license text in its source distribution. Notable ones:
 - transcribe.cpp and ggml (MIT): the on-device speech engine.
 - Tauri (MIT or Apache-2.0): the desktop application framework.
 - React (MIT), Tailwind CSS (MIT), Lucide icons (ISC).
+- modern-screenshot (MIT), Copyright (c) 2021-present wxm
+  <https://github.com/qq15725/modern-screenshot>: draws the one-page summary
+  ("한 장 요약") into the picture and the A4 page that are saved.
 
 ## Fonts
 

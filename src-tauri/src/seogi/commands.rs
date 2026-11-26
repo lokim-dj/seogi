@@ -948,7 +948,8 @@ pub fn seogi_try_notification(app: AppHandle, title: String, body: String) -> Re
 }
 
 /// Shows one of a meeting's files selected in Finder or Explorer: `minutes`
-/// (회의록.md) or `recording` (the original recording).
+/// (회의록.md), `recording` (the original recording), or the one-page
+/// summary saved as `card_png` or `card_pdf`.
 #[tauri::command]
 #[specta::specta]
 pub fn seogi_reveal(
@@ -962,12 +963,74 @@ pub fn seogi_reveal(
     let path = match what.as_str() {
         "minutes" => folder.join(MINUTES_NAME),
         "recording" => folder.join(secretary.meeting(&id).map_err(text)?.audio_file),
+        "card_png" => folder.join(card_file("png")?),
+        "card_pdf" => folder.join(card_file("pdf")?),
         _ => folder.clone(),
     };
     // Minutes not written yet: the folder they will be in.
     let path = if path.exists() { path } else { folder };
     app.opener()
         .reveal_item_in_dir(&path)
+        .map_err(|e| e.to_string())
+}
+
+/// The name the one-page summary ("한 장 요약") is saved under in a
+/// meeting's folder, as a phone picture (`png`) or an A4 page (`pdf`).
+fn card_file(kind: &str) -> Result<String, String> {
+    match kind {
+        "png" | "pdf" => Ok(format!("한 장 요약.{kind}")),
+        _ => Err(format!("not a kind of summary: {kind}")),
+    }
+}
+
+/// The largest summary picture taken: far more than a 1080×1350 picture or
+/// an A4 page needs, so a mistake cannot fill the disk.
+const CARD_MAX_BYTES: usize = 40 * 1024 * 1024;
+
+/// Decodes the base64 the screen sends a picture or page in.
+fn card_bytes(data: &str) -> Result<Vec<u8>, String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data.trim())
+        .map_err(|e| e.to_string())?;
+    if bytes.is_empty() || bytes.len() > CARD_MAX_BYTES {
+        return Err(format!("a summary of {} bytes", bytes.len()));
+    }
+    Ok(bytes)
+}
+
+/// Saves the one-page summary the screen drew (`data`, base64) into the
+/// meeting's folder as 한 장 요약.png or 한 장 요약.pdf, replacing one saved
+/// before; nothing else in the folder is touched. Returns the file's path.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_save_summary_card(
+    secretary: State<'_, Arc<Secretary>>,
+    id: String,
+    kind: String,
+    data: String,
+) -> Result<String, String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || {
+        let name = card_file(&kind)?;
+        let bytes = card_bytes(&data)?;
+        let path = secretary.folder(&id).map_err(text)?.join(name);
+        super::store::write_atomically(&path, &bytes).map_err(text)?;
+        Ok(path.display().to_string())
+    })
+    .await
+}
+
+/// Puts a PNG picture (`data`, base64) on the clipboard, to paste into a
+/// chat.
+#[tauri::command]
+#[specta::specta]
+pub fn seogi_copy_image(app: AppHandle, data: String) -> Result<(), String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let bytes = card_bytes(&data)?;
+    let image = tauri::image::Image::from_bytes(&bytes).map_err(|e| e.to_string())?;
+    app.clipboard()
+        .write_image(&image)
         .map_err(|e| e.to_string())
 }
 
@@ -1045,4 +1108,24 @@ pub async fn seogi_try_summary(secretary: State<'_, Arc<Secretary>>) -> Result<S
         })
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_summary_is_saved_only_as_png_or_pdf() {
+        assert_eq!(card_file("png").unwrap(), "한 장 요약.png");
+        assert_eq!(card_file("pdf").unwrap(), "한 장 요약.pdf");
+        assert!(card_file("md").is_err());
+        assert!(card_file("../x").is_err());
+    }
+
+    #[test]
+    fn a_summary_must_be_some_bytes_of_base64() {
+        assert_eq!(card_bytes("aGk=").unwrap(), b"hi");
+        assert!(card_bytes("").is_err());
+        assert!(card_bytes("not base64!").is_err());
+    }
 }
