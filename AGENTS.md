@@ -39,7 +39,7 @@ One pull request, one commit on main. Seogi has one maintainer, so the flow stay
 5. **One review.** Before the pull request is merged, an agent that did not write the code — another model when one is at hand — reviews the branch once with `.claude/agents/seogi-reviewer.md`. Fix what it confirms. If it still says "needs fixes" on something you cannot settle, ask the maintainer.
 6. **Push through the hook.** `bun run setup:hooks` once per clone; the pre-push hook checks what is pushed against the maintainer's private lists, which CI cannot see. Never skip it (`--no-verify`).
 7. **Pull request** from the template; the title is the commit line (`fix: …`); with an issue, the body ends with `Closes #123`. Check its title and body yourself (`bun scripts/check-public-text.ts --stdin`); the hook does not see them.
-8. **Merge by squash when both checks are green** (`text` and `rust` in `.github/workflows/check.yml`; `gh pr merge --squash`). main is protected: no direct push, no getting around a check.
+8. **Merge by squash when the checks are green** (`text`, `rust` and `android` in `.github/workflows/check.yml`; `gh pr merge --squash`). main is protected: no direct push, no getting around a check.
 9. **Close the loop.** With an issue, comment on it: what changed, what turned out different, what is left. Remove the worktree and the branch.
 
 ## Who decides
@@ -90,6 +90,7 @@ src/
   components/       Dictation settings screens and onboarding
   i18n/locales/     Translations; `ko` and `en` are the ones Seogi maintains
 eval/               Evaluation scripts; `eval/synthetic/` builds test recordings
+android/            The phone app (Kotlin, Compose): records, uploads to the user's Drive; see android/README.md
 ```
 
 Seogi's backend exposes a command and event API to the frontend, so the UI can be replaced without touching the pipeline. Keep UI concerns out of `src-tauri/src/seogi/`.
