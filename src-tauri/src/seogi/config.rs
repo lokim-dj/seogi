@@ -16,10 +16,33 @@ const FILE_NAME: &str = "seogi.json";
 /// The name of the folder new users are offered for phone recordings.
 pub const INBOX_NAME: &str = "녹음함";
 /// The speech model recordings are transcribed with unless the user picks
-/// another. Chosen by measurement (see `eval/`): on the practice recordings
-/// it is as accurate as the larger Whisper model and half again as fast.
-pub const DEFAULT_SPEECH_MODEL: &str =
+/// another: Qwen3 ASR 1.7B. Chosen by measurement on a real consultation of
+/// 1 h 50 min, against another recorder's transcript of it: the fewest
+/// characters wrong of the three local models (14.0 % on that recorder's
+/// audio, 17.1 % on a laptop's microphone; Whisper turbo 15.1 / 17.6 %,
+/// Fun-ASR Nano 18.1 / 20.5 %), and no lines in a foreign language over
+/// unclear speech, where Whisper turbo wrote 52 / 31. It takes a little
+/// longer (8.2 min for that recording; Whisper turbo 7.8, Fun-ASR Nano 5.1)
+/// and is a bigger download (2.2 GB). The maintainer's choice.
+///
+/// Until 0.1.15 it was Whisper turbo ([`STAND_IN_SPEECH_MODELS`]). A user
+/// who never picked a model has an empty `speech_model`, so moves with the
+/// default; one who picked a model keeps it.
+pub const DEFAULT_SPEECH_MODEL: &str = QWEN3_ASR_1_7B;
+/// Qwen3 ASR 1.7B (2.2 GB): the most accurate of the measured three.
+pub const QWEN3_ASR_1_7B: &str = "handy-computer/Qwen3-ASR-1.7B-gguf/Qwen3-ASR-1.7B-Q8_0.gguf";
+/// Whisper large-v3 turbo (0.9 GB): the meetings' default until 0.1.15.
+pub const WHISPER_TURBO: &str =
     "handy-computer/whisper-large-v3-turbo-gguf/whisper-large-v3-turbo-Q8_0.gguf";
+/// Fun-ASR Nano (0.9 GB): the fastest, and dictation's default.
+pub const FUN_ASR_NANO: &str =
+    "handy-computer/Fun-ASR-MLT-Nano-2512-gguf/Fun-ASR-MLT-Nano-2512-Q8_0.gguf";
+/// The speech models the settings offer for meetings, and the ones a
+/// recording is transcribed with while the chosen one is not on this
+/// computer (still downloading, or its download failed), best first by the
+/// same measurement. A recording is never kept waiting for a better model
+/// when one of these is here.
+pub const STAND_IN_SPEECH_MODELS: &[&str] = &[QWEN3_ASR_1_7B, WHISPER_TURBO, FUN_ASR_NANO];
 /// The name of the folder meetings are kept in.
 pub const LIBRARY_NAME: &str = "서기";
 
@@ -149,6 +172,27 @@ impl Config {
         }
     }
 
+    /// The model to transcribe a recording with now, given which models are
+    /// on this computer (`here`): the chosen one when it is here, otherwise
+    /// the first stand-in that is. `None` when no usable model is here yet;
+    /// the recording then waits for the download.
+    pub fn speech_model_now(&self, here: impl Fn(&str) -> bool) -> Option<SpeechModelNow> {
+        let chosen = self.speech_model();
+        if here(chosen) {
+            return Some(SpeechModelNow {
+                model: chosen.to_string(),
+                standing_in_for: None,
+            });
+        }
+        STAND_IN_SPEECH_MODELS
+            .iter()
+            .find(|model| **model != chosen && here(model))
+            .map(|model| SpeechModelNow {
+                model: model.to_string(),
+                standing_in_for: Some(chosen.to_string()),
+            })
+    }
+
     /// Where meetings are kept.
     pub fn library(&self) -> PathBuf {
         if self.library_dir.trim().is_empty() {
@@ -166,6 +210,15 @@ impl Config {
             PathBuf::from(self.vocabulary_path.trim())
         }
     }
+}
+
+/// The speech model a recording is transcribed with now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpeechModelNow {
+    pub model: String,
+    /// The chosen model, when it is not on this computer and `model` stands
+    /// in for it.
+    pub standing_in_for: Option<String>,
 }
 
 fn home() -> Option<PathBuf> {
@@ -299,6 +352,88 @@ mod tests {
             std::fs::write(dir.path().join(FILE_NAME), text).unwrap();
             assert_eq!(Config::load(dir.path()).dictation.enabled, saved);
         }
+    }
+
+    const QWEN: &str = "handy-computer/Qwen3-ASR-1.7B-gguf/Qwen3-ASR-1.7B-Q8_0.gguf";
+    const TURBO: &str =
+        "handy-computer/whisper-large-v3-turbo-gguf/whisper-large-v3-turbo-Q8_0.gguf";
+    const FUNASR: &str =
+        "handy-computer/Fun-ASR-MLT-Nano-2512-gguf/Fun-ASR-MLT-Nano-2512-Q8_0.gguf";
+
+    /// Someone who never picked a speech model (0.1.15 saved an empty one)
+    /// moves to Qwen3 ASR 1.7B; someone who picked one keeps it.
+    #[test]
+    fn only_users_on_the_old_default_move_to_the_new_speech_model() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(Config::load(dir.path()).speech_model(), QWEN);
+
+        let saved_by_0_1_15 = r#"{"language": "ko", "speech_model": "", "set_up": true}"#;
+        std::fs::write(dir.path().join(FILE_NAME), saved_by_0_1_15).unwrap();
+        assert_eq!(Config::load(dir.path()).speech_model(), QWEN);
+
+        std::fs::write(dir.path().join(FILE_NAME), r#"{"set_up": true}"#).unwrap();
+        assert_eq!(Config::load(dir.path()).speech_model(), QWEN);
+
+        for picked in [TURBO, FUNASR, "someone/else-gguf/else-Q8_0.gguf"] {
+            let text = format!(r#"{{"speech_model": "{picked}", "set_up": true}}"#);
+            std::fs::write(dir.path().join(FILE_NAME), text).unwrap();
+            let loaded = Config::load(dir.path());
+            assert_eq!(loaded.speech_model(), picked);
+            // Saving again keeps the choice, and keeps an empty one empty.
+            loaded.save(dir.path()).unwrap();
+            assert_eq!(Config::load(dir.path()).speech_model, picked);
+        }
+        Config::default().save(dir.path()).unwrap();
+        assert_eq!(Config::load(dir.path()).speech_model, "");
+    }
+
+    /// A recording is transcribed with the chosen model when it is here,
+    /// with the best one that is here while it is not, and waits only when
+    /// none is.
+    #[test]
+    fn a_missing_speech_model_gives_way_to_one_that_is_here() {
+        let config = Config::default();
+        let with = |models: &'static [&'static str]| move |id: &str| models.contains(&id);
+        let now = |model: &str, standing_in_for: Option<&str>| {
+            Some(SpeechModelNow {
+                model: model.to_string(),
+                standing_in_for: standing_in_for.map(str::to_string),
+            })
+        };
+
+        assert_eq!(
+            config.speech_model_now(with(&[QWEN, TURBO])),
+            now(QWEN, None)
+        );
+        // Downloading, or the download failed: the old default stands in.
+        assert_eq!(
+            config.speech_model_now(with(&[TURBO, FUNASR])),
+            now(TURBO, Some(QWEN))
+        );
+        assert_eq!(
+            config.speech_model_now(with(&[FUNASR])),
+            now(FUNASR, Some(QWEN))
+        );
+        // Nothing usable: the recording waits for the download.
+        assert_eq!(config.speech_model_now(with(&[])), None);
+        assert_eq!(
+            config.speech_model_now(with(&["someone/else-gguf/else-Q8_0.gguf"])),
+            None
+        );
+
+        // A picked model that is not here gives way too, best first.
+        let picked = Config {
+            speech_model: FUNASR.to_string(),
+            ..Config::default()
+        };
+        assert_eq!(
+            picked.speech_model_now(with(&[FUNASR, QWEN])),
+            now(FUNASR, None)
+        );
+        assert_eq!(
+            picked.speech_model_now(with(&[TURBO, QWEN])),
+            now(QWEN, Some(FUNASR))
+        );
     }
 
     #[test]

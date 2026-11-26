@@ -37,6 +37,8 @@ import {
   longDay,
   shortModel,
 } from "../lib/format";
+import { gigabytes, minutesToDownload, speechAbout } from "../lib/speech";
+import SpeechDownload from "../components/SpeechDownload";
 import {
   KEY_OWNERS,
   keyOwnerOf,
@@ -425,6 +427,33 @@ export default function Settings() {
   const speechPercent = readiness
     ? Math.round(downloads[readiness.speech_model] ?? -1)
     : -1;
+  // The meetings' models to choose from: the default (first), whether or
+  // not it is here, and the others that are downloaded.
+  const speechChoices = (readiness?.speech_models ?? []).filter(
+    (option, index) => index === 0 || option.downloaded,
+  );
+  const chosenSpeech = config.speech_model.trim() || speechChoices[0]?.id || "";
+  const about = speechAbout(readiness?.speech_model ?? "");
+  // What the row says under the model while it is not here: its size and
+  // time, and what transcribes meanwhile.
+  const speechWaitNote =
+    !readiness || readiness.speech_model_ready
+      ? null
+      : [
+          readiness.speech_model_bytes > 0 && speechPercent < 0
+            ? t("settings.speechSize", {
+                gb: gigabytes(readiness.speech_model_bytes),
+                minutes: minutesToDownload(readiness.speech_model_bytes),
+              })
+            : null,
+          readiness.speech_model_stand_in
+            ? t("settings.speechStandIn", {
+                model: shortModel(readiness.speech_model_stand_in),
+              })
+            : t("settings.speechNoStandIn"),
+        ]
+          .filter(Boolean)
+          .join(" · ");
   const modelHint = readiness?.summary_model_refused
     ? t("settings.modelRefused", { model: config.summary.model })
     : options.find(
@@ -837,33 +866,76 @@ export default function Settings() {
                   <div className="srow !border-t-0">
                     <div>
                       <div className="l">{t("settings.speechModel")}</div>
-                      <div className="h">{t("settings.speechModelHint")}</div>
+                      <div className="h">
+                        {/* With the choices below, each says its own. */}
+                        {about && speechChoices.length <= 1
+                          ? t(`settings.speechAbout.${about}`)
+                          : t("settings.speechModelHint")}
+                      </div>
+                      {speechWaitNote ? (
+                        <div className="h">{speechWaitNote}</div>
+                      ) : null}
                     </div>
                     <div className="v">
                       <span className="t2">
                         {shortModel(readiness?.speech_model ?? "")}
                       </span>
-                      {readiness?.speech_model_ready ? null : speechPercent >=
-                        0 ? (
-                        <span>
-                          {t("settings.downloading", {
-                            percent: speechPercent,
-                          })}
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          className="btn"
-                          onClick={() =>
-                            readiness &&
-                            void commands.downloadModel(readiness.speech_model)
-                          }
-                        >
-                          {t("settings.download")}
-                        </button>
-                      )}
+                      {readiness && !readiness.speech_model_ready ? (
+                        <SpeechDownload model={readiness.speech_model} />
+                      ) : null}
                     </div>
                   </div>
+                  {speechChoices.length > 1 ? (
+                    <div className="srow !border-t-0 !pt-0">
+                      <div
+                        role="radiogroup"
+                        aria-label={t("settings.speechModel")}
+                        className="flex flex-col gap-2 w-full"
+                      >
+                        {speechChoices.map((option, index) => {
+                          const aboutKey = speechAbout(option.id);
+                          return (
+                            <label
+                              key={option.id}
+                              className="flex items-start gap-2 cursor-pointer"
+                            >
+                              <input
+                                type="radio"
+                                name="speech-model"
+                                checked={chosenSpeech === option.id}
+                                onChange={() =>
+                                  void save({
+                                    ...config,
+                                    // The default is followed, not pinned.
+                                    speech_model: index === 0 ? "" : option.id,
+                                  })
+                                }
+                                className="w-3.5 h-3.5 mt-[3px] m-0 accent-[var(--red)]"
+                              />
+                              <span>
+                                <span className="text-[14px] font-medium">
+                                  {shortModel(option.id)}
+                                  {index === 0
+                                    ? ` · ${t("settings.speechDefault")}`
+                                    : ""}
+                                </span>
+                                <span className="h block">
+                                  {aboutKey
+                                    ? t(`settings.speechAbout.${aboutKey}`)
+                                    : null}
+                                  {option.downloaded
+                                    ? null
+                                    : ` · ${t("settings.speechNotHere", {
+                                        gb: gigabytes(option.bytes),
+                                      })}`}
+                                </span>
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="srow">
                     <div>
                       <div className="l">{t("settings.vocabularyFile")}</div>

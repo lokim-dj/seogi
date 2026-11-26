@@ -54,7 +54,7 @@ def find_binary() -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--sets", type=Path, default=HERE / "synthetic" / "out")
-    parser.add_argument("--models", nargs="+", default=["turbo"],
+    parser.add_argument("--models", nargs="+", default=["qwen-1.7b"],
                         help=f"aliases ({', '.join(MODELS)}) or full model ids")
     parser.add_argument("--clips", nargs="+", help="file names to run within each set (default: all audio)")
     parser.add_argument("--no-vocab", action="store_true", help="run without each set's vocabulary.txt")

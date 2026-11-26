@@ -17,6 +17,7 @@ pub mod commands;
 pub mod config;
 pub mod diarize;
 pub mod dictation;
+pub mod disk;
 pub mod documents;
 pub mod evidence;
 pub mod facts;

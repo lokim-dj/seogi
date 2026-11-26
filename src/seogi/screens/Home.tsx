@@ -24,6 +24,7 @@ import {
 } from "../components/icons";
 import UpdateNotice from "../components/UpdateNotice";
 import PermissionNotice from "../components/PermissionNotice";
+import SpeechModelNotice from "../components/SpeechModelNotice";
 import { ConfirmDelete, busy } from "../components/DeleteMeeting";
 import { NS } from "../i18n";
 import { clock, daysAgo, fullDay, hm, keysShort, longDay } from "../lib/format";
@@ -157,6 +158,7 @@ export default function Home() {
         <RecordLine onNote={warn} />
         <UpdateNotice />
         <PermissionNotice />
+        <SpeechModelNotice />
         {note ? (
           <p
             role={bad ? "alert" : "status"}

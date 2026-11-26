@@ -16,11 +16,15 @@ import Settings from "./screens/Settings";
 import { isDocument } from "./components/DocumentWords";
 import { TrashedNote } from "./components/DeleteMeeting";
 import { useSeogi } from "./store";
+import { downloadEnded, downloadProgressed } from "./lib/speech";
 import "./seogi.css";
 
 interface DownloadProgress {
   model_id: string;
   percentage: number;
+  downloaded: number;
+  total: number;
+  bytes_per_sec: number | null;
 }
 
 /** Where a key takes the window, if anywhere. */
@@ -100,25 +104,26 @@ export default function SeogiApp() {
     const progress = listen<DownloadProgress>(
       "model-download-progress",
       (event) => {
-        useSeogi.setState((state) => ({
-          downloads: {
-            ...state.downloads,
-            [event.payload.model_id]: event.payload.percentage,
-          },
-        }));
+        useSeogi.setState((state) => downloadProgressed(state, event.payload));
       },
     );
     const complete = listen<string>("model-download-complete", (event) => {
-      useSeogi.setState((state) => {
-        const downloads = { ...state.downloads };
-        delete downloads[event.payload];
-        return { downloads };
-      });
+      useSeogi.setState((state) => downloadEnded(state, event.payload, false));
       void refreshSetup();
     });
+    const failed = listen<{ model_id: string }>(
+      "model-download-failed",
+      (event) => {
+        useSeogi.setState((state) =>
+          downloadEnded(state, event.payload.model_id, true),
+        );
+        void refreshSetup();
+      },
+    );
     return () => {
       void progress.then((off) => off());
       void complete.then((off) => off());
+      void failed.then((off) => off());
     };
   }, [refreshSetup]);
 

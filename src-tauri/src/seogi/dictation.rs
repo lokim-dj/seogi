@@ -399,12 +399,13 @@ enum ModelChoice {
 }
 
 /// A downloaded model for dictation when none is chosen yet: the default,
-/// or the meetings' own model standing in until the default is here. A model
-/// that stood in gives way to the default once it is downloaded.
+/// or the first of `stand_ins` that is here, standing in until the default
+/// is. A model that stood in gives way to the default once it is
+/// downloaded.
 fn model_choice(
     selected: &str,
     standing_in: bool,
-    meeting_model: &str,
+    stand_ins: &[&str],
     here: impl Fn(&str) -> bool,
 ) -> ModelChoice {
     let use_model = |model: &str, standing_in: bool| ModelChoice::Use {
@@ -419,8 +420,8 @@ fn model_choice(
     }
     if here(DEFAULT_DICTATION_MODEL) {
         use_model(DEFAULT_DICTATION_MODEL, false)
-    } else if here(meeting_model) {
-        use_model(meeting_model, true)
+    } else if let Some(model) = stand_ins.iter().find(|model| here(model)) {
+        use_model(model, true)
     } else {
         ModelChoice::Keep
     }
@@ -434,8 +435,12 @@ fn ensure_model(app: &AppHandle, meeting_model: &str) {
     let selected = settings::get_settings(app).selected_model;
     let models = app.state::<Arc<ModelManager>>();
     let here = |id: &str| models.get_model_info(id).is_some_and(|m| m.is_downloaded);
+    // The smaller model first: a dictation is seconds long, and Whisper
+    // turbo (0.9 GB) loads and answers sooner than the meetings' Qwen3
+    // (2.2 GB).
+    let stand_ins = [super::config::WHISPER_TURBO, meeting_model];
     let ModelChoice::Use { model, standing_in } =
-        model_choice(&selected, dictation.model_standing_in, meeting_model, here)
+        model_choice(&selected, dictation.model_standing_in, &stand_ins, here)
     else {
         return;
     };
@@ -450,8 +455,8 @@ fn ensure_model(app: &AppHandle, meeting_model: &str) {
 
 /// Downloads the default dictation model, asked for by the first-run screen
 /// together with the meetings' models (a new install; nobody else gets a
-/// download they did not ask for). Dictation keeps using the meetings' model
-/// meanwhile and moves to this one once it is here.
+/// download they did not ask for). Dictation uses Whisper turbo or the
+/// meetings' model meanwhile and moves to this one once it is here.
 pub fn download_default_model(app: &AppHandle) {
     let Some(secretary) = Secretary::of(app) else {
         return;
@@ -2074,9 +2079,9 @@ mod tests {
         assert!(dictations_to_forget(&entries, Some(&[])).is_empty());
     }
 
-    /// A new install: the meetings' model stands in while the default
-    /// downloads, and gives way once it is here. A model the user has is
-    /// kept.
+    /// A new install: a model that is here stands in while the default
+    /// downloads, the smaller first, and gives way once it is here. A model
+    /// the user has is kept.
     #[test]
     fn the_meeting_model_stands_in_until_the_default_is_here() {
         let meeting = "whisper-turbo";
@@ -2087,11 +2092,11 @@ mod tests {
         };
         // Nothing yet, then only the meetings' model.
         assert_eq!(
-            model_choice("", false, meeting, only(&[])),
+            model_choice("", false, &[meeting], only(&[])),
             ModelChoice::Keep
         );
         assert_eq!(
-            model_choice("", false, meeting, only(&["whisper-turbo"])),
+            model_choice("", false, &[meeting], only(&["whisper-turbo"])),
             use_model(meeting, true)
         );
         // The default arrives.
@@ -2099,7 +2104,7 @@ mod tests {
             model_choice(
                 meeting,
                 true,
-                meeting,
+                &[meeting],
                 only(&["whisper-turbo", DEFAULT_DICTATION_MODEL])
             ),
             use_model(DEFAULT_DICTATION_MODEL, false)
@@ -2109,10 +2114,20 @@ mod tests {
             model_choice(
                 meeting,
                 false,
-                meeting,
+                &[meeting],
                 only(&["whisper-turbo", DEFAULT_DICTATION_MODEL])
             ),
             ModelChoice::Keep
+        );
+        // With both a small and a large model here, the first stand-in in
+        // the list (the smaller) is taken.
+        assert_eq!(
+            model_choice("", false, &["small", "large"], only(&["large", "small"])),
+            use_model("small", true)
+        );
+        assert_eq!(
+            model_choice("", false, &["small", "large"], only(&["large"])),
+            use_model("large", true)
         );
     }
 

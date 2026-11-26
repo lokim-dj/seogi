@@ -218,6 +218,14 @@ const en: Strings = {
     restarting: "Restarting",
     failed: "It could not be installed. Press again.",
   },
+  speechNotice: {
+    title: "A more accurate speech model, {{model}}, is ready to download",
+    standIn: "Until then {{model}} transcribes instead",
+    later: "Later",
+    chosenMissing:
+      "The speech model you chose is not on this computer: {{model}}",
+    chosenStandIn: "{{model}} transcribes instead",
+  },
   home: {
     tomorrow: "Tomorrow",
     shortcutAnywhere: "{{keys}}, from any app",
@@ -430,6 +438,9 @@ const en: Strings = {
     corrected: "Corrected from your vocabulary",
     took: "Took {{length}}.",
     writtenBy: "Transcribed by {{speech}} · minutes by {{summary}}",
+    stoodIn: " (in place of {{wanted}}, not downloaded yet)",
+    transcribedBy: "Transcribed by {{speech}}",
+    redoWith: "Transcribe again with {{model}}",
   },
   recording: {
     mayStayEmpty: "may stay empty",
@@ -553,13 +564,18 @@ const en: Strings = {
     inboxNewHint: "It is not there yet. Pressing start makes it too.",
     speech: "Transcribing",
     speechHint:
-      "The meeting speech model, the model that tells speakers apart and the dictation model are downloaded once (about 1.9 GB in all).",
+      "The meeting speech model, the model that tells speakers apart and the dictation model are downloaded once (about 3.2 GB in all).",
     speechReady: "Ready",
     speechReadyHint: "It is on this computer",
     speechMissing: "To be downloaded",
     speechMissingHint: "It starts when you press start",
+    speechSize: "{{gb}} GB, about {{minutes}} min on an ordinary line",
     speechLoading: "Downloading {{percent}}%",
+    speechLoadingLeft: "Downloading {{percent}}% · about {{minutes}} min left",
     speechLoadingHint: "You can record meanwhile",
+    speechStandIn: "Meanwhile {{model}} transcribes instead",
+    speechFailed: "The download failed",
+    speechFailedHint: "You can try again under Speech model in the settings",
     atLogin:
       "Seogi also opens when you log in. You can turn this off in Settings.",
     dictation:
@@ -672,6 +688,22 @@ const en: Strings = {
     saveKey: "Save key",
     speech: "Recording",
     speechModel: "Speech model",
+    speechAbout: {
+      qwen: "More accurate, a little slower. On the same 1 h 50 min meeting recording: 17.1 % of characters wrong, 8.2 min to transcribe.",
+      turbo:
+        "Fair accuracy; some lines come out in another language. On the same recording: 17.6 %, 7.8 min.",
+      funasr: "Fast, less accurate. On the same recording: 20.5 %, 5.1 min.",
+    },
+    speechSize:
+      "{{gb}} GB · about {{minutes}} min on an ordinary 100 Mbps line",
+    speechStandIn: "Until then {{model}} transcribes instead.",
+    speechNoStandIn: "Until then recordings wait their turn.",
+    downloadFailed: "The download failed",
+    noSpace: "{{gb}} GB more space is needed",
+    speechDefault: "default",
+    speechNotHere: "not downloaded, {{gb}} GB",
+    downloadAgain: "Try again",
+    downloadingLeft: "Downloading {{percent}}% · about {{minutes}} min left",
     download: "Download",
     downloading: "Downloading {{percent}}%",
     diarize: "Telling speakers apart",

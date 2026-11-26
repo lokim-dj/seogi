@@ -539,6 +539,29 @@ function Sheet({
   jump: Jump | null;
 }) {
   const { t, i18n } = useTranslation(NS);
+  // A stand-in transcribed this meeting, and the model it stood in for
+  // is here now: offer to transcribe it again with that one.
+  const readiness = useSeogi((s) => s.readiness);
+  const wanted = meeting.stats?.stood_in_for ?? "";
+  const redoWith =
+    wanted &&
+    meeting.status !== "working" &&
+    meeting.status !== "queued" &&
+    readiness?.speech_models.some(
+      (option) => option.id === wanted && option.downloaded,
+    )
+      ? wanted
+      : null;
+  // The speech model, and the one it stood in for when that was not here.
+  const speechBy = (meeting: Meeting) =>
+    meeting.transcript
+      ? shortModel(meeting.transcript.model) +
+        (meeting.stats?.stood_in_for
+          ? t("minutes.stoodIn", {
+              wanted: shortModel(meeting.stats.stood_in_for),
+            })
+          : "")
+      : "";
   const length = useLength();
   const refreshDetail = useSeogi((s) => s.refreshDetail);
   const sheet = useRef<HTMLElement | null>(null);
@@ -860,10 +883,12 @@ function Sheet({
           <p className="mt-3 mb-0 text-[13px] leading-[1.6] t3">
             {minutes && meeting.transcript
               ? t("minutes.writtenBy", {
-                  speech: shortModel(meeting.transcript.model),
+                  speech: speechBy(meeting),
                   summary: minutes.written_by,
                 })
-              : null}
+              : meeting.stats?.stood_in_for
+                ? t("minutes.transcribedBy", { speech: speechBy(meeting) })
+                : null}
             {(meeting.total_ms ?? 0) > 0
               ? ` · ${t("minutes.took", { length: length(meeting.total_ms ?? 0) })}`
               : null}
@@ -874,6 +899,18 @@ function Sheet({
                   .map((c) => `${c.from} → ${c.to}`)
                   .join(", ")}`
               : null}
+            {redoWith ? (
+              <>
+                {" "}
+                <button
+                  type="button"
+                  className="lnk"
+                  onClick={() => void commands.seogiRetranscribe(meeting.id)}
+                >
+                  {t("minutes.redoWith", { model: shortModel(redoWith) })}
+                </button>
+              </>
+            ) : null}
           </p>
         </Fold>
       </section>
