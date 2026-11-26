@@ -331,6 +331,8 @@ const ko = {
       unchecked: "기계가 맞춰 보지 못했어요",
       conflicting: "앞뒤에 다른 말이 있어요. 어느 쪽인지 들어 보세요",
       other_subject: "다른 현장이나 다른 사람 이야기일 수 있어요",
+      unit_odd: "금액 단위가 이상해요. 받아쓰기가 잘못 들었을 수 있어요",
+      sums_disagree: "금액 계산이 앞뒤로 맞지 않아요",
       unsure_speech: "받아쓰기가 흐릿했던 대목입니다",
       overlapping_speech: "두 사람 말이 겹친 대목입니다",
       number_not_in_source: "숫자가 근거가 된 말에 없습니다",

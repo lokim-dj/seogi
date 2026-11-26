@@ -2047,7 +2047,16 @@ export type CheckReason =
  * The words it rests on may be about another site or person (a past
  * case, the speaker's own home), not this meeting's.
  */
-"other_subject"
+"other_subject" | 
+/**
+ * An amount in it, or in the words it rests on, is written in a way no
+ * one says it: a big unit twice ("1억 5천억"), five digits before 만.
+ */
+"unit_odd" | 
+/**
+ * A change it states does not add up with the amounts said for it.
+ */
+"sums_disagree"
 /**
  * Script applied to Mandarin and Cantonese output. Traditional carries its region
  * (Taiwan vs Hong Kong forms, e.g. 裡/裏) rather than guessing it.

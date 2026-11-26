@@ -145,6 +145,11 @@ pub enum CheckReason {
     /// The words it rests on may be about another site or person (a past
     /// case, the speaker's own home), not this meeting's.
     OtherSubject,
+    /// An amount in it, or in the words it rests on, is written in a way no
+    /// one says it: a big unit twice ("1억 5천억"), five digits before 만.
+    UnitOdd,
+    /// A change it states does not add up with the amounts said for it.
+    SumsDisagree,
 }
 
 impl CheckReason {
@@ -164,6 +169,8 @@ impl CheckReason {
             CheckReason::Unchecked => "기계가 맞춰 보지 못함",
             CheckReason::Conflicting => "앞뒤에 다른 말이 있음",
             CheckReason::OtherSubject => "이 회의 이야기인지 분명하지 않음",
+            CheckReason::UnitOdd => "금액 단위가 이상함",
+            CheckReason::SumsDisagree => "금액 계산이 맞지 않음",
         }
     }
 }
@@ -350,7 +357,8 @@ pub fn write(
     if stop() {
         return Ok(None);
     }
-    let composed = compose(items);
+    let mut composed = compose(items);
+    mark_sums(&mut composed.entries);
     progress(0.85);
 
     // 5. Verify.
@@ -1256,14 +1264,23 @@ fn check_item(
         reasons.push(CheckReason::OverlappingSpeech);
     }
 
-    // Every number the item states must be in the lines around its quote.
-    let evidence = digits_of(&index.text_around(&lines, 2));
+    // Every number the item states must be in the lines around its quote,
+    // as the same digits or the same value however said ("아홉 평" is 9평).
     let stated = format!("{} {}", raw.text, raw.due);
-    if numbers_in(&stated)
-        .iter()
-        .any(|number| !evidence.contains(number.as_str()))
-    {
+    if !super::amounts::backed(&stated, &index.text_around(&lines, 2)) {
         reasons.push(CheckReason::NumberNotInSource);
+    }
+    // An amount no one says that way, in the item or in the words it copies
+    // ("1억 5천억", "80,900만원"): the speech model may have misheard it.
+    let quoted = index.text_around(&lines, 0);
+    if super::amounts::odd_units(&raw.text)
+        || (!numbers_in(&raw.text).is_empty() && super::amounts::odd_units(&quoted))
+    {
+        reasons.push(CheckReason::UnitOdd);
+    }
+    // The same rate said with another value close by ("자당 20", "자당 25만").
+    if super::amounts::rates_differ(&raw.text, &index.text_around(&lines, 3)) {
+        reasons.push(CheckReason::NumbersDiffer);
     }
 
     // An owner is a person: a name the recording has, never a speaker label.
@@ -1303,6 +1320,15 @@ fn check_item(
     })
 }
 
+/// Marks the entries whose changes of an amount do not add up: one says it
+/// went from A to B, another (or the same) by C, near B − A but not it.
+fn mark_sums(entries: &mut [(String, Entry)]) {
+    let texts: Vec<&str> = entries.iter().map(|(_, e)| e.text.as_str()).collect();
+    for at in super::amounts::sums_disagree(&texts) {
+        push_reason(&mut entries[at].1, CheckReason::SumsDisagree);
+    }
+}
+
 /// Whether everything an item rests on was said after the meeting ended.
 fn after_the_end(item: &Item, index: &Index<'_>, end_ms: Option<u64>) -> bool {
     end_ms.is_some_and(|end| index.segments[*item.lines.start()].start_ms >= end)
@@ -1336,12 +1362,16 @@ fn mark_elsewhere(
 }
 
 /// Doubts that keep an entry out of the story and the summary: it may not
-/// have been said so, or may be someone else's, and stating it there would
-/// undo the "확인 필요" beside it.
-const DOUBTS_NOT_TOLD: [CheckReason; 3] = [
+/// have been said so, may be someone else's, or carries a number that may
+/// be wrong; stating it there would undo the "확인 필요" beside it.
+const DOUBTS_NOT_TOLD: [CheckReason; 7] = [
     CheckReason::WeakSupport,
     CheckReason::Conflicting,
     CheckReason::OtherSubject,
+    CheckReason::NumberNotInSource,
+    CheckReason::NumbersDiffer,
+    CheckReason::UnitOdd,
+    CheckReason::SumsDisagree,
 ];
 
 /// The most pairs of entries put to the model as possibly disagreeing.
@@ -2463,7 +2493,12 @@ fn weight(template: &Template, key: &str, entry: &Entry) -> u32 {
     if !numbers_in(&entry.text).is_empty() {
         weight += 2;
     }
-    if entry.reasons.contains(&CheckReason::NumberNotInSource) {
+    if entry.reasons.iter().any(|r| {
+        matches!(
+            r,
+            CheckReason::NumberNotInSource | CheckReason::UnitOdd | CheckReason::SumsDisagree
+        )
+    }) {
         weight += 2;
     }
     // Said both ways, or maybe someone else's: what a person most needs to
@@ -3473,5 +3508,78 @@ mod tests {
             "저희 집은 32평이고 3층이에요"
         )
         .is_empty());
+    }
+
+    #[test]
+    fn numbers_are_compared_as_values_and_odd_amounts_are_marked() {
+        let mut transcript = transcript();
+        transcript
+            .segments
+            .push(line(21_000, 1, "천장은 아홉 평 정도 새로 합니다."));
+        transcript.segments.push(line(
+            26_000,
+            1,
+            "시공비까지 하면 80,900만원 정도 더 올라갈 수 있습니다.",
+        ));
+        transcript.segments.push(line(
+            31_000,
+            1,
+            "복도 끝은 자당 20 기준이고 서재도 자당 25만 원입니다.",
+        ));
+        let index = Index::new(&transcript);
+        let template = built_in().remove(1);
+        let reasons = |text: &str, ts: &str, quote: &str| {
+            check_item(
+                raw("materials", text, "", "", ts, quote),
+                &template,
+                &index,
+                &transcript,
+            )
+            .unwrap()
+            .entry
+            .reasons
+        };
+        // Said in words, written in digits: the same number.
+        assert!(reasons(
+            "천장 9평을 새로 한다",
+            "00:00:21",
+            "천장은 아홉 평 정도 새로 합니다"
+        )
+        .is_empty());
+        assert_eq!(
+            reasons(
+                "시공비까지 80,900만원 더 든다",
+                "00:00:26",
+                "80,900만원 정도 더 올라갈 수"
+            ),
+            [CheckReason::UnitOdd]
+        );
+        assert_eq!(
+            reasons(
+                "복도 끝 수납장은 자당 20",
+                "00:00:31",
+                "복도 끝은 자당 20 기준이고"
+            ),
+            [CheckReason::NumbersDiffer]
+        );
+        let mut entries = vec![
+            (
+                "budget".to_string(),
+                task(
+                    "견적이 1억 5천에서 2억 1천으로 올랐다",
+                    "",
+                    "",
+                    1_000,
+                    vec![],
+                ),
+            ),
+            (
+                "budget".to_string(),
+                task("5,100만 원 늘었다", "", "", 2_000, vec![]),
+            ),
+        ];
+        mark_sums(&mut entries);
+        assert_eq!(entries[0].1.reasons, [CheckReason::SumsDisagree]);
+        assert_eq!(entries[1].1.reasons, [CheckReason::SumsDisagree]);
     }
 }
