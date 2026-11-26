@@ -415,6 +415,7 @@ pub fn write(
     if let Err(e) = tidy_tasks(input, template, &mut entries, &named, &people) {
         warn!("Could not tidy the tasks ({e:#}); keeping them as they were");
     }
+    owners_by_name(template, &mut entries, &named, input.customer);
     dropped += keep_checks(template, &mut entries, MOST_CHECKS);
 
     // 7. The story of the meeting, from what is left.
@@ -2254,11 +2255,23 @@ fn tidy_tasks(
                 line.push_str(&format!(" / 기한: {}", entry.due));
             }
             if let Some(source) = entry.sources.first() {
-                let speaker = transcript
+                let at = transcript
                     .segments
                     .iter()
-                    .find(|segment| segment.start_ms == source.ms)
-                    .map(|segment| transcript.speaker_name(segment.speaker))
+                    .position(|segment| segment.start_ms == source.ms);
+                // The line before, where someone may have handed it over.
+                if let Some(before) = at
+                    .and_then(|at| at.checked_sub(1))
+                    .and_then(|at| transcript.segments.get(at))
+                {
+                    line.push_str(&format!(
+                        "\n   (앞 줄) {}: {}",
+                        transcript.speaker_name(before.speaker),
+                        before.text
+                    ));
+                }
+                let speaker = at
+                    .map(|at| transcript.speaker_name(transcript.segments[at].speaker))
                     .unwrap_or_default();
                 line.push_str(&format!(
                     "\n   [{}] {speaker}: 「{}」",
@@ -2273,7 +2286,7 @@ fn tidy_tasks(
     let system = "당신은 회의록의 할 일 목록을 다듬는 서기입니다. 녹음에서 뽑은 할 일 후보가 번호와 함께, 근거가 된 말과 그 말을 한 사람과 같이 주어집니다.\n\n\
          1. promise: 회의가 끝난 뒤 누군가 실제로 해야 하는 약속이면 true입니다. 회의 중에 이미 한 일이나 하고 있는 일을 묘사한 것(예: \"상담 중에 견적서를 쓰고 있음\", \"가전 자리를 반영해 제안함\"), 지나가며 한 말, 일반적인 설명, 가벼운 안내나 권유(예: \"사례 영상을 참고해 달라\", \"편하게 연락 달라\")는 false입니다. 할 일은 적을수록 좋습니다. 한두 시간 회의에서 남는 할 일은 보통 다섯에서 열 개입니다.\n\
          2. 같은 약속이 여러 번 나왔으면 한 묶음(ids)으로 모읍니다. 묶음의 첫 번호는 그 약속을 가장 잘 적은 것으로 합니다. 비슷해 보여도 다른 일이면 따로 둡니다.\n\
-         3. owner: 그 일을 할 사람을 owners 목록에서만 고릅니다. 근거가 된 말을 한 사람이 \"제가 하겠습니다\"라고 했으면 그 사람입니다. 사람을 알 수 없으면 약속한 쪽(목록에 있는 '우리(상담 담당)'이나 '고객')을 고르고, 그것도 알 수 없으면 빈 문자열로 둡니다.\n\
+         3. owner: 그 일을 할 사람을 owners 목록에서만 고르고, 사람 이름을 먼저 봅니다. 근거가 된 말을 한 사람이 이름으로 적혀 있고 \"제가 하겠습니다\"처럼 자기가 하겠다고 했으면 그 사람입니다. 다른 사람이 이름을 대며 맡긴 말(\"그건 박 소장님이 봐 주실 거예요\")이 바로 앞에 있으면 그 사람입니다. 그렇게 사람을 알 수 없을 때만 약속한 쪽(목록에 있는 '우리(상담 담당)'이나 '고객')을 고르고, 그것도 알 수 없으면 빈 문자열로 둡니다.\n\
          4. weight: 3은 돈·일정·계약·고객의 결정에 바로 걸린 약속, 2는 누군가 실제로 해야 하는 작업, 1은 가벼운 안내·추천·참고 자료 보내기입니다.\n\
          5. 회의 중에 이미 끝낸 일(\"링크를 전달함\", \"도면을 고침\", \"사이즈를 확인함\", \"추천함\")은 앞으로 할 약속이 아니므로 promise를 false로 합니다.\n\
          6. 모든 번호가 정확히 한 묶음에 들어가야 합니다. 새 내용을 지어내지 않습니다.";
@@ -2473,6 +2486,58 @@ fn apply_task_groups(
         at += 1;
         keep
     });
+}
+
+/// Gives tasks to people by name where the recording says who: a task the
+/// customer's side promised goes to the customer by name when the meeting
+/// has one, and one left to our side (or to no one) goes to the speaker who
+/// promised it in the first person ("제가 보내드릴게요"), when that speaker is
+/// named and is not the customer. Nothing is guessed: without such words
+/// the side stays.
+fn owners_by_name(
+    template: &Template,
+    entries: &mut [(String, Entry)],
+    transcript: &Transcript,
+    customer: &str,
+) {
+    let customer = customer.trim();
+    for (key, entry) in entries.iter_mut() {
+        if !template
+            .section(key)
+            .is_some_and(|section| section.kind == SectionKind::Actions)
+        {
+            continue;
+        }
+        let side = side_of(key);
+        if side == Some("고객") {
+            if entry.owner == "고객" && !customer.is_empty() {
+                entry.owner = customer.to_string();
+            }
+            continue;
+        }
+        if !(entry.owner.is_empty() || side.is_some_and(|side| entry.owner == side)) {
+            continue;
+        }
+        let Some(source) = entry.sources.first() else {
+            continue;
+        };
+        let Some(line) = transcript
+            .segments
+            .iter()
+            .find(|segment| segment.start_ms == source.ms)
+        else {
+            continue;
+        };
+        let name = transcript.speaker_name(line.speaker);
+        let named = !name.starts_with("화자") && !super::facts::is_customer(&name, customer);
+        let squeezed: String = line.text.chars().filter(|c| !c.is_whitespace()).collect();
+        let first_person = ["제가", "내가", "저는제가"]
+            .iter()
+            .any(|word| squeezed.contains(word));
+        if named && first_person {
+            entry.owner = name;
+        }
+    }
 }
 
 /// How much an entry matters to be checked: tasks and decisions, money and
@@ -3581,5 +3646,48 @@ mod tests {
         mark_sums(&mut entries);
         assert_eq!(entries[0].1.reasons, [CheckReason::SumsDisagree]);
         assert_eq!(entries[1].1.reasons, [CheckReason::SumsDisagree]);
+    }
+
+    #[test]
+    fn a_task_goes_to_the_person_who_promised_it_by_name() {
+        let template = consult();
+        let mut transcript = transcript();
+        transcript
+            .segments
+            .push(line(21_000, 2, "제가 집에 가서 냉장고 치수를 재 볼게요."));
+        transcript
+            .segments
+            .push(line(26_000, 1, "저희가 견적은 다음 주에 드리겠습니다."));
+        let mut entries = vec![
+            (
+                "our_tasks".to_string(),
+                task(
+                    "신발장 도면 다시 그려 보내기",
+                    "우리(상담 담당)",
+                    "",
+                    11_000,
+                    vec![],
+                ),
+            ),
+            (
+                "customer_tasks".to_string(),
+                task("냉장고 치수 재기", "고객", "", 21_000, vec![]),
+            ),
+            (
+                "our_tasks".to_string(),
+                task("견적 보내기", "우리(상담 담당)", "", 26_000, vec![]),
+            ),
+        ];
+        // Line 11 s is the named designer's own "보내드리겠습니다" without
+        // "제가": the side stays; "저희가" is the company, not a person.
+        owners_by_name(&template, &mut entries, &transcript, "이서진");
+        assert_eq!(entries[0].1.owner, "우리(상담 담당)");
+        assert_eq!(entries[1].1.owner, "이서진");
+        assert_eq!(entries[2].1.owner, "우리(상담 담당)");
+
+        transcript.segments[2].text =
+            "네, 중문은 제가 신발장 도면을 다시 그려서 보내드리겠습니다.".into();
+        owners_by_name(&template, &mut entries, &transcript, "이서진");
+        assert_eq!(entries[0].1.owner, "김서윤 실장");
     }
 }

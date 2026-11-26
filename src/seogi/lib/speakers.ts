@@ -140,3 +140,57 @@ export function shareBar(
   }
   return pieces.sort((a, b) => b.talkMs - a.talkMs);
 }
+
+/** At most this share of the turns two speakers take may follow each other
+ *  for them to look like one person heard as two. */
+const SAME_PERSON_MEETS = 0.1;
+/** Each must take at least this many turns for the pattern to mean much. */
+const SAME_PERSON_TURNS = 3;
+
+/**
+ * A named speaker that speaker `id` may be the same person as, or null.
+ * The speaker model sometimes hears one person as two (they turn away, the
+ * room changes). Two people in a conversation answer each other; one person
+ * heard as two seldom follows themself, while both halves talk with the
+ * rest. So: a named speaker whose turns almost never meet `id`'s, both
+ * talking with others. Only a suggestion for the person to confirm.
+ */
+export function maybeSamePerson(
+  id: number,
+  speakers: { id: number; name: string }[],
+  order: number[],
+  unnamed: (name: string) => boolean,
+): number | null {
+  // One turn per run of lines by the same speaker.
+  const turns = order.filter(
+    (speaker, i) => i === 0 || order[i - 1] !== speaker,
+  );
+  const count = (speaker: number) => turns.filter((s) => s === speaker).length;
+  const meets = (a: number, b: number) =>
+    turns.filter(
+      (s, i) =>
+        i > 0 &&
+        ((s === a && turns[i - 1] === b) || (s === b && turns[i - 1] === a)),
+    ).length;
+  const withOthers = (a: number, b: number) =>
+    turns.filter(
+      (s, i) =>
+        i > 0 &&
+        (s === a || turns[i - 1] === a) &&
+        s !== b &&
+        turns[i - 1] !== b &&
+        s !== turns[i - 1],
+    ).length;
+  if (count(id) < SAME_PERSON_TURNS) return null;
+  let best: { id: number; ratio: number } | null = null;
+  for (const other of speakers) {
+    if (other.id === id || unnamed(other.name)) continue;
+    if (count(other.id) < SAME_PERSON_TURNS) continue;
+    if (withOthers(id, other.id) < 2 || withOthers(other.id, id) < 2) continue;
+    const ratio = meets(id, other.id) / Math.min(count(id), count(other.id));
+    if (ratio <= SAME_PERSON_MEETS && (!best || ratio < best.ratio)) {
+      best = { id: other.id, ratio };
+    }
+  }
+  return best?.id ?? null;
+}

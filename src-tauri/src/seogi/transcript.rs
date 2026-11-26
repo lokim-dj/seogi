@@ -75,7 +75,8 @@ impl Transcript {
     /// Gives the name `name` to `speaker`'s lines within `scope`: from
     /// `from_ms` on, or from `from_ms` to before `to_ms` for one stretch.
     /// Lines that move to another name go to the speaker already called that,
-    /// or to a new one. Returns the times (start, end) the change covers,
+    /// or to a new one; named throughout with a name another speaker has,
+    /// the two are one person and become one speaker. Returns the times (start, end) the change covers,
     /// and the speaker's name before, so what refers to it can follow.
     pub fn name_speaker(
         &mut self,
@@ -94,6 +95,7 @@ impl Transcript {
             if let Some(entry) = self.speakers.iter_mut().find(|s| s.id == speaker) {
                 entry.name = name;
             }
+            self.merge_same_names();
             return Some((old, 0, u64::MAX));
         }
         let (from, to) = match scope {
@@ -121,6 +123,37 @@ impl Transcript {
             }
         }
         Some((old, from, to))
+    }
+}
+
+impl Transcript {
+    /// Makes speakers with the same name one speaker: the speaker model
+    /// heard one person as two, and the name says they are one (the minutes
+    /// found it said to both, or the user gave it). The lines go to the
+    /// first of them. Default names ("화자 3") are never the same person.
+    /// Returns the pairs (merged, into).
+    pub fn merge_same_names(&mut self) -> Vec<(u32, u32)> {
+        let mut merged: Vec<(u32, u32)> = Vec::new();
+        let mut kept: Vec<Speaker> = Vec::new();
+        for speaker in std::mem::take(&mut self.speakers) {
+            let default = speaker.name.trim().is_empty()
+                || speaker.name == Self::default_speaker_name(speaker.id)
+                || speaker.name.starts_with("화자");
+            match kept
+                .iter()
+                .find(|other| !default && other.name == speaker.name)
+            {
+                Some(other) => merged.push((speaker.id, other.id)),
+                None => kept.push(speaker),
+            }
+        }
+        self.speakers = kept;
+        for segment in &mut self.segments {
+            if let Some((_, into)) = merged.iter().find(|(from, _)| *from == segment.speaker) {
+                segment.speaker = *into;
+            }
+        }
+        merged
     }
 }
 
@@ -455,6 +488,28 @@ mod tests {
 
         assert_eq!(here.name_speaker(9, "누구", NameScope::All, 0, 0), None);
         assert_eq!(here.name_speaker(1, "  ", NameScope::All, 0, 0), None);
+    }
+
+    #[test]
+    fn one_person_heard_as_two_speakers_becomes_one_by_name() {
+        let lines = [(0, 1), (1_000, 2), (2_000, 3), (3_000, 1)];
+        let speakers_of = |t: &Transcript| t.segments.iter().map(|s| s.speaker).collect::<Vec<_>>();
+        let mut heard = spoken(&lines);
+        heard.speakers.push(Speaker {
+            id: 3,
+            name: "화자 3".into(),
+        });
+        heard.name_speaker(1, "김서윤 실장", NameScope::All, 0, 0);
+        // Naming the third the same: it was the same person all along.
+        heard.name_speaker(3, "김서윤 실장", NameScope::All, 0, 0);
+        assert_eq!(speakers_of(&heard), [1, 2, 1, 1]);
+        assert_eq!(heard.speakers.len(), 2);
+
+        // Two that only have default names stay apart.
+        let mut plain = spoken(&lines);
+        plain.speakers[1].name = "화자 1".into();
+        assert!(plain.merge_same_names().is_empty());
+        assert_eq!(plain.speakers.len(), 2);
     }
 
     fn segment(start_ms: u64, end_ms: u64, speaker: u32, text: &str) -> Segment {

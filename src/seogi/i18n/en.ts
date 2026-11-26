@@ -122,6 +122,9 @@ const en: Strings = {
     cancel: "Close",
     followHint:
       "Tasks given to this person in the minutes follow the new name.",
+    samePerson:
+      "Could this be '{{name}}'? The two hardly ever talk to each other.",
+    merge: "Make them one: '{{name}}'",
   },
   feedback: {
     talkMore: "Talking in detail",

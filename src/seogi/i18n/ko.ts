@@ -118,6 +118,9 @@ const ko = {
     pickFirst: "이름을 고르세요",
     cancel: "닫기",
     followHint: "회의록에서 이 사람에게 맡긴 할 일의 담당도 함께 바뀝니다.",
+    samePerson:
+      "'{{name}}'와 같은 사람일까요? 두 쪽이 서로 말을 주고받은 적이 거의 없어요.",
+    merge: "'{{name}}'(으)로 합치기",
   },
   feedback: {
     talkMore: "말하기 자세히",

@@ -1882,6 +1882,9 @@ impl Secretary {
                             entry.name = name.clone();
                         }
                     }
+                    // One person the speaker model heard as two, named the
+                    // same from what was said: one speaker.
+                    transcript.merge_same_names();
                 }
                 let title = output.minutes.title.trim();
                 if meeting.title_is_auto && !title.is_empty() {

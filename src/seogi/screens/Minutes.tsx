@@ -40,7 +40,12 @@ import { ConfirmDelete, busy } from "../components/DeleteMeeting";
 import { NS } from "../i18n";
 import { clock, fullDay, hm, hms, isoDay, shortModel } from "../lib/format";
 import { joinPath, usePlayer, type Player } from "../lib/player";
-import { sampleLines, shareBar, speakerTones } from "../lib/speakers";
+import {
+  maybeSamePerson,
+  sampleLines,
+  shareBar,
+  speakerTones,
+} from "../lib/speakers";
 import { taskLine, titleNeeded } from "../lib/tasks";
 import { lateMinutes, startsMidTalk } from "../lib/opening";
 import { Mark } from "../components/Mark";
@@ -1354,6 +1359,14 @@ function NameSpeakers({
   );
   const quietOne =
     isUnnamed(current.name) && (share[current.id] ?? 0) < QUIET_SHARE;
+  // One person the speaker model may have heard as two: offered, never done.
+  const sameId = maybeSamePerson(
+    current.id,
+    speakers,
+    meeting.transcript.segments.map((line) => line.speaker),
+    isUnnamed,
+  );
+  const same = speakers.find((s) => s.id === sameId);
   const noPeople = (meeting.people ?? []).length === 0;
   return (
     <section
@@ -1425,6 +1438,20 @@ function NameSpeakers({
           </li>
         ))}
       </ul>
+      {same ? (
+        <div className="mb-3 text-[13.5px]">
+          <span className="t2">
+            {t("names.samePerson", { name: same.name })}
+          </span>{" "}
+          <button
+            type="button"
+            className="lnk"
+            onClick={() => void give(same.name, null)}
+          >
+            {t("names.merge", { name: same.name })}
+          </button>
+        </div>
+      ) : null}
       <div className="mb-1.5 font-medium">{t("names.whoSaid")}</div>
       <NamePicker
         meeting={meeting}
