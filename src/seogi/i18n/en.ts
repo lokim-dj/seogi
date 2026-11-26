@@ -218,6 +218,11 @@ const en: Strings = {
     restarting: "Restarting",
     failed: "It could not be installed. Press again.",
   },
+  speechNotice: {
+    title: "A more accurate speech model, {{model}}, is ready to download",
+    standIn: "Until then {{model}} transcribes instead",
+    later: "Later",
+  },
   home: {
     tomorrow: "Tomorrow",
     shortcutAnywhere: "{{keys}}, from any app",
@@ -429,7 +434,8 @@ const en: Strings = {
     corrected: "Corrected from your vocabulary",
     took: "Took {{length}}.",
     writtenBy: "Transcribed by {{speech}} · minutes by {{summary}}",
-    stoodIn: " (in place of {{wanted}}, which was not downloaded yet)",
+    stoodIn: " (in place of {{wanted}}, not downloaded yet)",
+    transcribedBy: "Transcribed by {{speech}}",
   },
   recording: {
     mayStayEmpty: "may stay empty",

@@ -539,6 +539,16 @@ function Sheet({
   jump: Jump | null;
 }) {
   const { t, i18n } = useTranslation(NS);
+  // The speech model, and the one it stood in for when that was not here.
+  const speechBy = (meeting: Meeting) =>
+    meeting.transcript
+      ? shortModel(meeting.transcript.model) +
+        (meeting.stats?.stood_in_for
+          ? t("minutes.stoodIn", {
+              wanted: shortModel(meeting.stats.stood_in_for),
+            })
+          : "")
+      : "";
   const length = useLength();
   const refreshDetail = useSeogi((s) => s.refreshDetail);
   const sheet = useRef<HTMLElement | null>(null);
@@ -855,15 +865,12 @@ function Sheet({
           <p className="mt-3 mb-0 text-[13px] leading-[1.6] t3">
             {minutes && meeting.transcript
               ? t("minutes.writtenBy", {
-                  speech: shortModel(meeting.transcript.model),
+                  speech: speechBy(meeting),
                   summary: minutes.written_by,
-                }) +
-                (meeting.stats?.stood_in_for
-                  ? t("minutes.stoodIn", {
-                      wanted: shortModel(meeting.stats.stood_in_for),
-                    })
-                  : "")
-              : null}
+                })
+              : meeting.stats?.stood_in_for
+                ? t("minutes.transcribedBy", { speech: speechBy(meeting) })
+                : null}
             {(meeting.total_ms ?? 0) > 0
               ? ` · ${t("minutes.took", { length: length(meeting.total_ms ?? 0) })}`
               : null}

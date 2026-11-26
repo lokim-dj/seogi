@@ -50,9 +50,7 @@ SMC
 이노솔
 
 # 받아쓰기 모델이 자주 잘못 듣는 말
-S M => SMC
 인오솔 => 이노솔
-이노소 => 이노솔
 ";
 
 /// Categories hinted only for a recording whose own information (its
@@ -603,15 +601,22 @@ mod tests {
             Some("걸레받이")
         );
         assert_eq!(vocabulary.core.len(), 17);
-        assert_eq!(vocabulary.corrections.len(), 3);
-        // What Qwen3 ASR wrote for two ceiling materials on a real meeting.
-        let (text, made) = vocabulary.correct("인오솔은 천이라 S M 천장보다 이노소 쪽이");
-        assert_eq!(text, "이노솔은 천이라 SMC 천장보다 이노솔 쪽이");
-        assert_eq!(made.len(), 3);
-        // Right forms are left alone.
-        let (text, made) = vocabulary.correct("SMC 천장과 이노솔");
-        assert_eq!(text, "SMC 천장과 이노솔");
-        assert!(made.is_empty());
+        assert_eq!(vocabulary.corrections.len(), 1);
+        // What Qwen3 ASR wrote for a ceiling material on a real meeting.
+        let (text, made) = vocabulary.correct("인오솔은 천이라 물 한 방울도");
+        assert_eq!(text, "이노솔은 천이라 물 한 방울도");
+        assert_eq!(made.len(), 1);
+        // Its other wrong forms ("S M" for SMC, "이노소") are hints only: as
+        // corrections they would rewrite real words ("S M L", "이노소프트").
+        for text in [
+            "SMC 천장과 이노솔",
+            "사이즈는 S M L 중에",
+            "이노소프트 제품",
+        ] {
+            let (same, made) = vocabulary.correct(text);
+            assert_eq!(same, text);
+            assert!(made.is_empty());
+        }
     }
 
     #[test]

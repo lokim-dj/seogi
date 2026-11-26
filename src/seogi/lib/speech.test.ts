@@ -6,6 +6,8 @@
 
 import assert from "node:assert/strict";
 import {
+  downloadEnded,
+  downloadProgressed,
   gigabytes,
   minutesLeft,
   minutesToDownload,
@@ -50,5 +52,36 @@ assert.equal(minutesLeft(0, 0, 1e6), null);
 assert.equal(minutesLeft(0, 600e6, 5e6), 2);
 assert.equal(minutesLeft(599e6, 600e6, 5e6), 1);
 assert.equal(minutesLeft(700e6, 600e6, 5e6), 1);
+
+// A download runs, fails, is tried again and ends: the screens see its
+// progress, then a failure they can offer again, then nothing.
+const none = { downloads: {}, downloadMinutesLeft: {}, downloadFailed: [] };
+const running = downloadProgressed(none, {
+  model_id: QWEN,
+  percentage: 40,
+  downloaded: 400e6,
+  total: 1000e6,
+  bytes_per_sec: 5e6,
+});
+assert.deepEqual(running.downloads, { [QWEN]: 40 });
+assert.deepEqual(running.downloadMinutesLeft, { [QWEN]: 2 });
+const failed = downloadEnded(running, QWEN, true);
+assert.deepEqual(failed, {
+  downloads: {},
+  downloadMinutesLeft: {},
+  downloadFailed: [QWEN],
+});
+const again = downloadProgressed(failed, {
+  model_id: QWEN,
+  percentage: 1,
+  downloaded: 0,
+  total: 1000e6,
+  bytes_per_sec: null,
+});
+assert.deepEqual(again.downloadFailed, []);
+assert.deepEqual(again.downloadMinutesLeft, {});
+assert.deepEqual(downloadEnded(again, QWEN, false), none);
+// Another model's download leaves this one's failure where it is.
+assert.deepEqual(downloadEnded(failed, TURBO, false).downloadFailed, [QWEN]);
 
 console.log("speech: ok");

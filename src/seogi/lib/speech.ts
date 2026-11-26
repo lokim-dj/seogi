@@ -42,3 +42,55 @@ export function minutesLeft(
   const seconds = Math.max(0, total - downloaded) / bytesPerSecond;
   return Math.max(1, Math.ceil(seconds / 60));
 }
+
+/** Where the screens keep the models' downloads. */
+export interface Downloads {
+  /** Progress by model id, 0 to 100, while a download runs. */
+  downloads: Record<string, number>;
+  /** Whole minutes left, once a download's speed is known. */
+  downloadMinutesLeft: Record<string, number>;
+  /** Models whose last download failed, until one is tried again. */
+  downloadFailed: string[];
+}
+
+/** A download reported progress: it runs, so it has not failed. */
+export function downloadProgressed(
+  state: Downloads,
+  progress: {
+    model_id: string;
+    percentage: number;
+    downloaded: number;
+    total: number;
+    bytes_per_sec: number | null;
+  },
+): Downloads {
+  const { model_id, percentage, downloaded, total, bytes_per_sec } = progress;
+  const left = minutesLeft(downloaded, total, bytes_per_sec);
+  const downloadMinutesLeft = { ...state.downloadMinutesLeft };
+  if (left === null) delete downloadMinutesLeft[model_id];
+  else downloadMinutesLeft[model_id] = left;
+  return {
+    downloads: { ...state.downloads, [model_id]: percentage },
+    downloadMinutesLeft,
+    downloadFailed: state.downloadFailed.filter((id) => id !== model_id),
+  };
+}
+
+/** A download ended, well or not: its progress goes, and a failure is kept
+ *  so the screens can offer to try again. */
+export function downloadEnded(
+  state: Downloads,
+  modelId: string,
+  failed: boolean,
+): Downloads {
+  const downloads = { ...state.downloads };
+  delete downloads[modelId];
+  const downloadMinutesLeft = { ...state.downloadMinutesLeft };
+  delete downloadMinutesLeft[modelId];
+  const others = state.downloadFailed.filter((id) => id !== modelId);
+  return {
+    downloads,
+    downloadMinutesLeft,
+    downloadFailed: failed ? [...others, modelId] : others,
+  };
+}

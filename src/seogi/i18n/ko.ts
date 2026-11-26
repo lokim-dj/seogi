@@ -213,6 +213,11 @@ const ko = {
     restarting: "다시 켜는 중",
     failed: "설치하지 못했어요. 다시 눌러 주세요.",
   },
+  speechNotice: {
+    title: "더 정확한 받아쓰기 모델이 있어요: {{model}}",
+    standIn: "받기 전까지는 {{model}} 모델이 대신 받아써요",
+    later: "나중에",
+  },
   home: {
     tomorrow: "내일",
     shortcutAnywhere: "{{keys}}, 다른 앱에서도",
@@ -422,7 +427,8 @@ const ko = {
     corrected: "용어집으로 고친 말",
     took: "정리하는 데 {{length}} 걸렸습니다.",
     writtenBy: "받아쓰기 {{speech}} · 회의록 {{summary}}",
-    stoodIn: " ({{wanted}} 모델을 아직 받지 못해 대신 받아씀)",
+    stoodIn: "({{wanted}} 모델을 아직 받지 못해 대신 씀)",
+    transcribedBy: "받아쓰기 {{speech}}",
   },
   recording: {
     mayStayEmpty: "비워 둬도 돼요",
