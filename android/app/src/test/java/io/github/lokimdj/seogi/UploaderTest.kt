@@ -36,14 +36,20 @@ class UploaderTest {
         var failSession: String? = null
         var onChunk: () -> Unit = {}
 
-        override fun ensureFolder(token: String): String { folderCalls++; return "F" }
+        val usable = mutableSetOf<String>()
+        var usableChecks = 0
+        val parents = mutableListOf<String>()
+        override fun ensureFolder(token: String): String { folderCalls++; return "F$folderCalls".also { usable += it } }
+        override fun folderUsable(token: String, folderId: String): Boolean { usableChecks++; return folderId in usable }
         override fun uploadSmall(token: String, folderId: String, name: String, mime: String, bytes: ByteArray): String {
             if (unauthorizedCalls > 0) { unauthorizedCalls--; throw DriveHttpException(401, "") }
             small += name
+            parents += folderId
             return "J${small.size}"
         }
         override fun startSession(token: String, folderId: String, name: String, mime: String, size: Long): String {
             sessions++
+            parents += folderId
             return "s$sessions".also { received[it] = ByteArrayOutputStream() }
         }
         override fun status(token: String, session: String, size: Long): UploadStatus =
@@ -72,11 +78,19 @@ class UploaderTest {
 
     private val audio = ByteArray(2500) { (it % 251).toByte() }
 
-    private fun uploader(store: RecordingStore, drive: Drive, token: TokenResult = TokenResult.Ok("t"), missing: Set<String> = emptySet()) =
+    private class Folder(override var folderId: String? = null) : Uploader.FolderCache
+
+    private fun uploader(
+        store: RecordingStore,
+        drive: Drive,
+        token: TokenResult = TokenResult.Ok("t"),
+        missing: Set<String> = emptySet(),
+        folder: Uploader.FolderCache = Folder(),
+    ) =
         Uploader(
             store = store, drive = drive, tokens = { token },
             open = { r: Recording -> if (r.id in missing) null else Bytes(audio) },
-            folder = object : Uploader.FolderCache { override var folderId: String? = null },
+            folder = folder,
             device = "Phone X", appVersion = "0.1.0", chunkSize = 1024,
         )
 
@@ -185,5 +199,50 @@ class UploaderTest {
         assertEquals(1024, d.received.getValue("s1").size())
         assertEquals(UploadState.WAITING, s.get("a")!!.upload)
         assertEquals("s1", s.get("a")!!.sessionUri)
+    }
+
+    /** A folder the user trashed or deleted in Drive is replaced, never written into. */
+    @Test fun trashedFolderIsReplacedAndSaved() = runTest {
+        val s = store().apply { upsert(recording("a")) }
+        val d = FakeDrive() // "OLD" is not usable: trashed or gone
+        val folder = Folder("OLD")
+        assertEquals(Uploader.Outcome.DONE, uploader(s, d, folder = folder).runAll())
+        assertEquals("F1", folder.folderId)
+        assertEquals(listOf("F1", "F1"), d.parents)
+        assertEquals(UploadState.UPLOADED, s.get("a")!!.upload)
+    }
+
+    @Test fun halfDoneUploadStartsOverInTheNewFolder() = runTest {
+        val s = store().apply { upsert(recording("a").copy(sidecarFileId = "Jold", sessionUri = "sOld", upload = UploadState.UPLOADING)) }
+        val d = FakeDrive()
+        uploader(s, d, folder = Folder("OLD")).runAll()
+        assertEquals(listOf("a.json"), d.small)
+        assertEquals(1, d.sessions)
+        assertEquals(listOf("F1", "F1"), d.parents)
+        assertEquals("A-s1", s.get("a")!!.driveFileId)
+    }
+
+    /** Files the user deleted in Drive stay deleted: finished uploads are not sent again. */
+    @Test fun finishedUploadsAreNotSentAgain() = runTest {
+        val s = store().apply { upsert(recording("a").copy(upload = UploadState.UPLOADED, driveFileId = "A-old")) }
+        val d = FakeDrive()
+        assertEquals(Uploader.Outcome.DONE, uploader(s, d, folder = Folder("OLD")).runAll())
+        assertEquals(emptyList<String>(), d.small)
+        assertEquals(0, d.sessions)
+        assertEquals("A-old", s.get("a")!!.driveFileId)
+    }
+
+    @Test fun aGoodFolderIsKeptAndCheckedOncePerRun() = runTest {
+        val s = store().apply {
+            upsert(recording("a", startedAt = 1))
+            upsert(recording("b", startedAt = 2))
+        }
+        val d = FakeDrive().apply { usable += "KEEP" }
+        val folder = Folder("KEEP")
+        uploader(s, d, folder = folder).runAll()
+        assertEquals("KEEP", folder.folderId)
+        assertEquals(0, d.folderCalls)
+        assertEquals(1, d.usableChecks)
+        assertEquals(List(4) { "KEEP" }, d.parents)
     }
 }

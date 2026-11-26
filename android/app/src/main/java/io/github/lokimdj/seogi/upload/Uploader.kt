@@ -132,8 +132,9 @@ class Uploader(
         }
     }
 
-    private suspend fun send(token: String, r: Recording, src: AudioSource) {
-        val folderId = folder.folderId ?: io { drive.ensureFolder(token) }.also { folder.folderId = it }
+    private suspend fun send(token: String, start: Recording, src: AudioSource) {
+        val folderId = usableFolder(token)
+        val r = store.get(start.id) ?: return // re-read: a new folder clears old sessions
         if (r.sidecarFileId == null) {
             val bytes = Sidecar.json(r, device, appVersion).toByteArray()
             val fileId = io { drive.uploadSmall(token, folderId, Sidecar.fileName(r.fileName), "application/json", bytes) }
@@ -184,6 +185,32 @@ class Uploader(
 
     private suspend fun backToWaiting(id: String) = withContext(NonCancellable) {
         store.update(id) { if (it.upload == UploadState.UPLOADING) it.copy(upload = UploadState.WAITING) else it }
+    }
+
+    private var folderChecked: String? = null
+
+    /**
+     * The `서기 폰 녹음` folder to upload into, checked once a run: a saved
+     * folder the user trashed or deleted is replaced by a new one. Uploads
+     * that were half done in the old folder start over in the new one;
+     * finished uploads are left alone (the user removed them on purpose).
+     */
+    private suspend fun usableFolder(token: String): String {
+        val saved = folder.folderId
+        if (saved != null && saved == folderChecked) return saved
+        if (saved != null && io { drive.folderUsable(token, saved) }) {
+            folderChecked = saved
+            return saved
+        }
+        val made = io { drive.ensureFolder(token) }
+        folder.folderId = made
+        folderChecked = made
+        if (saved != null && saved != made) {
+            store.all.value.filter { it.upload != UploadState.UPLOADED }.forEach { r ->
+                store.update(r.id) { it.copy(sessionUri = null, sidecarFileId = null, progress = 0f) }
+            }
+        }
+        return made
     }
 
     /** Network calls block; this lets a cancelled run stop at the next piece. */

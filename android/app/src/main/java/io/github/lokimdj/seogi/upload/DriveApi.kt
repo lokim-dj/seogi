@@ -27,6 +27,8 @@ sealed interface UploadStatus {
 interface Drive {
     /** The app-made `서기 폰 녹음` folder; made when there is none. */
     fun ensureFolder(token: String): String
+    /** The saved folder still exists, is a folder, and is not in the trash. */
+    fun folderUsable(token: String, folderId: String): Boolean
     fun uploadSmall(token: String, folderId: String, name: String, mime: String, bytes: ByteArray): String
     /** Opens a resumable upload; returns the session address. */
     fun startSession(token: String, folderId: String, name: String, mime: String, size: Long): String
@@ -50,6 +52,16 @@ class DriveApi(private val http: Http = UrlConnectionHttp) : Drive {
         }.toString().toByteArray()
         val made = call("POST", "$API/files?fields=id", token, mapOf("Content-Type" to JSON_UTF8), body)
         return idOf(made.body)
+    }
+
+    override fun folderUsable(token: String, folderId: String): Boolean {
+        val r = http.send("GET", "$API/files/${enc(folderId)}?fields=id,trashed,mimeType", auth(token), null)
+        if (r.code == 404) return false
+        if (r.code !in 200..299) throw DriveHttpException(r.code, r.body.take(200))
+        val o = json.parseToJsonElement(r.body).jsonObject
+        val trashed = o["trashed"]?.jsonPrimitive?.content == "true"
+        val isFolder = o["mimeType"]?.jsonPrimitive?.content == FOLDER_MIME
+        return isFolder && !trashed
     }
 
     override fun uploadSmall(token: String, folderId: String, name: String, mime: String, bytes: ByteArray): String {

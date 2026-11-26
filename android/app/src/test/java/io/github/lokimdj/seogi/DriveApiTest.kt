@@ -58,4 +58,18 @@ class DriveApiTest {
         assertEquals(UploadStatus.Incomplete(1024), DriveApi(http).putChunk("t", "s", ByteArray(1024), 0, 4096))
         assertEquals("bytes 0-1023/4096", http.sent[0].third["Content-Range"])
     }
+
+    @Test fun folderIsUsableOnlyWhenThereAndNotTrashed() {
+        val folder = "application/vnd.google-apps.folder"
+        val http = Fake(
+            HttpResponse(200, emptyMap(), """{"id":"F","trashed":false,"mimeType":"$folder"}"""),
+            HttpResponse(200, emptyMap(), """{"id":"F","trashed":true,"mimeType":"$folder"}"""),
+            HttpResponse(404, emptyMap(), "not found"),
+        )
+        val d = DriveApi(http)
+        assertTrue(d.folderUsable("t", "F"))
+        assertEquals(false, d.folderUsable("t", "F"))
+        assertEquals(false, d.folderUsable("t", "F"))
+        assertTrue(http.sent[0].second.contains("trashed"))
+    }
 }
