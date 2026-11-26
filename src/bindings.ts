@@ -1705,6 +1705,19 @@ async seogiNameSpeaker(id: string, speaker: number, name: string, scope: NameSco
 }
 },
 /**
+ * Puts back a naming of speakers just made: who said what and who was
+ * given each task as kept before it, while the meeting is still as it
+ * was just after it.
+ */
+async seogiRestoreNaming(id: string, kept: Naming, now: Naming) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_restore_naming", { id, kept, now }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Candidate words for a meeting from documents (PDF, text, pictures).
  */
 async seogiTermsFromDocuments(id: string, paths: string[]) : Promise<Result<TermsFound, string>> {
@@ -2469,6 +2482,15 @@ id: string; duplicate: boolean;
  * Why it could not be brought in; empty when it was.
  */
 error: string }
+/**
+ * One task of the minutes as a naming keeps it: which task (its text and
+ * the moment it rests on) and who was given it.
+ */
+export type KeptTask = { text: string; 
+/**
+ * The first moment the task rests on, when it has one.
+ */
+at_ms: number | null; owner: string }
 export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_pid: number | null; culprit_name: string | null; 
 /**
  * Counts only — key identity is deliberately never captured.
@@ -2539,6 +2561,11 @@ export type LanguageStatus =
  * Auto can't work here; `language` is used instead.
  */
 { kind: "auto_unavailable"; language: string; reason: AutoUnavailableReason }
+/**
+ * Who said one line, by when it starts: part of a naming kept so it can
+ * be put back.
+ */
+export type LineSpeaker = { start_ms: number; speaker: number }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 /**
  * Whether the system will open the app at login, as the system says, not
@@ -2834,6 +2861,19 @@ export type NameScope =
  * The speaker's lines in one stretch (a paragraph on the screen).
  */
 "here"
+/**
+ * Who said what and who was given each task, kept by the screen around a
+ * naming of speakers, so the naming can be put back.
+ */
+export type Naming = { speakers: Speaker[]; 
+/**
+ * Every line of the transcript, in order.
+ */
+lines: LineSpeaker[]; 
+/**
+ * Every task, in order: each minutes, its sections, their entries.
+ */
+tasks: KeptTask[] }
 export type Notice = { code: NoticeCode; level: NoticeLevel; source: NoticeSource; 
 /**
  * What only Rust knows, such as a model name or a raw error.

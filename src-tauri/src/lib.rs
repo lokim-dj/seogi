@@ -944,6 +944,7 @@ pub fn run(cli_args: CliArgs) {
             seogi::commands::seogi_open_install_page,
             seogi::commands::seogi_talk,
             seogi::commands::seogi_name_speaker,
+            seogi::commands::seogi_restore_naming,
             seogi::commands::seogi_terms_from_documents,
             seogi::commands::seogi_add_to_vocabulary,
             seogi::commands::seogi_mac_calendar_access,

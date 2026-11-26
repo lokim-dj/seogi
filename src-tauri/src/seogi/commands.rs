@@ -423,6 +423,21 @@ pub async fn seogi_name_speaker(
     .await
 }
 
+/// Puts back a naming of speakers just made: who said what and who was
+/// given each task as kept before it, while the meeting is still as it
+/// was just after it.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_restore_naming(
+    secretary: State<'_, Arc<Secretary>>,
+    id: String,
+    kept: super::app::Naming,
+    now: super::app::Naming,
+) -> Result<(), String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || secretary.restore_naming(&id, &kept, &now).map_err(text)).await
+}
+
 /// Shows the meeting's folder in Finder or Explorer.
 #[tauri::command]
 #[specta::specta]

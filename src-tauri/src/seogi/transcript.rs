@@ -127,6 +127,45 @@ impl Transcript {
     }
 }
 
+/// Who said one line, by when it starts: part of a naming kept so it can
+/// be put back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct LineSpeaker {
+    pub start_ms: u64,
+    pub speaker: u32,
+}
+
+impl Transcript {
+    /// Puts back who said what as it was kept before a naming: the speakers
+    /// and each line's speaker. Refused, changing nothing, when the lines are
+    /// no longer the ones kept (the recording was transcribed again).
+    pub fn put_back_speakers(
+        &mut self,
+        speakers: &[Speaker],
+        lines: &[LineSpeaker],
+    ) -> std::result::Result<(), &'static str> {
+        if lines.len() != self.segments.len()
+            || lines
+                .iter()
+                .zip(&self.segments)
+                .any(|(kept, segment)| kept.start_ms != segment.start_ms)
+        {
+            return Err("the transcript has changed since");
+        }
+        if lines
+            .iter()
+            .any(|line| !speakers.iter().any(|s| s.id == line.speaker) && line.speaker != 0)
+        {
+            return Err("a line names a speaker that is not there");
+        }
+        self.speakers = speakers.to_vec();
+        for (segment, kept) in self.segments.iter_mut().zip(lines) {
+            segment.speaker = kept.speaker;
+        }
+        Ok(())
+    }
+}
+
 /// Names that two people can share: a role, or no name at all.
 fn shared_name(name: &str) -> bool {
     const ROLES: [&str; 12] = [
@@ -505,6 +544,43 @@ mod tests {
 
         assert_eq!(here.name_speaker(9, "누구", NameScope::All, 0, 0), None);
         assert_eq!(here.name_speaker(1, "  ", NameScope::All, 0, 0), None);
+    }
+
+    #[test]
+    fn a_naming_is_put_back_as_it_was() {
+        let mut heard = spoken(&[(0, 1), (1_000, 2), (2_000, 1)]);
+        let before = heard.clone();
+        let kept: Vec<LineSpeaker> = heard
+            .segments
+            .iter()
+            .map(|s| LineSpeaker {
+                start_ms: s.start_ms,
+                speaker: s.speaker,
+            })
+            .collect();
+        heard.name_speaker(1, "김서윤 실장", NameScope::Here, 2_000, 2_900);
+        heard.name_speaker(1, "박도현 소장", NameScope::All, 0, 0);
+        assert_ne!(heard, before);
+        heard
+            .put_back_speakers(&before.speakers, &kept)
+            .expect("the same lines");
+        assert_eq!(heard, before);
+        // Lines that are not the kept ones: nothing is changed.
+        let mut other = spoken(&[(0, 1), (1_500, 2)]);
+        let untouched = other.clone();
+        assert!(other.put_back_speakers(&before.speakers, &kept).is_err());
+        assert_eq!(other, untouched);
+        // A line given a speaker the list does not have: refused.
+        let mut lost = before.clone();
+        let wrong = [
+            LineSpeaker {
+                start_ms: 0,
+                speaker: 9,
+            },
+            kept[1],
+            kept[2],
+        ];
+        assert!(lost.put_back_speakers(&before.speakers, &wrong).is_err());
     }
 
     #[test]

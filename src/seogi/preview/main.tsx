@@ -33,6 +33,7 @@ import type {
   FoundPlace,
   Meeting,
   MeetingSummary,
+  Naming,
   Readiness,
   RecordingState,
   SignIn,
@@ -703,6 +704,24 @@ mockIPC(
           (one) => one.id === args.speaker,
         );
         if (speaker && args.scope === "all") speaker.name = String(args.name);
+        return null;
+      }
+      case "seogi_restore_naming": {
+        // As the backend does it: who said each line and who was given
+        // each task, as kept before the naming.
+        const kept = args.kept as Naming;
+        if (done.transcript) {
+          done.transcript.speakers = kept.speakers.map((one) => ({ ...one }));
+          done.transcript.segments.forEach((line, i) => {
+            line.speaker = kept.lines[i]?.speaker ?? line.speaker;
+          });
+        }
+        const entries = (done.minutes ?? []).flatMap((m) =>
+          m.sections.flatMap((section) => section.entries),
+        );
+        entries.forEach((entry, i) => {
+          entry.owner = kept.tasks[i]?.owner ?? entry.owner;
+        });
         return null;
       }
       case "seogi_talk":
