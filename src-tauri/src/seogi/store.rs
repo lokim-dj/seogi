@@ -486,6 +486,25 @@ impl Meeting {
         lines.join("\n")
     }
 
+    /// Minutes after its event began that a recording may start without
+    /// having missed anything worth saying.
+    const LATE_AFTER_MS: i64 = 3 * 60_000;
+
+    /// How many whole minutes after its calendar event began the recording
+    /// started: 0 when there is no event, the recording began in time (or
+    /// before), or after the event was over (then it is not that event's
+    /// start that was missed).
+    pub fn late_minutes(&self) -> u32 {
+        let Some(event) = &self.event else {
+            return 0;
+        };
+        let late = self.started_at_ms - event.start_ms;
+        if late < Self::LATE_AFTER_MS || self.started_at_ms >= event.end_ms {
+            return 0;
+        }
+        (late / 60_000) as u32
+    }
+
     pub fn recorded_on(&self) -> String {
         local(self.started_at_ms).map_or(String::new(), |time| {
             const WEEKDAYS: [&str; 7] = ["월", "화", "수", "목", "금", "토", "일"];
@@ -751,6 +770,12 @@ impl Meeting {
             duration_ms: self.duration_ms,
             attendees: self.people.clone(),
             place: self.place.clone(),
+            customer: self.customer.clone(),
+            late_minutes: self.late_minutes(),
+            mid_talk: self
+                .transcript
+                .as_ref()
+                .is_some_and(super::facts::starts_mid_talk),
             source_file: self.audio_file.clone(),
             sha256: self.sha256.clone(),
             transcribed_by: self
@@ -789,6 +814,26 @@ mod tests {
         meeting.title = "주간 회의".to_string();
         meeting.duration_ms = 60_000;
         meeting
+    }
+
+    #[test]
+    fn a_recording_started_well_after_its_event_says_by_how_much() {
+        let start = 1_000_000_000_000;
+        let mut meeting = Meeting::new(start + 8 * 60_000 + 5_000, Origin::Recorded, "녹음.wav");
+        assert_eq!(meeting.late_minutes(), 0);
+        meeting.event = Some(EventRef {
+            uid: "a".into(),
+            title: "상담".into(),
+            start_ms: start,
+            end_ms: start + 3_600_000,
+        });
+        assert_eq!(meeting.late_minutes(), 8);
+        assert_eq!(meeting.header().late_minutes, 8);
+        // Two minutes is in time; after the event is over is another matter.
+        meeting.started_at_ms = start + 2 * 60_000;
+        assert_eq!(meeting.late_minutes(), 0);
+        meeting.started_at_ms = start + 3_700_000;
+        assert_eq!(meeting.late_minutes(), 0);
     }
 
     #[test]

@@ -368,6 +368,11 @@ const en: Strings = {
     showMinutesFile: "Show the minutes file",
     showRecording: "Show the original recording",
     thisIsMinutes: "Minutes",
+    customer: "Customer",
+    startedLate:
+      "The recording started {{n}} minutes after the event did; what was said before is not in the minutes.",
+    startedMidTalk:
+      "The recording seems to start in the middle of talk; what was said before is not in the minutes.",
     noTasksPlain: "Nothing to do came out of this meeting.",
     nothingToTell:
       "It was short or quiet, so there was no story to write. The transcript is under 'More' below.",

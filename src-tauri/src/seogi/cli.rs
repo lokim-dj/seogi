@@ -202,6 +202,7 @@ fn run_inner(app: &AppHandle, args: &CliArgs) -> Result<(), Failure> {
         },
         None => Header {
             duration_ms: audio_ms,
+            mid_talk: super::facts::starts_mid_talk(&transcript),
             transcribed_by: transcript.model.clone(),
             app_version: env!("CARGO_PKG_VERSION").to_string(),
             ..Default::default()

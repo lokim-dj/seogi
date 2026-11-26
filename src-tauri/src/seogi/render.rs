@@ -19,6 +19,13 @@ pub struct Header {
     pub duration_ms: u64,
     pub attendees: Vec<String>,
     pub place: String,
+    /// The customer the meeting is about, when known.
+    pub customer: String,
+    /// How many whole minutes after its calendar event began the recording
+    /// started, when that is enough to have missed something; 0 otherwise.
+    pub late_minutes: u32,
+    /// The recording seems to begin in the middle of talk.
+    pub mid_talk: bool,
     /// The original file's name.
     pub source_file: String,
     pub sha256: String,
@@ -53,6 +60,10 @@ pub fn minutes_markdown(
     ));
 
     let mut facts: Vec<String> = Vec::new();
+    // Whom it is about, before anything else: the name the reader looks for.
+    if !header.customer.is_empty() {
+        facts.push(format!("- 고객: {}", header.customer));
+    }
     if !header.recorded_at.is_empty() {
         facts.push(format!(
             "- 일시: {} · {}",
@@ -78,6 +89,18 @@ pub fn minutes_markdown(
         facts.push(format!("- 장소: {}", header.place));
     }
     facts.push(format!("- 종류: {}", minutes.template_name));
+    // The minutes miss what came before the recording: the reader should
+    // know before taking them as the whole meeting.
+    if header.late_minutes > 0 {
+        facts.push(format!(
+            "- 녹음: 일정보다 {}분 늦게 시작됐어요. 그 앞의 이야기는 회의록에 없어요.",
+            header.late_minutes
+        ));
+    } else if header.mid_talk {
+        facts.push(
+            "- 녹음: 대화 중간부터 시작된 것 같아요. 그 앞의 이야기는 회의록에 없어요.".to_string(),
+        );
+    }
     out.push_str(&facts.join("\n"));
     out.push_str("\n\n");
 
@@ -1008,5 +1031,28 @@ mod tests {
         assert_eq!(duration(2_220_000), "37분");
         assert_eq!(duration(3_600_000), "1시간");
         assert_eq!(duration(4_320_000), "1시간 12분");
+    }
+
+    #[test]
+    fn the_head_names_the_customer_and_says_the_recording_started_late() {
+        let (minutes, transcript) = sample();
+        let header = Header {
+            customer: "이서진".into(),
+            place: "한빛아파트 103동".into(),
+            attendees: vec!["김서윤 실장".into()],
+            late_minutes: 8,
+            ..Default::default()
+        };
+        let markdown = minutes_markdown(&minutes, &transcript, &header, &[]);
+        let head: Vec<&str> = markdown.lines().take(8).collect();
+        assert_eq!(head[2], "- 고객: 이서진");
+        assert!(head.contains(&"- 장소: 한빛아파트 103동"));
+        assert!(head
+            .contains(&"- 녹음: 일정보다 8분 늦게 시작됐어요. 그 앞의 이야기는 회의록에 없어요."));
+        let mid = Header {
+            mid_talk: true,
+            ..Default::default()
+        };
+        assert!(minutes_markdown(&minutes, &transcript, &mid, &[]).contains("대화 중간부터"));
     }
 }
