@@ -406,6 +406,7 @@ const en: Strings = {
     startedMidTalk:
       "The recording seems to start in the middle of talk; what was said before is not in the minutes.",
     noTasksPlain: "Nothing to do came out of this meeting.",
+    notRechecked: "Some entries could not be checked again.",
     nothingToTell:
       "It was short or quiet, so there was no story to write. The transcript is under 'More' below.",
     rewriting: "The minutes are being written again.",

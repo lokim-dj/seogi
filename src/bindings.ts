@@ -2755,6 +2755,11 @@ to_check: number;
  */
 dropped: number; 
 /**
+ * Entries that may say different things could not be asked about
+ * again (the request failed): they stand as written, unsettled.
+ */
+not_rechecked?: boolean; 
+/**
  * The model that wrote it: `ollama gemma3:12b`.
  */
 written_by: string }

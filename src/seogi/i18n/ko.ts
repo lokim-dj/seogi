@@ -399,6 +399,7 @@ const ko = {
     startedMidTalk:
       "녹음이 대화 중간부터 시작된 것 같아요. 그 앞의 이야기는 회의록에 없어요.",
     noTasksPlain: "이 회의에서 나온 할 일은 없어요.",
+    notRechecked: "일부 항목은 다시 확인하지 못했어요.",
     nothingToTell:
       "짧거나 말이 적어서 정리할 이야기가 없었어요. 받아쓴 글은 아래 '자세히'에 있어요.",
     rewriting: "회의록을 다시 쓰는 중입니다.",

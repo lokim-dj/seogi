@@ -250,6 +250,21 @@ const without = (meeting: Meeting, keep: (s: MinutesSection) => boolean) => {
     return cardOf(meeting, talk, "a4", words).numbers;
   };
   assert.equal(said("총 예산은 1억 2천만 원이다.")?.lead?.value, "1억 2천");
+  assert.equal(said("전체 공사비는 9800만 원으로 본다.")?.lead?.value, "9,800");
+  assert.equal(said("총액 6000만 원 선에서 맞춘다.")?.lead?.value, "6,000");
+  // An amount without a word that makes it the whole is one part of it:
+  // listed as said, never drawn large.
+  for (const text of [
+    "욕실 공사는 1200만 원으로 잡았다.",
+    "공사비 중 주방이 2000만 원이다.",
+  ]) {
+    const numbers = said(text);
+    assert.equal(numbers?.lead, null, text);
+    assert.ok(
+      numbers?.lines.some((line) => text.startsWith(line.text)),
+      text,
+    );
+  }
   assert.equal(
     said("예산 3억 5000만원으로 확정했다.")?.lead?.value,
     "3억 5,000",
