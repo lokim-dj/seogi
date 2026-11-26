@@ -956,6 +956,11 @@ pub fn run(cli_args: CliArgs) {
             seogi::commands::seogi_calendar_rules,
             seogi::commands::seogi_open_calendar_rules,
             seogi::commands::seogi_set_calendar_rules,
+            seogi::commands::seogi_phone_status,
+            seogi::commands::seogi_phone_connect,
+            seogi::commands::seogi_phone_cancel_connect,
+            seogi::commands::seogi_phone_disconnect,
+            seogi::commands::seogi_phone_look_now,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,

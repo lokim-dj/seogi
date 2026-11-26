@@ -259,6 +259,7 @@ const en: Strings = {
     noTasksShort: "Minutes ready · nothing to do",
     checkShort: "{{n}} to check",
     fromInbox: "from the inbox",
+    fromPhone: "from the phone",
     fromFile: "imported",
     box: "Meetings",
     all: "All",
@@ -281,6 +282,7 @@ const en: Strings = {
     origin: {
       recorded: "Recorded here",
       watched: "From a watched folder",
+      phone: "Recorded on the phone",
       imported: "Brought in",
     },
     originLine: "{{origin}}, {{length}}",
@@ -745,6 +747,35 @@ const en: Strings = {
     inbox: "Watched folders",
     inboxMakeIn: "Make the folder in the {{account}} Drive",
     inboxHint: "Phone recordings put here are brought in by themselves.",
+    phone: "Phone recordings",
+    phoneHint:
+      "Meetings recorded with Seogi on your phone are brought in from your Google Drive and written up. Seogi sees only the files it made, and never changes or deletes them.",
+    phoneConnect: "Connect Google",
+    phoneReconnect: "Connect again",
+    phoneDisconnect: "Disconnect",
+    phoneCancel: "Stop",
+    phoneWaiting:
+      "In the browser, choose the same Google account as on your phone, then come back here.",
+    phoneConnected: "Google is connected. Phone recordings will come in.",
+    phoneConnectedShort: "Connected",
+    phoneLost:
+      "The connection to {{account}} has ended. Connect again to keep bringing in phone recordings.",
+    phoneUnavailableShort: "Not available",
+    phoneUnavailable:
+      "This build has no Google connection in it. The official installer has it.",
+    phoneDenied: "Not connected. You can connect any time.",
+    phoneTimedOut: "Stopped waiting. Press it again.",
+    phoneConnectFailed: "Could not connect. Try again in a moment.",
+    phoneLocal:
+      "A recording could not be kept on this computer. Check the storage folder and free space; Seogi tries again in an hour.",
+    phoneLooking: "Looking…",
+    phoneLooked: "Looked at {{time}}",
+    phoneNotYet: "Not looked at yet",
+    phoneBrought: "{{n}} brought in",
+    phonePullNow: "Bring in now",
+    phoneOffline: "No internet. Seogi looks again in a few minutes.",
+    phoneDrive:
+      "Google Drive did not answer. Seogi looks again in a few minutes.",
     add: "Add folder",
     remove: "Remove",
     none: "None",

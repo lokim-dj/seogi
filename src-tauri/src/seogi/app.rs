@@ -26,6 +26,7 @@ use super::config::{Config, SpeechModelNow, WatchedFolder};
 use super::evidence::{self, Evidence};
 use super::llm::{self, Provider, Ways};
 use super::minutes;
+use super::phone::{self, Arrival, Phone, PhoneStatus};
 use super::pipeline::{self, Monitor, Request, Stage};
 use super::power::KeepAwake;
 use super::recorder;
@@ -390,6 +391,8 @@ pub struct Secretary {
     banner: Mutex<Option<Banner>>,
     /// A run from the command line: no notifications, tray or shortcuts.
     quiet: bool,
+    /// The phone's recordings in the user's Google Drive.
+    phone: Phone,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -435,6 +438,7 @@ impl Secretary {
         let secretary = Arc::new(Self {
             app: app.clone(),
             ledger: Mutex::new(Ledger::load(&data_dir)),
+            phone: Phone::new(&data_dir),
             trashed: Mutex::new(None),
             data_dir,
             config: Mutex::new(config),
@@ -475,6 +479,13 @@ impl Secretary {
             }
         }
         if !self.quiet {
+            let me = self.clone();
+            if let Err(e) = std::thread::Builder::new()
+                .name("seogi-phone".into())
+                .spawn(move || me.phone_loop())
+            {
+                error!("Could not start seogi-phone: {e}");
+            }
             self.register_shortcuts();
             super::banner::prepare(&self.app);
         }
@@ -801,6 +812,24 @@ impl Secretary {
     /// copied; the one given is left exactly as it was. A recording already
     /// here (the same bytes, whatever its name) is not added again.
     pub fn import(&self, source: &Path, origin: Origin, template_id: &str) -> Result<Imported> {
+        self.bring_in(source, origin, template_id, None)
+    }
+
+    /// [`import`] for a recording from the phone: its title, start, marks
+    /// and phone come from the JSON the phone wrote, not from the file.
+    ///
+    /// [`import`]: Secretary::import
+    fn import_from_phone(&self, file: &Path, arrival: &Arrival) -> Result<Imported> {
+        self.bring_in(file, Origin::Phone, "", Some(arrival))
+    }
+
+    fn bring_in(
+        &self,
+        source: &Path,
+        origin: Origin,
+        template_id: &str,
+        arrival: Option<&Arrival>,
+    ) -> Result<Imported> {
         if !source.is_file() {
             bail!("{} is not a file", source.display());
         }
@@ -808,9 +837,10 @@ impl Secretary {
         {
             let mut ledger = lock(&self.ledger);
             if ledger.deleted.contains(&sha256) {
-                if origin == Origin::Watched {
+                if matches!(origin, Origin::Watched | Origin::Phone) {
                     // Its meeting went to the trash: the copy in the watched
-                    // folder is left alone and not brought in again.
+                    // folder (or the phone's) is left alone and not brought
+                    // in again.
                     return Ok(Imported {
                         id: String::new(),
                         duplicate: true,
@@ -850,16 +880,21 @@ impl Secretary {
         let modified_ms = Look::at(source).map_or_else(now_ms, |look| look.modified_ms);
         // A time the recorder wrote inside the file is the next best: it is
         // still true when the file was uploaded or renamed hours later.
-        let (started_at_ms, time_source) = match store::time_in_name(&name) {
-            Some(at) => (at, "file_name"),
-            None => match evidence::created_in_file(source) {
+        let (started_at_ms, time_source) = match (arrival, store::time_in_name(&name)) {
+            // The phone's own clock, written when it started recording.
+            (Some(arrival), _) => (arrival.started_at_ms, "phone"),
+            (None, Some(at)) => (at, "file_name"),
+            (None, None) => match evidence::created_in_file(source) {
                 Some(at) if at > 946_684_800_000 && at <= modified_ms + 86_400_000 => {
                     (at, "file_metadata")
                 }
                 _ => (modified_ms, "file_modified"),
             },
         };
-        let title = store::title_in_name(stem);
+        let title = match arrival {
+            Some(arrival) => store::safe_name(&arrival.title),
+            None => store::title_in_name(stem),
+        };
 
         let folder = self.library().create_folder(started_at_ms, &title)?;
         let copy = folder.join(&name);
@@ -884,13 +919,25 @@ impl Secretary {
         }
 
         let mut meeting = Meeting::new(started_at_ms, origin, &name);
-        meeting.title_is_auto = title.is_empty();
+        meeting.title_is_auto = title.is_empty() || arrival.is_some_and(|a| a.title_is_auto);
         meeting.title = title;
         meeting.time_source = time_source.to_string();
-        meeting.source_path = std::path::absolute(source)
-            .unwrap_or_else(|_| source.to_path_buf())
-            .display()
-            .to_string();
+        meeting.source_path = match arrival {
+            Some(arrival) => arrival.source.clone(),
+            None => std::path::absolute(source)
+                .unwrap_or_else(|_| source.to_path_buf())
+                .display()
+                .to_string(),
+        };
+        if let Some(arrival) = arrival {
+            meeting.duration_ms = arrival.duration_ms;
+            meeting.marks_ms = arrival.marks_ms.clone();
+            meeting.mark_notes = vec![String::new(); arrival.marks_ms.len()];
+            meeting.device = arrival.device.clone();
+            if arrival.recovered {
+                meeting.capture_note = "app_stopped".to_string();
+            }
+        }
         meeting.sha256 = sha256.clone();
         meeting.template_id = template_id.to_string();
         meeting.queued_at_ms = now_ms();
@@ -2002,6 +2049,39 @@ impl Secretary {
         }
     }
 
+    // ----- the phone's recordings --------------------------------------------
+
+    /// Looks at the phone's Drive folder when the app starts, every few
+    /// minutes after, and when asked.
+    fn phone_loop(self: Arc<Self>) {
+        loop {
+            self.phone.pull(self.as_ref());
+            self.phone.wait(phone::LOOK_EVERY);
+        }
+    }
+
+    pub fn phone_status(&self) -> PhoneStatus {
+        self.phone.status()
+    }
+
+    /// Connects Google in the browser (`open` opens the address); blocks
+    /// until the user is done there.
+    pub fn phone_connect(&self, open: impl FnOnce(&str) -> Result<()>) -> Result<String> {
+        self.phone.connect(open)
+    }
+
+    pub fn phone_cancel_connect(&self) {
+        self.phone.cancel_connect();
+    }
+
+    pub fn phone_disconnect(&self) -> Result<()> {
+        self.phone.disconnect()
+    }
+
+    pub fn phone_look_now(&self) {
+        self.phone.look_now();
+    }
+
     // ----- the calendar -----------------------------------------------------
 
     /// Reads the calendars now and again, and says when a meeting is about
@@ -2506,6 +2586,54 @@ impl Secretary {
         {
             warn!("Could not show a notification: {e}");
         }
+    }
+}
+
+impl phone::Host for Secretary {
+    fn done(&self, key: &str) -> bool {
+        lock(&self.ledger).phone.contains_key(key)
+    }
+
+    fn known(&self, sha256: &str) -> bool {
+        let ledger = lock(&self.ledger);
+        let sha256 = sha256.to_lowercase();
+        ledger.deleted.contains(&sha256)
+            || ledger
+                .hashes
+                .get(&sha256)
+                .is_some_and(|id| lock(&self.slots).contains_key(id))
+    }
+
+    fn bring_in(&self, file: &Path, arrival: &Arrival) -> Result<String> {
+        let imported = self.import_from_phone(file, arrival)?;
+        Ok(if imported.duplicate {
+            String::new()
+        } else {
+            imported.id
+        })
+    }
+
+    fn note(&self, key: &str, meeting_id: &str) {
+        let mut ledger = lock(&self.ledger);
+        ledger.phone.insert(key.to_string(), meeting_id.to_string());
+        if let Err(e) = ledger.save(&self.data_dir) {
+            warn!("Could not save the ledger: {e:#}");
+        }
+    }
+
+    fn lost_sign_in(&self) {
+        self.notify(
+            say(
+                &self.app,
+                "폰 녹음을 가져오지 못했습니다",
+                "Phone recordings are not coming in",
+            ),
+            say(
+                &self.app,
+                "설정 > 보관과 일정에서 구글을 다시 연결해 주세요.",
+                "Connect Google again in Settings > Storage and calendar.",
+            ),
+        );
     }
 }
 

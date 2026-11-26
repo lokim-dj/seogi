@@ -18,6 +18,7 @@ use super::dictation::{self, Dictation, DictationStatus};
 use super::llm::{self, Provider};
 use super::mac_calendar::{self, MacCalendar};
 use super::mic_button;
+use super::phone::PhoneStatus;
 use super::recorder::{self, Microphone};
 use super::sign_in::{self, SignIn, SignIns, Tool};
 use super::store::{Found, Meeting, MeetingSummary, Origin, MINUTES_NAME};
@@ -852,6 +853,67 @@ pub async fn seogi_sign_ins(secretary: State<'_, Arc<Secretary>>) -> Result<Sign
 #[specta::specta]
 pub async fn seogi_sign_in(tool: Tool, farewell: String) -> Result<(), String> {
     off_screen(move || sign_in::open_sign_in(tool, &farewell).map_err(text)).await
+}
+
+/// Where bringing in the phone's recordings from Google Drive stands.
+#[tauri::command]
+#[specta::specta]
+pub fn seogi_phone_status(secretary: State<'_, Arc<Secretary>>) -> PhoneStatus {
+    secretary.phone_status()
+}
+
+/// Connects Google for the phone's recordings: opens the sign-in in the
+/// browser and waits until the user is done there. Fails with `cancelled`,
+/// `timed_out`, `denied`, `unavailable` or `already_connecting`, or with
+/// what went wrong.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_phone_connect(
+    app: AppHandle,
+    secretary: State<'_, Arc<Secretary>>,
+) -> Result<PhoneStatus, String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || {
+        use tauri_plugin_opener::OpenerExt;
+        secretary
+            .phone_connect(|url| {
+                app.opener()
+                    .open_url(url, None::<&str>)
+                    .map_err(|e| anyhow::anyhow!("the browser could not be opened ({e})"))
+            })
+            .map_err(text)?;
+        Ok(secretary.phone_status())
+    })
+    .await
+}
+
+/// Stops waiting for the browser.
+#[tauri::command]
+#[specta::specta]
+pub fn seogi_phone_cancel_connect(secretary: State<'_, Arc<Secretary>>) {
+    secretary.phone_cancel_connect();
+}
+
+/// Forgets the Google sign-in on this computer. Meetings already brought in
+/// and everything in Drive stay as they are.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_phone_disconnect(
+    secretary: State<'_, Arc<Secretary>>,
+) -> Result<PhoneStatus, String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || {
+        secretary.phone_disconnect().map_err(text)?;
+        Ok(secretary.phone_status())
+    })
+    .await
+}
+
+/// Looks at the phone's folder now ("지금 가져오기").
+#[tauri::command]
+#[specta::specta]
+pub fn seogi_phone_look_now(secretary: State<'_, Arc<Secretary>>) {
+    secretary.phone_look_now();
 }
 
 /// Opens the official page on installing `tool` in the browser. Seogi does

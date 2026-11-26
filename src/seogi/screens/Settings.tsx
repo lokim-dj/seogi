@@ -28,6 +28,7 @@ import {
 import { BackIcon, RightIcon } from "../components/icons";
 import DictationSettings from "./DictationSettings";
 import Permissions from "../components/Permissions";
+import PhoneRow from "../components/PhoneRow";
 import SignInRows from "../components/SignInRows";
 import { NS } from "../i18n";
 import {
@@ -1113,6 +1114,7 @@ export default function Settings() {
                     </div>
                   ) : null}
                 </div>
+                <PhoneRow onNote={setNote} />
                 <div className="srow">
                   <div>
                     <div className="l">{t("settings.calendar")}</div>

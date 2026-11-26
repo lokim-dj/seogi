@@ -102,6 +102,8 @@ chrono-tz = "0.10.4"
 keyring = { version = "3", features = ["apple-native", "windows-native"] }
 pdf-extract = "0.12.1"
 base64 = "0.22"
+# Random state and PKCE verifier for signing in to Google (phone recordings).
+getrandom = "0.3"
 unicode-normalization = "0.1"
 
 [target.'cfg(unix)'.dependencies]

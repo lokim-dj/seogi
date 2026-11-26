@@ -1829,6 +1829,50 @@ async seogiSetCalendarRules(rules: TitleRule[]) : Promise<Result<null, string>> 
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Where bringing in the phone's recordings from Google Drive stands.
+ */
+async seogiPhoneStatus() : Promise<PhoneStatus> {
+    return await TAURI_INVOKE("seogi_phone_status");
+},
+/**
+ * Connects Google for the phone's recordings: opens the sign-in in the
+ * browser and waits until the user is done there. Fails with `cancelled`,
+ * `timed_out`, `denied`, `unavailable` or `already_connecting`, or with
+ * what went wrong.
+ */
+async seogiPhoneConnect() : Promise<Result<PhoneStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_phone_connect") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stops waiting for the browser.
+ */
+async seogiPhoneCancelConnect() : Promise<void> {
+    await TAURI_INVOKE("seogi_phone_cancel_connect");
+},
+/**
+ * Forgets the Google sign-in on this computer. Meetings already brought in
+ * and everything in Drive stay as they are.
+ */
+async seogiPhoneDisconnect() : Promise<Result<PhoneStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_phone_disconnect") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Looks at the phone's folder now ("지금 가져오기").
+ */
+async seogiPhoneLookNow() : Promise<void> {
+    await TAURI_INVOKE("seogi_phone_look_now");
 }
 }
 
@@ -2947,7 +2991,11 @@ export type Origin =
 /**
  * Picked up from a watched folder.
  */
-"watched"
+"watched" | 
+/**
+ * Recorded on the phone and brought in from the user's Drive.
+ */
+"phone"
 export type OverlayPosition = "top" | "bottom"
 /**
  * Which recording overlay to display. `Minimal` and `Live` share one base
@@ -2959,6 +3007,46 @@ export type OverlayStyle = "none" | "minimal" | "live"
 export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
 export type PermissionAccess = "allowed" | "denied" | "unknown"
+/**
+ * Where pulling from the phone stands, for the screen.
+ */
+export type PhoneStatus = { 
+/**
+ * This build can connect to Google.
+ */
+available: boolean; 
+/**
+ * The connected account's address; empty when not connected (or not
+ * known yet).
+ */
+account: string; connected: boolean; 
+/**
+ * Signed in once, and Google no longer takes it.
+ */
+needs_reconnect: boolean; 
+/**
+ * Waiting for the browser.
+ */
+connecting: boolean; 
+/**
+ * Looking at the folder or downloading right now.
+ */
+pulling: boolean; 
+/**
+ * When the folder was last looked at successfully (ms since 1970), 0
+ * for never.
+ */
+last_look_ms: number; 
+/**
+ * How many recordings came in since the app started.
+ */
+brought_in: number; 
+/**
+ * Why the last look failed: `offline` (no connection), `drive` (Drive
+ * refused or failed), `local` (a recording could not be kept on this
+ * computer), or empty.
+ */
+trouble: string }
 /**
  * One point of feedback, with the places in the recording it rests on.
  */
