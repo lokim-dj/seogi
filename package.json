@@ -26,6 +26,8 @@
     "check:public": "bun scripts/check-public-text.ts",
     "test:public": "bun test scripts/check-public-text.test.ts",
     "check:version": "bun scripts/check-version.ts",
+    "check:deps": "bun scripts/check-deps.ts",
+    "test:deps": "bun test scripts/check-deps.test.ts",
     "setup:hooks": "git config core.hooksPath .githooks"
   },
   "dependencies": {

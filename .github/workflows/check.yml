@@ -1,9 +1,10 @@
 name: Check
 
-# Runs on every pull request and on main: the quick checks on Linux ("text"),
-# the Rust tests on macOS ("rust"). Both must be green before a pull request
-# is merged (see AGENTS.md, How work lands). The name check against the
-# maintainer's private lists cannot run here; the pre-push hook runs it.
+# Runs on every pull request and on main: the quick checks and the dependency
+# advisories on Linux ("text"), the Rust tests on macOS ("rust"). Both must be
+# green before a pull request is merged (see AGENTS.md, How work lands). The
+# name check against the maintainer's private lists cannot run here; the
+# pre-push hook runs it.
 
 on:
   pull_request:
@@ -22,8 +23,8 @@ jobs:
     name: text
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - run: bun install --frozen-lockfile
       - name: Public text
         run: bun run check:public
@@ -41,15 +42,26 @@ jobs:
         run: bun run check:translations
       - name: Model catalog copy
         run: bun run check:catalog
+      # Known advisories in the npm and Rust parts: a high or critical one
+      # fails unless scripts/check-deps.ts lists it with a reason; anything
+      # lower is a warning.
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@893d6ee8d714b6c7dfe2bcd94e5759e9a7958a7e # v2.90.10
+        with:
+          tool: cargo-audit
+      - name: Dependency check's own tests
+        run: bun run test:deps
+      - name: Dependency advisories (bun audit, cargo audit)
+        run: bun run check:deps
 
   rust:
     name: rust
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: swatinem/rust-cache@v2
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: "./src-tauri -> target"
           key: check-macos

@@ -1,0 +1,44 @@
+# Dependabot, kept quiet on purpose. For npm (bun.lock) and Rust (Cargo.lock)
+# it opens a pull request only for a security fix (the repository's
+# "Dependabot security updates" setting), all fixes of one ecosystem in one
+# pull request: open-pull-requests-limit 0 turns off routine version bumps
+# but not security updates. For the workflows it moves the pinned commits of
+# the actions (uses: owner/action@<sha> # vX.Y.Z) once a week, all in one pull
+# request.
+
+version: 2
+updates:
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 0
+    groups:
+      npm-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 0
+    groups:
+      cargo-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 2
+    groups:
+      actions:
+        patterns: ["*"]
