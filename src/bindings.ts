@@ -1556,11 +1556,37 @@ async seogiTryNotification(title: string, body: string) : Promise<Result<null, s
 },
 /**
  * Shows one of a meeting's files selected in Finder or Explorer: `minutes`
- * (회의록.md) or `recording` (the original recording).
+ * (회의록.md), `recording` (the original recording), or the one-page
+ * summary saved as `card_png` or `card_pdf`.
  */
 async seogiReveal(id: string, what: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("seogi_reveal", { id, what }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Saves the one-page summary the screen drew (`data`, base64) into the
+ * meeting's folder as 한 장 요약.png or 한 장 요약.pdf, replacing one saved
+ * before; nothing else in the folder is touched. Returns the file's path.
+ */
+async seogiSaveSummaryCard(id: string, kind: string, data: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_save_summary_card", { id, kind, data }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Puts a PNG picture (`data`, base64) on the clipboard, to paste into a
+ * chat.
+ */
+async seogiCopyImage(data: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_copy_image", { data }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

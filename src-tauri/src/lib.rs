@@ -933,6 +933,8 @@ pub fn run(cli_args: CliArgs) {
             seogi::commands::seogi_open_login_items,
             seogi::commands::seogi_try_notification,
             seogi::commands::seogi_reveal,
+            seogi::commands::seogi_save_summary_card,
+            seogi::commands::seogi_copy_image,
             seogi::commands::seogi_open_trash,
             seogi::commands::seogi_try_summary,
             seogi::commands::seogi_key_models,

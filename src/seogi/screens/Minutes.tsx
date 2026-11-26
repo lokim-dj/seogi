@@ -37,6 +37,7 @@ import {
 import MeetingContext, { setMeetingInfo } from "../components/MeetingContext";
 import { NamePicker, PeopleLine } from "../components/People";
 import { ConfirmDelete, busy } from "../components/DeleteMeeting";
+import { SummaryCardDialog } from "../components/SummaryCard";
 import { NS } from "../i18n";
 import { clock, fullDay, hm, hms, isoDay, shortModel } from "../lib/format";
 import { joinPath, usePlayer, type Player } from "../lib/player";
@@ -81,6 +82,7 @@ export default function Minutes({ id }: { id: string }) {
   const [copied, setCopied] = useState(false);
   const [menu, setMenu] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [card, setCard] = useState(false);
 
   const path =
     summary && meeting ? joinPath(summary.folder, meeting.audio_file) : null;
@@ -126,6 +128,16 @@ export default function Minutes({ id }: { id: string }) {
           {t("home.box")}
         </button>
         <span className="tools relative">
+          {minutes ? (
+            <button
+              type="button"
+              className="ib"
+              data-card-open=""
+              onClick={() => setCard(true)}
+            >
+              {t("card.open")}
+            </button>
+          ) : null}
           {tasks.length > 0 ? (
             <button
               type="button"
@@ -154,6 +166,12 @@ export default function Minutes({ id }: { id: string }) {
                 setMenu(false);
                 setDeleting(true);
               }}
+            />
+          ) : null}
+          {card && meeting ? (
+            <SummaryCardDialog
+              meeting={meeting}
+              onClose={() => setCard(false)}
             />
           ) : null}
           {deleting && meeting ? (
