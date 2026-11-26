@@ -47,8 +47,11 @@ const SAID_IN_ENGLISH = new Set([
   "oh",
 ]);
 
-/** Whether a meeting is Korean by what was heard: most of its letters. */
-export function koreanMeeting(lines: { text: string }[]): boolean {
+/** How many letters were heard, and how many of them are Korean. */
+export function lettersHeard(lines: { text: string }[]): {
+  letters: number;
+  hangul: number;
+} {
   let letters = 0;
   let hangul = 0;
   for (const line of lines) {
@@ -58,6 +61,12 @@ export function koreanMeeting(lines: { text: string }[]): boolean {
       if (HANGUL.test(c)) hangul += 1;
     }
   }
+  return { letters, hangul };
+}
+
+/** Whether a meeting is Korean by what was heard: most of its letters. */
+export function koreanMeeting(lines: { text: string }[]): boolean {
+  const { letters, hangul } = lettersHeard(lines);
   return letters > 0 && hangul >= 0.8 * letters;
 }
 

@@ -56,6 +56,21 @@ fn sub(unit: &str) -> f64 {
     }
 }
 
+/// Whether what follows a 조 lets it be the unit: no word goes on, or 원
+/// does ("3조원"), or a particle that ends the word ("3조가 넘는", "3조에").
+/// A word that goes on ("조금", "조정") makes it no unit.
+fn trillion_follows(rest: &str) -> bool {
+    const PARTICLES: &str = "이가을를은는에의쯤";
+    let mut chars = rest.chars();
+    let hangul = |c: char| ('가'..='힣').contains(&c);
+    match chars.next() {
+        Some(c) if hangul(c) => {
+            c == '원' || (PARTICLES.contains(c) && !chars.next().is_some_and(hangul))
+        }
+        _ => true,
+    }
+}
+
 /// The amounts written with digits in `text`, big units joined: "1억 5,000만
 /// 원" is one amount of 150,000,000.
 pub fn amounts(text: &str) -> Vec<Amount> {
@@ -98,14 +113,12 @@ fn chain(text: &str, start: usize) -> (f64, usize, bool) {
         let sub_unit = caps.get(2).or(caps.get(3)).map_or("", |m| m.as_str());
         let mut big_unit = caps.get(4).map_or("", |m| m.as_str());
         let mut whole_text = whole.as_str();
-        // "100 조금" is a hundred and a little, not a hundred trillion.
-        if big_unit == "조" {
-            let next = text[whole.end()..].chars().next();
-            if next.is_some_and(|c| ('가'..='힣').contains(&c)) {
-                big_unit = "";
-                let unit_at = whole_text.rfind('조').unwrap_or(whole_text.len());
-                whole_text = &whole_text[..unit_at];
-            }
+        // "100 조금" is a hundred and a little, not a hundred trillion;
+        // "3조원", "3조가 넘는" are trillions.
+        if big_unit == "조" && !trillion_follows(&text[whole.end()..]) {
+            big_unit = "";
+            let unit_at = whole_text.rfind('조').unwrap_or(whole_text.len());
+            whole_text = &whole_text[..unit_at];
         }
         // "2만 3만 원" is a range, two amounts: the same big unit again with
         // no thousands before it ends the chain ("1억 5천억" does not).
@@ -354,11 +367,31 @@ const POINTING: &[&str] = &[
     "여기", "거기", "저기", "이것", "그것", "이쪽", "그쪽", "각각", "각", "다", "모두", "전부",
 ];
 
-/// What a price is of, from the word before it, without its particle; `None`
-/// when no word names it.
-fn priced(word: Option<regex::Match<'_>>) -> Option<String> {
-    let word = word?.as_str();
-    let mut bare = word.to_string();
+/// What a price is of, as the words around it say.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Subject {
+    /// A word names it: "강마루 평당 12만", "평당 12만 원짜리 강마루".
+    Named(String),
+    /// A word points rather than names ("여기도", "각각"): it may be the
+    /// same thing as another price.
+    Pointing,
+    /// No word says what it is of.
+    Unsaid,
+}
+
+/// A word that names what a price is of, after it: "평당 12만 원짜리
+/// 강마루", "평당 12만 원의 강마루". Only these joins: a plain word after a
+/// price is as often "기준으로" or "정도" as a thing.
+static NAMED_AFTER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\s?원?\s?(?:짜리|의)\s+(?P<what>[가-힣A-Za-z]+)").expect("a valid pattern")
+});
+
+/// What a price is of, from a word without its particle.
+fn priced(word: Option<regex::Match<'_>>) -> Subject {
+    let Some(word) = word else {
+        return Subject::Unsaid;
+    };
+    let mut bare = word.as_str().to_string();
     for particle in [
         "에서는",
         "에는",
@@ -378,7 +411,20 @@ fn priced(word: Option<regex::Match<'_>>) -> Option<String> {
             break;
         }
     }
-    (!POINTING.contains(&bare.as_str())).then_some(bare)
+    if POINTING.contains(&bare.as_str()) {
+        Subject::Pointing
+    } else {
+        Subject::Named(bare)
+    }
+}
+
+/// What a price is of: the word before it, or when none, the word it is
+/// joined to after it (`rest`, the text after the price).
+fn subject(before: Option<regex::Match<'_>>, rest: &str) -> Subject {
+    match priced(before) {
+        Subject::Unsaid => priced(NAMED_AFTER.captures(rest).and_then(|c| c.name("what"))),
+        said => said,
+    }
 }
 
 /// One price per something a text gives.
@@ -388,8 +434,8 @@ pub struct Rate {
     pub per: String,
     /// The price for one.
     pub value: f64,
-    /// What it is the price of, when the words say ("강마루").
-    pub what: Option<String>,
+    /// What it is the price of, as the words say.
+    pub what: Subject,
 }
 
 /// The rates `text` gives.
@@ -405,10 +451,11 @@ pub fn rates(text: &str) -> Vec<Rate> {
             Some("천") => 1e3,
             _ => 1e4,
         };
+        let end = caps.get(0).map_or(text.len(), |m| m.end());
         found.push(Rate {
             per: caps["per"].to_string(),
             value: number * scale,
-            what: priced(caps.name("what")),
+            what: subject(caps.name("what"), &text[end..]),
         });
     }
     for caps in LENGTH_PRICE.captures_iter(text) {
@@ -419,10 +466,11 @@ pub fn rates(text: &str) -> Vec<Rate> {
             continue;
         };
         if length > 0.0 {
+            let end = caps.get(0).map_or(text.len(), |m| m.end());
             found.push(Rate {
                 per: "m".to_string(),
                 value: price * 1e4 / length,
-                what: priced(caps.name("what")),
+                what: subject(caps.name("what"), &text[end..]),
             });
         }
     }
@@ -431,13 +479,16 @@ pub fn rates(text: &str) -> Vec<Rate> {
 
 /// Whether a rate `stated` gives is said with another value nearby in
 /// `around`: the same thing priced two ways. Prices of things named
-/// differently ("강마루 평당 12만", "원목마루 평당 18만") are two prices.
+/// differently ("강마루 평당 12만", "원목마루 평당 18만", or "평당 12만 원짜리
+/// 강마루") are two prices. A price that no word says the thing of is not
+/// compared: missing a doubt is better than raising a wrong one.
 pub fn rates_differ(stated: &str, around: &str) -> bool {
     let near = rates(around);
     rates(stated).iter().any(|mine| {
         near.iter().any(|other| {
             let same_thing = match (&mine.what, &other.what) {
-                (Some(a), Some(b)) => a == b,
+                (Subject::Unsaid, _) | (_, Subject::Unsaid) => false,
+                (Subject::Named(a), Subject::Named(b)) => a == b,
                 _ => true,
             };
             other.per == mine.per && same_thing && !same(other.value, mine.value)
@@ -559,6 +610,13 @@ mod tests {
         assert_eq!(values("2만 3만 원"), [20_000.0, 30_000.0]);
         assert!(!odd_units("2만 3만 원 정도"));
         assert_eq!(values("100 조금 넘게"), [100.0]);
+        // 조 before 원 or a particle is a trillion.
+        assert_eq!(values("3조원"), [3e12]);
+        assert_eq!(values("3조 원"), [3e12]);
+        assert_eq!(values("매출이 3조가 넘는"), [3e12]);
+        assert_eq!(values("2조 5천억 원"), [2.5e12]);
+        assert!(!odd_units("3조원"));
+        assert_eq!(values("100 조정 필요"), [100.0]);
     }
 
     #[test]
@@ -601,6 +659,18 @@ mod tests {
             "강마루 평당 12만",
             "강마루 평당 12만, 원목마루 평당 18만"
         ));
+        // What a price is of may come after it.
+        assert!(!rates_differ(
+            "평당 12만 원짜리 강마루",
+            "평당 12만 원짜리 강마루, 평당 18만 원짜리 원목마루"
+        ));
+        assert!(rates_differ(
+            "평당 12만 원짜리 강마루",
+            "강마루는 평당 15만이라고 다시 말씀드렸어요"
+        ));
+        // A price no word says the thing of is not compared.
+        assert!(!rates_differ("평당 12만 원", "평당 12만 원, 평당 18만 원"));
+        assert_eq!(rates("평당 12만 원 기준으로")[0].what, Subject::Unsaid);
         // Millimetres are no metres.
         assert!(rates("1200mm 상판 80만").is_empty());
         assert!(rates("120cm 선반 30만").is_empty());
