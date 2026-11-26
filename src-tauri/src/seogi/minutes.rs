@@ -1555,7 +1555,15 @@ fn reconcile(
             BTreeMap::new()
         }
     };
+    // An answer that leaves pairs out is no answer for them.
+    failed |= unanswered(pairs.len(), &verdicts);
     (apply_reconciled(entries, &pairs, &verdicts), failed)
+}
+
+/// Whether some of `pairs` pairs (numbered from 1) got no verdict: the
+/// answer had no results, or skipped a number.
+fn unanswered(pairs: usize, verdicts: &BTreeMap<usize, String>) -> bool {
+    (1..=pairs).any(|number| !verdicts.contains_key(&number))
 }
 
 /// Makes the verdicts so: the entry that does not stand goes, and a pair
@@ -3892,6 +3900,14 @@ mod tests {
             (0, true)
         );
         assert_eq!(entries, pair());
+        // An answer with no results, or one that skips a pair, is no answer.
+        let answered = |numbers: &[usize]| -> BTreeMap<usize, String> {
+            numbers.iter().map(|&n| (n, "both".to_string())).collect()
+        };
+        assert!(unanswered(2, &answered(&[])));
+        assert!(unanswered(2, &answered(&[1])));
+        assert!(unanswered(2, &answered(&[1, 3])));
+        assert!(!unanswered(2, &answered(&[1, 2])));
         // Nothing to ask about: nothing failed.
         let mut one = pair()[..1].to_vec();
         assert_eq!(

@@ -386,6 +386,22 @@ static NAMED_AFTER: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^\s?원?\s?(?:짜리|의)\s+(?P<what>[가-힣A-Za-z]+)").expect("a valid pattern")
 });
 
+/// Words after "원의" that name no thing but the money itself ("평당 12만
+/// 원의 차이", "…원의 견적"): no subject.
+const NOT_A_THING: &[&str] = &[
+    "차이",
+    "차액",
+    "견적",
+    "비용",
+    "금액",
+    "가격",
+    "정도",
+    "수준",
+    "예산",
+    "공사비",
+    "범위",
+];
+
 /// What a price is of, from a word without its particle.
 fn priced(word: Option<regex::Match<'_>>) -> Subject {
     let Some(word) = word else {
@@ -422,7 +438,12 @@ fn priced(word: Option<regex::Match<'_>>) -> Subject {
 /// joined to after it (`rest`, the text after the price).
 fn subject(before: Option<regex::Match<'_>>, rest: &str) -> Subject {
     match priced(before) {
-        Subject::Unsaid => priced(NAMED_AFTER.captures(rest).and_then(|c| c.name("what"))),
+        Subject::Unsaid => match priced(NAMED_AFTER.captures(rest).and_then(|c| c.name("what"))) {
+            Subject::Named(word) if NOT_A_THING.iter().any(|w| word.starts_with(w)) => {
+                Subject::Unsaid
+            }
+            after => after,
+        },
         said => said,
     }
 }
@@ -480,14 +501,16 @@ pub fn rates(text: &str) -> Vec<Rate> {
 /// Whether a rate `stated` gives is said with another value nearby in
 /// `around`: the same thing priced two ways. Prices of things named
 /// differently ("강마루 평당 12만", "원목마루 평당 18만", or "평당 12만 원짜리
-/// 강마루") are two prices. A price that no word says the thing of is not
-/// compared: missing a doubt is better than raising a wrong one.
+/// 강마루") are two prices. A price that no word says the thing of is
+/// compared with a named one ("강마루 평당 12만", then "평당 15만 원이요"),
+/// but two such prices are not: missing a doubt is better than raising a
+/// wrong one.
 pub fn rates_differ(stated: &str, around: &str) -> bool {
     let near = rates(around);
     rates(stated).iter().any(|mine| {
         near.iter().any(|other| {
             let same_thing = match (&mine.what, &other.what) {
-                (Subject::Unsaid, _) | (_, Subject::Unsaid) => false,
+                (Subject::Unsaid, Subject::Unsaid) => false,
                 (Subject::Named(a), Subject::Named(b)) => a == b,
                 _ => true,
             };
@@ -671,6 +694,15 @@ mod tests {
         // A price no word says the thing of is not compared.
         assert!(!rates_differ("평당 12만 원", "평당 12만 원, 평당 18만 원"));
         assert_eq!(rates("평당 12만 원 기준으로")[0].what, Subject::Unsaid);
+        // One side named, the other not: compared.
+        assert!(rates_differ("강마루 평당 12만", "평당 15만 원이요"));
+        // Money itself is no thing a price is of.
+        assert_eq!(rates("평당 12만 원의 차이가 나요")[0].what, Subject::Unsaid);
+        assert_eq!(rates("평당 12만 원의 견적")[0].what, Subject::Unsaid);
+        assert_eq!(
+            rates("평당 12만 원의 강마루")[0].what,
+            Subject::Named("강마루".into())
+        );
         // Millimetres are no metres.
         assert!(rates("1200mm 상판 80만").is_empty());
         assert!(rates("120cm 선반 30만").is_empty());
