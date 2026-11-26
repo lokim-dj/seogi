@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Throwaway test app for picking the phone's speech engine; never shipped. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <application
+        android:allowBackup="false"
+        android:label="서기 엔진 시험"
+        android:largeHeap="true"
+        android:extractNativeLibs="false">
+        <activity
+            android:name=".BenchActivity"
+            android:exported="true"
+            android:screenOrientation="unspecified"
+            android:theme="@android:style/Theme.Material.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

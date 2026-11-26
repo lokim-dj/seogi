@@ -5,3 +5,7 @@ local.properties
 *.keystore
 captures/
 .kotlin/
+
+# Spike: downloaded native library and its build output
+spike/libs/
+spike/.cxx/
