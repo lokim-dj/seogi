@@ -737,6 +737,11 @@ function Sheet({
 
       <section className="a-sec" aria-labelledby="more-h">
         <h2 id="more-h">{t("minutes.more")}</h2>
+        {minutes?.not_rechecked ? (
+          <p className="mt-0 mb-2 text-[13.5px] t3">
+            {t("minutes.notRechecked")}
+          </p>
+        ) : null}
         {checks.length > 0 ? (
           <Fold title={t("minutes.checkFold")} count={checks.length} countRed>
             <p className="mt-0 mb-2 text-[13.5px] t3">

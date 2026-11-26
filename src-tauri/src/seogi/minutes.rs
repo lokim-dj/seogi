@@ -246,6 +246,10 @@ pub struct Minutes {
     pub to_check: u32,
     /// Items left out because the recording does not back them.
     pub dropped: u32,
+    /// Entries that may say different things could not be asked about
+    /// again (the request failed): they stand as written, unsettled.
+    #[serde(default)]
+    pub not_rechecked: bool,
     /// The model that wrote it: `ollama gemma3:12b`.
     pub written_by: String,
 }
@@ -410,7 +414,8 @@ pub fn write(
     if stop() {
         return Ok(None);
     }
-    dropped += reconcile(input, template, &mut entries, &index, &named);
+    let (gone, not_rechecked) = reconcile(input, template, &mut entries, &index, &named);
+    dropped += gone;
 
     // 6. Tasks: one per promise, with who does it.
     if stop() {
@@ -520,6 +525,7 @@ pub fn write(
         verified: entries.len() as u32 - to_check,
         to_check,
         dropped,
+        not_rechecked,
         // The model that really wrote them: a refused choice was replaced
         // by the tool's own.
         written_by: super::llm::in_use(input.provider).label(),
@@ -1389,7 +1395,7 @@ fn mark_elsewhere(
     // side.
     let has_customer = !customer.trim().is_empty() || template.section("customer_tasks").is_some();
     let who = super::facts::who_said(&names, customer, has_customer);
-    if super::facts::about_someone_else(&item.entry.text, &words.join(" "), who) {
+    if super::facts::about_someone_else(&item.entry.text, &words.join(" "), who, has_customer) {
         push_reason(&mut item.entry, CheckReason::OtherSubject);
     }
 }
@@ -1416,14 +1422,16 @@ const MOST_CLASHES: usize = 20;
 /// changed what was said before; the earlier when the later only asked
 /// about it again; both when they are about different things. A pair it
 /// cannot settle is marked for a look on both sides; one it could not be
-/// asked about is left as written. Returns how many entries were left out.
+/// asked about is left as written. Returns how many entries were left out,
+/// and whether the request failed, so the minutes can say some were not
+/// checked again.
 fn reconcile(
     input: &Input<'_>,
     template: &Template,
     entries: &mut Vec<(String, Entry)>,
     index: &Index<'_>,
     transcript: &Transcript,
-) -> u32 {
+) -> (u32, bool) {
     // Facts and choices; tasks are read together later.
     let candidates: Vec<usize> = entries
         .iter()
@@ -1449,7 +1457,7 @@ fn reconcile(
             .map(|(x, y, clash)| (candidates[x], candidates[y], clash))
             .collect();
     if pairs.is_empty() {
-        return 0;
+        return (0, false);
     }
 
     // What was said around an entry, and a little after: a later word may
@@ -1524,6 +1532,7 @@ fn reconcile(
         "required": ["results"],
         "additionalProperties": false
     });
+    let mut failed = false;
     let verdicts: BTreeMap<usize, String> = match ask_again(input, system, &listing, &schema) {
         Ok(answer) => answer
             .get("results")
@@ -1539,13 +1548,22 @@ fn reconcile(
             .collect(),
         Err(e) => {
             warn!(
-                "Could not ask which of {} pairs stands ({e:#}); marking them for a look",
+                "Could not ask which of {} pairs stands ({e:#}); leaving them as written",
                 pairs.len()
             );
+            failed = true;
             BTreeMap::new()
         }
     };
-    apply_reconciled(entries, &pairs, &verdicts)
+    // An answer that leaves pairs out is no answer for them.
+    failed |= unanswered(pairs.len(), &verdicts);
+    (apply_reconciled(entries, &pairs, &verdicts), failed)
+}
+
+/// Whether some of `pairs` pairs (numbered from 1) got no verdict: the
+/// answer had no results, or skipped a number.
+fn unanswered(pairs: usize, verdicts: &BTreeMap<usize, String>) -> bool {
+    (1..=pairs).any(|number| !verdicts.contains_key(&number))
 }
 
 /// Makes the verdicts so: the entry that does not stand goes, and a pair
@@ -3831,5 +3849,89 @@ mod tests {
         let gone = apply_reconciled(&mut entries, &[(0, 1, Clash::Numbers)], &BTreeMap::new());
         assert_eq!(gone, 0);
         assert!(entries.iter().all(|(_, e)| e.reasons.is_empty()));
+    }
+
+    #[test]
+    fn a_failed_second_question_is_told_in_the_minutes() {
+        let transcript = transcript();
+        let index = Index::new(&transcript);
+        let templates = built_in();
+        let template = consult();
+        // A provider that cannot be asked: no key in the keychain.
+        let provider = Provider::Anthropic {
+            model: "claude-test".into(),
+            key: "seogi-test-key".into(),
+        };
+        let input = Input {
+            transcript: &transcript,
+            templates: &templates,
+            template_id: Some("consult"),
+            marks_ms: &[],
+            mark_notes: &[],
+            people: &[],
+            customer: "",
+            recorded_on: "",
+            context: "",
+            feedback_rules: "",
+            provider: &provider,
+            secrets: &|_| None,
+        };
+        let pair = || {
+            vec![
+                (
+                    "decisions".to_string(),
+                    task("방은 4개 그대로 유지하기로 했다", "", "", 1_000, vec![]),
+                ),
+                (
+                    "open".to_string(),
+                    task(
+                        "방을 3개로 할지 4개로 유지할지 아직 정하지 않았다",
+                        "",
+                        "",
+                        9_000,
+                        vec![],
+                    ),
+                ),
+            ]
+        };
+        let mut entries = pair();
+        assert_eq!(
+            reconcile(&input, &template, &mut entries, &index, &transcript),
+            (0, true)
+        );
+        assert_eq!(entries, pair());
+        // An answer with no results, or one that skips a pair, is no answer.
+        let answered = |numbers: &[usize]| -> BTreeMap<usize, String> {
+            numbers.iter().map(|&n| (n, "both".to_string())).collect()
+        };
+        assert!(unanswered(2, &answered(&[])));
+        assert!(unanswered(2, &answered(&[1])));
+        assert!(unanswered(2, &answered(&[1, 3])));
+        assert!(!unanswered(2, &answered(&[1, 2])));
+        // Nothing to ask about: nothing failed.
+        let mut one = pair()[..1].to_vec();
+        assert_eq!(
+            reconcile(&input, &template, &mut one, &index, &transcript),
+            (0, false)
+        );
+        // Minutes written before the mark existed read as checked.
+        let mut old = serde_json::to_value(Minutes {
+            template_id: "consult".into(),
+            template_name: String::new(),
+            title: String::new(),
+            summary: String::new(),
+            story: Vec::new(),
+            feedback: None,
+            sections: Vec::new(),
+            verified: 0,
+            to_check: 0,
+            dropped: 0,
+            not_rechecked: true,
+            written_by: String::new(),
+        })
+        .unwrap();
+        old.as_object_mut().unwrap().remove("not_rechecked");
+        let read: Minutes = serde_json::from_value(old).unwrap();
+        assert!(!read.not_rechecked);
     }
 }

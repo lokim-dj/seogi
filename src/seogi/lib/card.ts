@@ -205,8 +205,10 @@ export function moneyOf(said: string): { value: string; unit: string } | null {
   ].join(" ");
   return { value, unit: tail.unit };
 }
-/** Words that make an amount the whole of it: the budget, the total. */
-const TOTAL = /예산|총액|총\s*공사비|전체\s*금액|합계/;
+/** Words that make an amount the whole of it: the budget, the total. Only a
+ *  line that says one of them is drawn large: another amount in the budget
+ *  part ("욕실 4500만 원") is one part of it, not the whole. */
+const TOTAL = /예산|총액|총\s*공사비|전체\s*(?:금액|공사비)|합계/;
 /** A number with what it counts: money, a size, an area, a share. */
 const AMOUNT =
   /\d[\d,]*(?:\.\d+)?\s*(?:억|천만|만\s*원|만원|천\s*원|원|mm|밀리|cm|센티|미터|m²|㎡|평|%|퍼센트)/;

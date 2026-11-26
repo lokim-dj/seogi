@@ -833,6 +833,7 @@ mod tests {
             verified: 3,
             to_check: 1,
             dropped: 1,
+            not_rechecked: false,
             written_by: "ollama gemma3:12b".into(),
         };
         let transcript = Transcript {

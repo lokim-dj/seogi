@@ -106,9 +106,13 @@ const ELSEWHERE: &[&str] = &[
     "그집은",
     "지난번현장",
     "예전현장",
-    "옆집",
-    "사례",
 ];
+
+/// Words that put what is said elsewhere only in a meeting with a customer:
+/// there "옆집" or "사례" is a story from another home, while in a meeting
+/// among colleagues or a memo they are the meeting's own talk ("사례 정리",
+/// "옆집 공사 소음 민원").
+const ELSEWHERE_WITH_CUSTOMER: &[&str] = &["옆집", "사례"];
 
 /// A speaker's own home or office: the customer's home is the site; a staff
 /// member's is not. Counted only when the speaker is known to be staff.
@@ -153,11 +157,16 @@ pub enum Who {
 /// Such an entry may have moved someone else's story onto the customer.
 /// Only plain words count: another site or a past case by anyone, or "우리
 /// 집" from someone known to be staff. From an unknown speaker "저희 집"
-/// may well be the customer's, so it is not doubted.
-pub fn about_someone_else(text: &str, lines: &str, who: Who) -> bool {
+/// may well be the customer's, so it is not doubted. "옆집" and "사례" count
+/// only in a meeting `with_customer` (a consultation).
+pub fn about_someone_else(text: &str, lines: &str, who: Who, with_customer: bool) -> bool {
     let lines = squeezed(lines);
     let text = squeezed(text);
     let elsewhere = ELSEWHERE.iter().any(|word| lines.contains(word))
+        || (with_customer
+            && ELSEWHERE_WITH_CUSTOMER
+                .iter()
+                .any(|word| lines.contains(word)))
         || (who == Who::Staff && OWN_HOME.iter().any(|word| lines.contains(word)));
     elsewhere && !SAYS_WHOSE.iter().any(|word| text.contains(word))
 }
@@ -454,38 +463,84 @@ fn numbers_disagree(a: &str, b: &str) -> bool {
     })
 }
 
+/// Words that open a meeting, in Korean, without spaces.
+const OPENINGS: &[&str] = &[
+    "안녕하세요",
+    "안녕하십니까",
+    "반갑습니다",
+    "처음뵙",
+    "시작하겠습니다",
+    "시작할게요",
+    "시작하죠",
+    "시작합시다",
+    "오늘은",
+    "오늘안건",
+    "녹음",
+];
+
+/// Words that open a meeting in English, as whole words in lower case with
+/// marks dropped ("let's" is "lets").
+const OPENINGS_IN_ENGLISH: &[&str] = &[
+    "hi",
+    "hello",
+    "hey",
+    "good morning",
+    "good afternoon",
+    "good evening",
+    "nice to meet you",
+    "pleased to meet you",
+    "welcome",
+    "lets start",
+    "lets get started",
+    "lets begin",
+];
+
+/// The share of a recording that must be in Korean letters for its start
+/// to be judged: the openings are known in Korean and a little English.
+const MID_TALK_HANGUL_SHARE: f32 = 0.5;
+
+/// Whether a line says something that opens a meeting.
+fn opens(text: &str) -> bool {
+    let korean = squeezed(text);
+    if OPENINGS.iter().any(|word| korean.contains(word)) {
+        return true;
+    }
+    let words: String = text
+        .chars()
+        .filter(|c| *c != '\'' && *c != '\u{2019}')
+        .flat_map(char::to_lowercase)
+        .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+        .collect();
+    let words = format!(
+        " {} ",
+        words.split_whitespace().collect::<Vec<_>>().join(" ")
+    );
+    OPENINGS_IN_ENGLISH
+        .iter()
+        .any(|opening| words.contains(&format!(" {opening} ")))
+}
+
 /// Whether a recording seems to start in the middle of talk: words from the
 /// first moment, a long first line, and nothing in the first minute and a
-/// half that opens a meeting. The people should know the minutes miss the
-/// start.
+/// half that opens a meeting, in Korean or English. A recording mostly not
+/// in Korean letters is not judged. The people should know the minutes miss
+/// the start. The same rule as `startsMidTalk` in src/seogi/lib/opening.ts.
 pub fn starts_mid_talk(transcript: &Transcript) -> bool {
-    const OPENINGS: &[&str] = &[
-        "안녕하세요",
-        "안녕하십니까",
-        "반갑습니다",
-        "처음뵙",
-        "시작하겠습니다",
-        "시작할게요",
-        "시작하죠",
-        "시작합시다",
-        "오늘은",
-        "오늘안건",
-        "녹음",
-    ];
     let Some(first) = transcript.segments.first() else {
         return false;
     };
     if first.start_ms > 1_500 || first.text.chars().filter(|c| !c.is_whitespace()).count() < 30 {
         return false;
     }
+    let (letters, hangul) = letters_heard(transcript);
+    if (hangul as f32) < MID_TALK_HANGUL_SHARE * letters as f32 {
+        return false;
+    }
     let opening = transcript
         .segments
         .iter()
         .take_while(|s| s.start_ms <= first.start_ms + 90_000)
-        .any(|s| {
-            let text = squeezed(&s.text);
-            OPENINGS.iter().any(|word| text.contains(word))
-        });
+        .any(|s| opens(&s.text));
     !opening
 }
 
@@ -515,10 +570,8 @@ fn is_hangul(c: char) -> bool {
     matches!(c, '\u{1100}'..='\u{11FF}' | '\u{3130}'..='\u{318F}' | '\u{AC00}'..='\u{D7AF}')
 }
 
-/// Whether a meeting is Korean by what was heard: most of its letters are.
-/// A meeting in English, or with much English in it, is not judged by the
-/// rules for stray foreign letters.
-pub fn korean_meeting(transcript: &Transcript) -> bool {
+/// How many letters were heard, and how many of them are Korean.
+fn letters_heard(transcript: &Transcript) -> (usize, usize) {
     let (mut letters, mut hangul) = (0usize, 0usize);
     for c in transcript
         .segments
@@ -529,6 +582,14 @@ pub fn korean_meeting(transcript: &Transcript) -> bool {
         letters += 1;
         hangul += usize::from(is_hangul(c));
     }
+    (letters, hangul)
+}
+
+/// Whether a meeting is Korean by what was heard: most of its letters are.
+/// A meeting in English, or with much English in it, is not judged by the
+/// rules for stray foreign letters.
+pub fn korean_meeting(transcript: &Transcript) -> bool {
+    let (letters, hangul) = letters_heard(transcript);
     letters > 0 && hangul as f32 >= 0.8 * letters as f32
 }
 
@@ -680,17 +741,20 @@ mod tests {
         assert!(about_someone_else(
             "현장은 58평 고층이다",
             "저희가 지난달에 한 다른 현장은 58평 고층이었는데",
-            Who::Unknown
+            Who::Unknown,
+            true
         ));
         assert!(about_someone_else(
             "현장은 고층이다",
             "우리 집은 20층이라 바람이 세요",
-            Who::Staff
+            Who::Staff,
+            true
         ));
         assert!(!about_someone_else(
             "다른 현장 사례로 58평에 9000만 원이 들었다",
             "저희가 한 다른 현장은 58평이었는데",
-            Who::Unknown
+            Who::Unknown,
+            true
         ));
         // The customer's own home is the site; so may be an unknown
         // speaker's, or anyone's when no speakers were told apart.
@@ -698,14 +762,42 @@ mod tests {
             assert!(!about_someone_else(
                 "현장은 32평이다",
                 "저희 집은 32평이고 3층이에요",
-                who
+                who,
+                true
             ));
         }
         // "우리 사무실" in a meeting without a customer is the meeting's own.
         assert!(!about_someone_else(
             "사무실 이전은 다음 달",
             "우리 사무실은 다음 달에 옮깁니다",
-            who_said(&["최도윤 팀장".to_string()], "", false)
+            who_said(&["최도윤 팀장".to_string()], "", false),
+            false
+        ));
+        // "사례" and "옆집" are another home's story only with a customer:
+        // in a meeting among colleagues they are the meeting's own talk.
+        assert!(about_someone_else(
+            "현장은 고층이다",
+            "옆집도 고층이라 바람이 세요",
+            Who::Unknown,
+            true
+        ));
+        for words in [
+            "지난 분기 사례를 정리해서 공유한다",
+            "옆집 공사 소음 민원이 들어왔다",
+        ] {
+            assert!(!about_someone_else(
+                "민원 대응을 정리한다",
+                words,
+                Who::Unknown,
+                false
+            ));
+        }
+        // Another site is another site in any meeting.
+        assert!(about_someone_else(
+            "공사 기간은 6주",
+            "다른 현장은 6주 걸렸어요",
+            Who::Unknown,
+            false
         ));
         let names = |list: &[&str]| list.iter().map(|n| n.to_string()).collect::<Vec<_>>();
         assert_eq!(who_said(&names(&["화자 2"]), "이서진", true), Who::Unknown);
@@ -793,6 +885,27 @@ mod tests {
             (2, "네"),
         ]);
         assert!(!starts_mid_talk(&opened));
+        // An English greeting opens a meeting too.
+        let hello = talk(&[
+            (
+                1,
+                "Hi, nice to meet you. 영어 반 한국어 반으로 이야기해 볼게요 괜찮으시죠 주방부터 볼까요",
+            ),
+            (2, "네"),
+        ]);
+        assert!(!starts_mid_talk(&hello));
+        assert!(opens("Good morning everyone"));
+        assert!(opens("Let's get started with the kitchen"));
+        assert!(!opens("this is the higher cabinet"));
+        // A recording mostly not in Korean letters is not judged.
+        let english = talk(&[
+            (
+                1,
+                "so if we move this wall the living room looks much wider and the storage goes here",
+            ),
+            (2, "right, and the kitchen?"),
+        ]);
+        assert!(!starts_mid_talk(&english));
     }
 
     #[test]
