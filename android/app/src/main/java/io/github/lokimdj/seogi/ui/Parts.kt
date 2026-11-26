@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraintsScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -38,6 +39,15 @@ import io.github.lokimdj.seogi.R
 
 /** The side gutter every screen keeps (26 dp in the design). */
 val Gutter = 26.dp
+
+/** Sideways phone or an unfolded Fold: room for two panes side by side. */
+fun BoxWithConstraintsScope.isWide(): Boolean = maxWidth > maxHeight && maxWidth >= 560.dp
+
+/**
+ * Screens that are one column of reading (first run, uploads, settings,
+ * dictation) stay this wide on a big screen, centred.
+ */
+val ReadingWidth = 600.dp
 
 @Composable
 fun Hairline(modifier: Modifier = Modifier) =

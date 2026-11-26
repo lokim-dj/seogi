@@ -35,21 +35,26 @@ fun UploadsScreen(
     Column(Modifier.fillMaxSize().padding(horizontal = Gutter)) {
         Spacer(Modifier.height(10.dp))
         BackBar(stringResource(R.string.uploads), onBack)
-        T(stringResource(R.string.upload_dest), size = 12.5.sp, color = pal.t3, medium = true, modifier = Modifier.padding(top = 22.dp))
-        T(
-            stringResource(R.string.upload_dest_path), size = 17.sp,
-            modifier = Modifier.padding(top = 2.dp).clickable(enabled = account != null, onClick = onOpenFolder),
-        )
-        if (account != null) {
-            T(stringResource(R.string.upload_dest_account, account.ifEmpty { "Google" }), size = 12.5.sp, color = pal.t3, medium = true)
-        } else {
-            T(
-                stringResource(R.string.upload_not_logged_in), size = 12.5.sp, color = pal.rt,
-                modifier = Modifier.clickable(onClick = onLogin),
-            )
-        }
-        Spacer(Modifier.height(22.dp))
+        // The header scrolls with the list, so a sideways phone still shows the lines.
         LazyColumn(Modifier.weight(1f)) {
+            item {
+                Column {
+                    T(stringResource(R.string.upload_dest), size = 12.5.sp, color = pal.t3, medium = true, modifier = Modifier.padding(top = 22.dp))
+                    T(
+                        stringResource(R.string.upload_dest_path), size = 17.sp,
+                        modifier = Modifier.padding(top = 2.dp).clickable(enabled = account != null, onClick = onOpenFolder),
+                    )
+                    if (account != null) {
+                        T(stringResource(R.string.upload_dest_account, account.ifEmpty { "Google" }), size = 12.5.sp, color = pal.t3, medium = true)
+                    } else {
+                        T(
+                            stringResource(R.string.upload_not_logged_in), size = 12.5.sp, color = pal.rt,
+                            modifier = Modifier.clickable(onClick = onLogin),
+                        )
+                    }
+                    Spacer(Modifier.height(22.dp))
+                }
+            }
             items(recordings, key = { it.id }) { r ->
                 val l = lineText(r, recordings, wifiOnly, now, detailed = true)
                 Hairline()

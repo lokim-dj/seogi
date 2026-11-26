@@ -16,7 +16,9 @@ import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -27,6 +29,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -44,6 +47,7 @@ import io.github.lokimdj.seogi.ui.DictationScreen
 import io.github.lokimdj.seogi.ui.HomeScreen
 import io.github.lokimdj.seogi.ui.OnboardingScreen
 import io.github.lokimdj.seogi.ui.Perms
+import io.github.lokimdj.seogi.ui.ReadingWidth
 import io.github.lokimdj.seogi.ui.RecordingScreen
 import io.github.lokimdj.seogi.ui.SeogiTheme
 import io.github.lokimdj.seogi.ui.SettingsScreen
@@ -207,7 +211,14 @@ class MainActivity : ComponentActivity() {
 
         BackHandler(enabled = screen !in setOf(Screen.HOME, Screen.ONBOARDING)) { screen = Screen.HOME }
 
-        Box(Modifier.fillMaxSize().background(pal.bg).safeDrawingPadding()) {
+        // Home and recording lay themselves out in two panes when wide; the
+        // reading screens keep a comfortable width, centred.
+        val reading = screen !in setOf(Screen.HOME, Screen.RECORDING)
+        Box(
+            Modifier.fillMaxSize().background(pal.bg).safeDrawingPadding(),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+          Box(if (reading) Modifier.widthIn(max = ReadingWidth).fillMaxHeight() else Modifier.fillMaxSize()) {
             when (screen) {
                 Screen.ONBOARDING -> OnboardingScreen(
                     perms = perms,
@@ -276,6 +287,7 @@ class MainActivity : ComponentActivity() {
                 )
                 Screen.DICTATION -> DictationScreen(onBack = { screen = Screen.HOME })
             }
+          }
         }
     }
 
