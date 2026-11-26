@@ -43,6 +43,19 @@ class SessionDir(val dir: File) {
     }
 
     private fun savedFile(id: String) = File(dir, "$id.saved.json")
+    private fun publishingFile(id: String) = File(dir, "$id.publishing")
+
+    /** The MediaStore item being written for [id], noted before any byte goes in. */
+    fun writePublishing(id: String, uri: String) {
+        dir.mkdirs()
+        publishingFile(id).writeText(uri)
+    }
+
+    fun readPublishing(id: String): String? = publishingFile(id).takeIf { it.exists() }?.readText()?.trim()?.ifEmpty { null }
+
+    fun clearPublishing(id: String) {
+        publishingFile(id).delete()
+    }
 
     /**
      * The finished recording, written right after it reached MediaStore and
@@ -68,6 +81,7 @@ class SessionDir(val dir: File) {
         audio(id).delete()
         stateFile(id).delete()
         savedFile(id).delete()
+        publishingFile(id).delete()
     }
 
     /**

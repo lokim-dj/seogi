@@ -35,12 +35,17 @@ interface Drive {
     fun status(token: String, session: String, size: Long): UploadStatus
     fun putChunk(token: String, session: String, bytes: ByteArray, from: Long, size: Long): UploadStatus
     fun email(token: String): String?
-    /** Moves a file the app made to the Drive trash (not a permanent delete); gone already is fine. */
-    fun trash(token: String, fileId: String)
+    /**
+     * Moves a file the app made to the Drive trash (files.update trashed=true,
+     * never a permanent delete). False when Drive does not know the file (404).
+     */
+    fun trash(token: String, fileId: String): Boolean
+    /** Gives up a resumable upload that was not finished, so no half file stays behind. */
+    fun cancelSession(session: String)
 }
 
 /** [Drive] over the Drive REST API v3. */
-class DriveApi(private val http: Http = UrlConnectionHttp) : Drive {
+class DriveApi(private val http: Http = OkHttpHttp) : Drive {
     private val json = Json { ignoreUnknownKeys = true }
 
     /**
@@ -109,15 +114,20 @@ class DriveApi(private val http: Http = UrlConnectionHttp) : Drive {
         return answer(http.send("PUT", session, auth(token) + ("Content-Range" to "bytes $from-$last/$size"), bytes))
     }
 
-    override fun trash(token: String, fileId: String) {
-        // HttpURLConnection has no PATCH; Google APIs accept the override header.
+    override fun trash(token: String, fileId: String): Boolean {
         val r = http.send(
-            "POST", "$API/files/${enc(fileId)}?fields=id",
-            auth(token) + mapOf("X-HTTP-Method-Override" to "PATCH", "Content-Type" to JSON_UTF8),
+            "PATCH", "$API/files/${enc(fileId)}?fields=id,trashed",
+            auth(token) + ("Content-Type" to JSON_UTF8),
             """{"trashed":true}""".toByteArray(),
         )
-        if (r.code == 404) return
+        if (r.code == 404) return false
         if (r.code !in 200..299) throw DriveHttpException(r.code, r.body.take(200))
+        return true
+    }
+
+    override fun cancelSession(session: String) {
+        // Drive answers 499 to a cancelled session; any answer is fine here.
+        http.send("DELETE", session, emptyMap(), null)
     }
 
     override fun email(token: String): String? {

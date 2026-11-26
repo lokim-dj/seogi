@@ -8,12 +8,16 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 
 /**
  * The list of finished recordings, kept in one JSON file. A write goes to a
- * temporary file first and is renamed over the old one, so a crash mid-write
- * never leaves half a list. A file that cannot be read is moved aside (never
- * deleted) and the list starts empty.
+ * temporary file, is flushed to the disk, and is renamed over the old one, so
+ * a crash mid-write never leaves half a list; the version before stays as a
+ * backup. A file that cannot be read is moved aside (never deleted) and the
+ * list comes back from the backup. Writes throw IOException when the disk
+ * refuses; callers say so.
  */
 class RecordingStore(private val file: File) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -46,21 +50,31 @@ class RecordingStore(private val file: File) {
     private fun save(list: List<Recording>) {
         file.parentFile?.mkdirs()
         val tmp = File(file.path + ".tmp")
-        tmp.writeText(json.encodeToString(serializer, list))
+        FileOutputStream(tmp).use { out ->
+            out.write(json.encodeToString(serializer, list).toByteArray())
+            out.flush()
+            out.fd.sync()
+        }
+        if (file.exists()) file.copyTo(backup, overwrite = true)
         if (!tmp.renameTo(file)) {
             file.delete()
-            check(tmp.renameTo(file)) { "could not replace ${file.name}" }
+            if (!tmp.renameTo(file)) throw IOException("could not replace ${file.name}")
         }
         state.value = list
     }
 
+    private val backup get() = File(file.path + ".bak")
+
     private fun load(): List<Recording> {
-        if (!file.exists()) return emptyList()
-        return try {
-            json.decodeFromString(serializer, file.readText()).sortedByDescending { it.startedAt }
-        } catch (e: Exception) {
-            file.renameTo(File(file.path + ".broken-" + System.currentTimeMillis()))
-            emptyList()
-        }
+        if (!file.exists()) return read(backup) ?: emptyList()
+        read(file)?.let { return it }
+        file.renameTo(File(file.path + ".broken-" + System.currentTimeMillis()))
+        return read(backup) ?: emptyList()
+    }
+
+    private fun read(f: File): List<Recording>? = try {
+        if (f.exists()) json.decodeFromString(serializer, f.readText()).sortedByDescending { it.startedAt } else null
+    } catch (e: Exception) {
+        null
     }
 }

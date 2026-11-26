@@ -64,7 +64,8 @@ class UploaderTest {
             return if (out.size().toLong() == size) UploadStatus.Complete("A-$session") else UploadStatus.Incomplete(out.size().toLong())
         }
         override fun email(token: String) = null
-        override fun trash(token: String, fileId: String) {}
+        override fun trash(token: String, fileId: String) = true
+        override fun cancelSession(session: String) {}
     }
 
     private class Bytes(val data: ByteArray) : AudioSource {
@@ -258,5 +259,31 @@ class UploaderTest {
         uploader(s, d, skip = setOf("gone")).runAll()
         assertEquals(listOf("keep.json"), d.small)
         assertEquals(UploadState.WAITING, s.get("gone")!!.upload)
+    }
+
+    /** Review 1: deleting while it uploads stops at the next piece; nothing more goes up. */
+    @Test fun deletingMidUploadStopsAtTheNextPiece() = runTest {
+        val s = store().apply { upsert(recording("a")) }
+        val d = FakeDrive()
+        val deleting = mutableSetOf<String>()
+        d.onChunk = { deleting += "a" }
+        val u = Uploader(
+            store = s, drive = d, tokens = { TokenResult.Ok("t") }, open = { Bytes(audio) },
+            folder = Folder(), device = "Phone X", appVersion = "0.1.0", chunkSize = 1024,
+            skip = { it in deleting },
+        )
+        assertEquals(Uploader.Outcome.DONE, u.runAll())
+        assertEquals(1024, d.received.getValue("s1").size())
+        assertEquals(UploadState.WAITING, s.get("a")!!.upload)
+        assertEquals(null, s.get("a")!!.driveFileId)
+    }
+
+    @Test fun theAccountIsWrittenOnEachUpload() = runTest {
+        val s = store().apply { upsert(recording("a")) }
+        Uploader(
+            store = s, drive = FakeDrive(), tokens = { TokenResult.Ok("t") }, open = { Bytes(audio) },
+            folder = Folder(), device = "Phone X", appVersion = "0.1.0", chunkSize = 1024, account = "me@example.com",
+        ).runAll()
+        assertEquals("me@example.com", s.get("a")!!.account)
     }
 }

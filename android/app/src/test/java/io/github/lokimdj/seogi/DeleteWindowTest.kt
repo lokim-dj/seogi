@@ -75,4 +75,11 @@ class DeleteWindowTest {
         runCurrent()
         assertEquals(listOf("a", "b"), log.committed.map { it.recording.id })
     }
+
+    /** Review 3: turning the phone or the screen going off does not end the undo window. */
+    @Test fun onlyReallyLeavingCommits() {
+        assertEquals(true, DeleteWindow.commitOnStop(changingConfigurations = false, screenOn = true))
+        assertEquals(false, DeleteWindow.commitOnStop(changingConfigurations = true, screenOn = true))
+        assertEquals(false, DeleteWindow.commitOnStop(changingConfigurations = false, screenOn = false))
+    }
 }

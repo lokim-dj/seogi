@@ -46,7 +46,12 @@ class Uploader(
     private val chunkSize: Int = CHUNK,
     /** Recordings the user is deleting right now (the few seconds of "되돌리기"). */
     private val skip: (String) -> Boolean = { false },
+    /** The signed-in account, written on each recording it uploads. */
+    private val account: String? = null,
 ) {
+    /** The user started deleting this recording while it was uploading. */
+    private class Skipped : Exception()
+
     /** Remembers the Drive folder between runs. */
     interface FolderCache {
         var folderId: String?
@@ -121,6 +126,9 @@ class Uploader(
                         throw CancellationException("upload stopped")
                     }
                     return failRetry(id, UploadError.OFFLINE)
+                } catch (e: Skipped) {
+                    backToWaiting(id)
+                    return Outcome.DONE
                 } catch (e: CancellationException) {
                     // Stopped by the system or a changed network rule: the
                     // session stays, the next run continues from Drive's count.
@@ -137,10 +145,11 @@ class Uploader(
     private suspend fun send(token: String, start: Recording, src: AudioSource) {
         val folderId = usableFolder(token)
         val r = store.get(start.id) ?: return // re-read: a new folder clears old sessions
+        if (skip(r.id)) throw Skipped()
         if (r.sidecarFileId == null) {
             val bytes = Sidecar.json(r, device, appVersion).toByteArray()
             val fileId = io { drive.uploadSmall(token, folderId, Sidecar.fileName(r.fileName), "application/json", bytes) }
-            store.update(r.id) { it.copy(sidecarFileId = fileId) }
+            store.update(r.id) { it.copy(sidecarFileId = fileId, account = account) }
         }
         val size = src.size
         var session = r.sessionUri
@@ -162,6 +171,7 @@ class Uploader(
         val buf = ByteArray(chunkSize)
         while (true) {
             currentCoroutineContext().ensureActive()
+            if (skip(r.id)) throw Skipped() // being deleted: no more pieces
             val want = minOf(chunkSize.toLong(), size - offset).toInt()
             var got = 0
             while (got < want) {
@@ -219,7 +229,9 @@ class Uploader(
     private suspend fun <T> io(block: () -> T): T = runInterruptible(Dispatchers.IO) { block() }
 
     private suspend fun done(id: String, fileId: String) =
-        store.update(id) { it.copy(upload = UploadState.UPLOADED, progress = 1f, error = null, driveFileId = fileId, sessionUri = null) }
+        store.update(id) {
+            it.copy(upload = UploadState.UPLOADED, progress = 1f, error = null, driveFileId = fileId, sessionUri = null, account = account)
+        }
 
     private suspend fun fail(id: String, error: UploadError) =
         store.update(id) { it.copy(upload = UploadState.FAILED, error = error) }

@@ -7,6 +7,7 @@ import io.github.lokimdj.seogi.data.Settings
 import io.github.lokimdj.seogi.record.Finalizer
 import io.github.lokimdj.seogi.record.Notifications
 import io.github.lokimdj.seogi.record.RecorderService
+import io.github.lokimdj.seogi.record.Saver
 import io.github.lokimdj.seogi.record.SessionDir
 import io.github.lokimdj.seogi.upload.DeleteWindow
 import io.github.lokimdj.seogi.upload.Deleter
@@ -19,8 +20,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.time.ZoneId
 
@@ -33,7 +32,6 @@ class SeogiApp : Application() {
 
     /** Recordings in their few seconds of "되돌리기": hidden, and not uploaded. */
     val pendingDeletes = MutableStateFlow<Set<String>>(emptySet())
-    private val saving = Mutex()
 
     override fun onCreate() {
         super.onCreate()
@@ -44,48 +42,34 @@ class SeogiApp : Application() {
         UploadQueue.enqueue(this, UploadQueue.Mode.KEEP)
     }
 
-    /**
-     * Saves a stopped (or cut off) recording to `Recordings/서기/`, lists it
-     * and queues its upload. The stream is removed only once that worked;
-     * otherwise it stays for the next start to try again.
-     */
-    suspend fun saveSession(sessions: SessionDir, id: String, recovered: Boolean) = saving.withLock {
-        // Already in MediaStore (and maybe listed) before a crash: list it, never copy twice.
-        sessions.readSaved(id)?.let {
-            if (store.get(id) == null) store.upsert(it)
-            sessions.clear(id)
-            UploadQueue.enqueue(this, UploadQueue.Mode.APPEND)
-            return@withLock
-        }
-        store.get(id)?.takeIf { it.mediaUri != null }?.let {
-            sessions.clear(id)
-            return@withLock
-        }
-        val stream = sessions.audio(id)
-        if (!stream.exists()) return@withLock
-        if (stream.length() == 0L) {
-            sessions.clear(id)
-            return@withLock
-        }
-        val state = sessions.read(id)
-            ?: sessions.leftovers(activeId = null, zone = ZoneId.systemDefault().id).firstOrNull { it.id == id }
-            ?: return@withLock
-        try {
-            val recording = Finalizer.finalize(this, stream, state, recovered)
-            sessions.writeSaved(recording)
-            store.upsert(recording)
-            sessions.clear(id)
-            UploadQueue.enqueue(this, UploadQueue.Mode.APPEND)
-        } catch (e: Exception) {
-            android.util.Log.w("Seogi", "saving $id failed; kept for the next start", e)
-        }
+    /** A recording could not be saved; it stays for the next start. Shown in red on the home. */
+    val saveProblem = MutableStateFlow(false)
+
+    private val saver by lazy {
+        Saver(
+            store = store,
+            finalize = { stream, state, recovered, onPending -> Finalizer.finalize(this, stream, state, recovered, onPending) },
+            discardPublished = { Finalizer.discard(this, it) },
+            enqueue = { UploadQueue.enqueue(this, UploadQueue.Mode.APPEND) },
+            onFailure = { id, e ->
+                android.util.Log.w("Seogi", "saving $id failed; kept for the next start", e)
+                saveProblem.value = true
+                Notifications.saveFailed(this)
+            },
+            onSuccess = { saveProblem.value = false },
+        )
     }
+
+    /** Saves a stopped (or cut off) recording exactly once; see [Saver]. */
+    suspend fun saveSession(sessions: SessionDir, id: String, recovered: Boolean) =
+        saver.save(sessions, id, recovered, ZoneId.systemDefault().id)
 
     /** Deletes a recording the user confirmed: Drive trash (optional), phone file, list line. */
     fun deleter() = Deleter(
         store = store,
         drive = DriveApi(),
         tokens = { settings.email.value?.let { GoogleAuth.token(this, it.ifEmpty { null }) } ?: TokenResult.NeedLogin },
+        currentAccount = { settings.email.value },
         deleteOnPhone = { r ->
             val uri = r.mediaUri?.let(Uri::parse)
             when {
@@ -119,8 +103,10 @@ class SeogiApp : Application() {
                 UploadQueue.enqueue(this, UploadQueue.Mode.APPEND)
             }
             val problem = when {
-                !result.phoneDeleted -> R.string.delete_phone_failed
-                result.drive == Deleter.DriveResult.FAILED -> R.string.delete_drive_failed
+                !result.phoneDeleted -> getString(R.string.delete_phone_failed)
+                !result.listRemoved -> getString(R.string.delete_list_failed)
+                result.drive == Deleter.DriveResult.OTHER_ACCOUNT -> getString(R.string.delete_other_account, result.otherAccount)
+                result.drive == Deleter.DriveResult.FAILED -> getString(R.string.delete_drive_failed)
                 else -> null
             }
             if (problem != null) {

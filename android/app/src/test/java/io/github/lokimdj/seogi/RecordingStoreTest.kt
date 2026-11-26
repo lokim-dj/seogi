@@ -51,6 +51,17 @@ class RecordingStoreTest {
         assertEquals(1, tmp.root.listFiles()!!.count { it.name.startsWith("r.json.broken-") })
     }
 
+    /** Minor: a broken list comes back from the copy kept before the last write. */
+    @Test fun aBrokenListComesBackFromTheBackup() = runTest {
+        val f = File(tmp.root, "r.json")
+        RecordingStore(f).apply {
+            upsert(recording("a", 1))
+            upsert(recording("b", 2))
+        }
+        f.writeText("{broken")
+        assertEquals(listOf("a"), RecordingStore(f).all.value.map { it.id })
+    }
+
     @Test fun whatNeedsUpload() {
         assertTrue(recording("a").needsUpload)
         assertTrue(recording("a", upload = UploadState.FAILED, error = UploadError.OFFLINE).needsUpload)

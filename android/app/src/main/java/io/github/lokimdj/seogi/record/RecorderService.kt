@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.MediaRecorder
 import android.os.PowerManager
+import android.os.StatFs
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -75,7 +76,16 @@ class RecorderService : LifecycleService() {
         return START_NOT_STICKY
     }
 
+    private fun free() = try { StatFs(filesDir.path).availableBytes } catch (e: Exception) { Long.MAX_VALUE }
+
     private fun begin() {
+        val free = free()
+        if (!Space.canStart(free)) {
+            _error.value = R.string.no_space_to_start
+            _errorArg.value = (free / Space.MB).toInt()
+            stopSelf()
+            return
+        }
         val now = System.currentTimeMillis()
         val zone = ZoneId.systemDefault()
         val id = SessionDir.newId(now)
@@ -100,7 +110,12 @@ class RecorderService : LifecycleService() {
                 setAudioSamplingRate(SAMPLE_RATE)
                 setAudioEncodingBitRate(BIT_RATE)
                 setOutputFile(sessions.audio(id))
-                setOnErrorListener { _, _, _ -> finish() }
+                setOnErrorListener { _, _, _ -> stopBecause(R.string.stopped_mic_error) }
+                setOnInfoListener { _, what, _ ->
+                    if (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED ||
+                        what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED
+                    ) stopBecause(R.string.stopped_no_space)
+                }
                 prepare()
                 start()
             }
@@ -126,9 +141,15 @@ class RecorderService : LifecycleService() {
             showNotification()
         }
         ticker = lifecycleScope.launch {
+            var n = 0
             while (isActive) {
                 val amp = try { recorder?.maxAmplitude ?: 0 } catch (e: Exception) { 0 }
                 _level.value = (amp / 32767f).coerceIn(0f, 1f)
+                // Every 30 s: is there still room to keep going and to save?
+                if (++n % 250 == 0 && Space.mustStop(free(), sessions.audio(id).length())) {
+                    stopBecause(R.string.stopped_no_space)
+                    break
+                }
                 delay(120)
             }
         }
@@ -168,6 +189,13 @@ class RecorderService : LifecycleService() {
         }
     }
 
+    /** Stopped by the phone, not the user: save what there is and say why. */
+    private fun stopBecause(why: Int) {
+        if (_state.value !is RecState.Recording) return
+        Notifications.recordingStopped(this, why)
+        finish()
+    }
+
     /** "버리기": stop without saving; the stream and its notes are removed. */
     private fun discard() {
         val s = _state.value as? RecState.Recording ?: return
@@ -200,6 +228,8 @@ class RecorderService : LifecycleService() {
             if (_state.value is RecState.Recording) {
                 activeId = null
                 _state.value = RecState.Idle
+                // Only the service went away, the app lives on: save what there is now.
+                (application as SeogiApp).recoverLeftovers()
             }
         }
         wakeLock?.takeIf { it.isHeld }?.release()
@@ -218,25 +248,10 @@ class RecorderService : LifecycleService() {
         val elapsed = SystemClock.elapsedRealtime() - s.startedElapsed
         val text = if (s.marksMs.isEmpty()) getString(R.string.notif_recording)
         else getString(R.string.notif_recording_marks, s.marksMs.size)
-        return NotificationCompat.Builder(this, Notifications.CH_RECORDING)
-            .setSmallIcon(R.drawable.ic_mark)
-            .setColor(getColor(R.color.seal_red))
-            .setContentTitle(s.title)
-            .setContentText(text)
-            .setSubText(getString(R.string.notif_sub_recording))
-            .setWhen(System.currentTimeMillis() - elapsed)
-            .setShowWhen(true)
-            .setUsesChronometer(true)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setSilent(true)
-            .setCategory(NotificationCompat.CATEGORY_STATUS)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .setContentIntent(Notifications.openApp(this))
-            .addAction(0, getString(R.string.action_mark), serviceIntent(ACTION_MARK, 1))
-            .addAction(0, getString(R.string.action_stop), serviceIntent(ACTION_STOP, 2))
-            .build()
+        return Notifications.recordingWithLockScreen(
+            this, s.title, text, System.currentTimeMillis() - elapsed,
+            serviceIntent(ACTION_MARK, 1), serviceIntent(ACTION_STOP, 2),
+        )
     }
 
     private fun serviceIntent(action: String, code: Int) = PendingIntent.getService(
@@ -261,10 +276,17 @@ class RecorderService : LifecycleService() {
         /** The microphone's loudness now, 0..1, for the level bars. */
         val level: StateFlow<Float> = _level.asStateFlow()
 
+        private val _errorArg = MutableStateFlow<Int?>(null)
+        /** A number for [error]'s text, such as the megabytes left. */
+        val errorArg: StateFlow<Int?> = _errorArg.asStateFlow()
+
         private val _error = MutableStateFlow<Int?>(null)
         /** A string resource to show once, when a recording could not start. */
         val error: StateFlow<Int?> = _error.asStateFlow()
-        fun clearError() { _error.value = null }
+        fun clearError() {
+            _error.value = null
+            _errorArg.value = null
+        }
 
         /** The id of the recording running now, which recovery must leave alone. */
         @Volatile var activeId: String? = null

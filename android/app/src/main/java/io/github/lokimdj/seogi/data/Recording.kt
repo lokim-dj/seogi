@@ -40,6 +40,8 @@ data class Recording(
     val sidecarFileId: String? = null,
     val sessionUri: String? = null,
     val driveFileId: String? = null,
+    /** The Google account the Drive copy went to; deleting later checks it is still the same. */
+    val account: String? = null,
 ) {
     /** Waiting, half done, or failed for a reason the queue handles by itself. */
     val needsUpload: Boolean

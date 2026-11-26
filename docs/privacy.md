@@ -10,7 +10,7 @@
 **녹음**
 
 - 녹음은 내 폰의 `Recordings/서기` 폴더에 저장됩니다. 앱이 스스로 지우지
-  않습니다.
+  않습니다. 내가 앱에서 '지우기'를 고르고 확인했을 때만 지웁니다.
 - 녹음이 끝나면 내가 로그인한 구글 계정의 드라이브, `서기 폰 녹음` 폴더로
   올라갑니다. 그 밖의 어디에도 보내지 않습니다.
 - 녹음 옆에 작은 설명 파일(시작 시각, 길이, 중요 표시 시각, 캘린더 일정 이름,
@@ -36,7 +36,14 @@
 
 **지우기**
 
-- 폰의 녹음은 '내 파일' 앱에서, 드라이브의 녹음은 드라이브에서 직접 지웁니다.
+- 앱의 녹음 목록에서 줄을 길게 누르면 지울 수 있습니다. 확인한 뒤 몇 초 안에
+  '되돌리기'를 누르면 아무것도 지워지지 않습니다.
+- '드라이브에 올린 것도 휴지통으로'를 켜 두면(처음엔 켜짐) 서기가 올린 그
+  녹음과 옆 설명 파일만 드라이브 휴지통으로 보냅니다. 영구 삭제는 하지 않으니
+  휴지통에서 되살릴 수 있습니다. 다른 계정으로 올린 파일은 건드리지 못하고 그렇다고
+  알려 줍니다.
+- 녹음 중 '버리기'를 고르면 그 녹음은 저장하지 않고 끝냅니다.
+- '내 파일' 앱이나 드라이브에서 직접 지워도 됩니다.
 - 앱을 지워도 폰의 녹음과 드라이브의 파일은 남습니다.
 - 구글 계정 설정의 '서드 파티 앱 및 서비스'에서 서기의 드라이브 권한을 언제든
   거둘 수 있습니다.
@@ -51,7 +58,7 @@ Seogi records meetings on your phone and, when a recording ends, uploads it to
 **Recordings**
 
 - Recordings are saved on your phone in `Recordings/서기`. The app never
-  deletes them.
+  deletes them on its own; only when you choose "지우기" (delete) and confirm.
 - When a recording ends it is uploaded to the Drive of the Google account you
   signed in with, into a folder named `서기 폰 녹음`. It is sent nowhere else.
 - A small description file goes with it (start time, length, important marks,
@@ -78,7 +85,14 @@ Seogi records meetings on your phone and, when a recording ends, uploads it to
 
 **Deleting**
 
-- Delete recordings on the phone with the Files app, and in Drive with Drive.
+- Long-press a recording in the app's list to delete it. For a few seconds
+  after you confirm, "되돌리기" (undo) brings it back and nothing is deleted.
+- With "드라이브에 올린 것도 휴지통으로" on (the default), the app also moves
+  that recording and its description file in your Drive to the Drive trash
+  (only files it made; never a permanent delete, so you can restore them). Files
+  uploaded with another account are left alone, and the app tells you so.
+- "버리기" while recording stops without saving.
+- You can also delete with the Files app or in Drive yourself.
 - Uninstalling the app leaves the recordings on the phone and in Drive.
 - You can remove Seogi's Drive access at any time under "Third-party apps &
   services" in your Google Account.

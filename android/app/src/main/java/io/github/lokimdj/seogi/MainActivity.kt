@@ -6,6 +6,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
+import android.os.StatFs
 import android.provider.Settings as SystemSettings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -48,8 +50,10 @@ import io.github.lokimdj.seogi.record.CalendarPick
 import io.github.lokimdj.seogi.record.CalendarReader
 import io.github.lokimdj.seogi.record.RecState
 import io.github.lokimdj.seogi.record.RecorderService
+import io.github.lokimdj.seogi.record.Space
 import io.github.lokimdj.seogi.ui.ConfirmDialog
 import io.github.lokimdj.seogi.ui.DictationScreen
+import io.github.lokimdj.seogi.ui.LicensesScreen
 import io.github.lokimdj.seogi.ui.UndoBar
 import io.github.lokimdj.seogi.ui.HomeScreen
 import io.github.lokimdj.seogi.ui.OnboardingScreen
@@ -60,6 +64,7 @@ import io.github.lokimdj.seogi.ui.SeogiTheme
 import io.github.lokimdj.seogi.ui.SettingsScreen
 import io.github.lokimdj.seogi.ui.UploadsScreen
 import io.github.lokimdj.seogi.ui.pal
+import io.github.lokimdj.seogi.upload.DeleteWindow
 import io.github.lokimdj.seogi.upload.Deleter
 import io.github.lokimdj.seogi.upload.DriveApi
 import io.github.lokimdj.seogi.upload.GoogleAuth
@@ -68,7 +73,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private enum class Screen { ONBOARDING, HOME, RECORDING, UPLOADS, SETTINGS, DICTATION }
+private enum class Screen { ONBOARDING, HOME, RECORDING, UPLOADS, SETTINGS, DICTATION, LICENSES }
 
 class MainActivity : ComponentActivity() {
     private val app get() = application as SeogiApp
@@ -216,6 +221,8 @@ class MainActivity : ComponentActivity() {
         } catch (_: Exception) {}
     }
 
+    private fun freeBytes() = try { StatFs(filesDir.path).availableBytes } catch (e: Exception) { Long.MAX_VALUE }
+
     private fun granted(p: String) = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
 
     private fun perms() = Perms(
@@ -242,15 +249,20 @@ class MainActivity : ComponentActivity() {
         val account by settings.email.collectAsState()
         val wifiOnly by settings.wifiOnly.collectAsState()
         val error by RecorderService.error.collectAsState()
+        val saveProblem by app.saveProblem.collectAsState()
 
         fun refresh() {
+            app.recoverLeftovers()
             perms = perms()
             now = System.currentTimeMillis()
             lifecycleScope.launch { events = withContext(Dispatchers.IO) { CalendarReader.today(this@MainActivity) } }
         }
         LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh() }
         // Leaving the app ends the undo window: the delete happens now.
-        LifecycleEventEffect(Lifecycle.Event.ON_STOP) { app.deletes.commitNow() }
+        LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+            val screenOn = getSystemService(PowerManager::class.java).isInteractive
+            if (DeleteWindow.commitOnStop(isChangingConfigurations, screenOn)) app.deletes.commitNow()
+        }
         val pending by app.deletes.pending.collectAsState()
         LaunchedEffect(Unit) {
             while (true) {
@@ -260,8 +272,10 @@ class MainActivity : ComponentActivity() {
         }
         LaunchedEffect(error) {
             error?.let {
-                Toast.makeText(this@MainActivity, it, Toast.LENGTH_LONG).show()
+                val arg = RecorderService.errorArg.value
+                Toast.makeText(this@MainActivity, if (arg != null) getString(it, arg) else getString(it), Toast.LENGTH_LONG).show()
                 RecorderService.clearError()
+                if (screen == Screen.RECORDING && rec is RecState.Idle) screen = Screen.HOME
             }
         }
         // Stopped from the notification, or saved: back home.
@@ -287,7 +301,9 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        BackHandler(enabled = screen !in setOf(Screen.HOME, Screen.ONBOARDING)) { screen = Screen.HOME }
+        BackHandler(enabled = screen !in setOf(Screen.HOME, Screen.ONBOARDING)) {
+            screen = if (screen == Screen.LICENSES) Screen.SETTINGS else Screen.HOME
+        }
 
         // Home and recording lay themselves out in two panes when wide; the
         // reading screens keep a comfortable width, centred.
@@ -322,6 +338,9 @@ class MainActivity : ComponentActivity() {
                         when {
                             rec !is RecState.Idle -> screen = Screen.RECORDING
                             !perms.mic -> askMicThenRecord.launch(Manifest.permission.RECORD_AUDIO)
+                            !Space.canStart(freeBytes()) -> Toast.makeText(
+                                this@MainActivity, getString(R.string.no_space_to_start, (freeBytes() / Space.MB).toInt()), Toast.LENGTH_LONG,
+                            ).show()
                             else -> {
                                 RecorderService.start(this@MainActivity)
                                 screen = Screen.RECORDING
@@ -334,6 +353,7 @@ class MainActivity : ComponentActivity() {
                     onRetry = ::retry,
                     onLogin = ::login,
                     onDelete = { deleteTarget = it },
+                    saveProblem = saveProblem,
                 )
                 Screen.RECORDING -> RecordingScreen(
                     rec = rec,
@@ -367,8 +387,10 @@ class MainActivity : ComponentActivity() {
                     onCalendar = { request(Manifest.permission.READ_CALENDAR) },
                     onPrivacy = { open(PRIVACY_URL) },
                     onFeedback = { open(FEEDBACK_URL) },
+                    onLicenses = { screen = Screen.LICENSES },
                 )
                 Screen.DICTATION -> DictationScreen(onBack = { screen = Screen.HOME })
+                Screen.LICENSES -> LicensesScreen(onBack = { screen = Screen.SETTINGS })
             }
           }
             if (pending != null) {

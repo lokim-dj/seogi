@@ -28,6 +28,7 @@ fun SettingsScreen(
     onCalendar: () -> Unit,
     onPrivacy: () -> Unit,
     onFeedback: () -> Unit,
+    onLicenses: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize().padding(horizontal = Gutter)) {
         Spacer(Modifier.height(10.dp))
@@ -70,6 +71,8 @@ fun SettingsScreen(
                 stringResource(R.string.set_feedback), "↗", stringResource(R.string.set_feedback_why),
                 done = false, onClick = onFeedback,
             )
+            Hairline()
+            StepLine(stringResource(R.string.set_licenses), "›", "", done = false, onClick = onLicenses)
             Hairline()
             StepLine(stringResource(R.string.set_version), BuildConfig.VERSION_NAME, "", done = true, onClick = {})
             Hairline()

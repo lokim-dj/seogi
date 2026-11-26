@@ -94,14 +94,21 @@ class DriveApiTest {
         assertTrue(http.sent[0].second.contains("trashed"))
     }
 
-    /** Delete sends the file to the Drive trash (PATCH trashed=true), never a permanent delete. */
+    /** Review 2: the trash is files.update trashed=true sent as a real PATCH, never a delete of the file. */
     @Test fun trashIsAPatchNotADelete() {
         val http = Fake(HttpResponse(200, emptyMap(), """{"id":"A"}"""), HttpResponse(404, emptyMap(), ""))
         val d = DriveApi(http)
-        d.trash("t", "A")
-        d.trash("t", "GONE") // already gone: fine
-        assertEquals("POST", http.sent[0].first)
-        assertEquals("PATCH", http.sent[0].third["X-HTTP-Method-Override"])
+        assertTrue(d.trash("t", "A"))
+        assertEquals(false, d.trash("t", "GONE"))
+        assertEquals("PATCH", http.sent[0].first)
+        assertTrue(http.sent[0].third["X-HTTP-Method-Override"] == null)
         assertTrue(http.sent.none { it.first == "DELETE" })
+    }
+
+    @Test fun givingUpASessionIsADeleteOfTheSessionOnly() {
+        val http = Fake(HttpResponse(499, emptyMap(), ""))
+        DriveApi(http).cancelSession("https://up/s1")
+        assertEquals("DELETE", http.sent[0].first)
+        assertEquals("https://up/s1", http.sent[0].second)
     }
 }

@@ -17,6 +17,15 @@
     <string name="mic_needed">마이크를 허용해야 녹음할 수 있어요. 설정 › 권한에서 마이크를 켜 주세요.</string>
     <string name="error_mic_busy">마이크를 다른 앱이 쓰고 있어요. 통화나 다른 녹음을 끝내고 다시 눌러 주세요.</string>
 
+    <string name="notice_save_failed_title">녹음을 저장하지 못했어요</string>
+    <string name="notice_save_failed">녹음은 지워지지 않았어요. 다음에 서기를 열면 되살려 저장합니다.</string>
+    <string name="save_failed_line">녹음을 저장하지 못했어요. 다음에 앱을 열면 되살립니다.</string>
+    <string name="notice_recording_stopped">녹음이 멈췄어요</string>
+    <string name="stopped_no_space">저장 공간이 모자라 녹음을 끝냈어요. 그때까지는 저장했어요.</string>
+    <string name="stopped_mic_error">마이크에 문제가 생겨 녹음을 끝냈어요. 그때까지는 저장했어요.</string>
+    <string name="no_space_to_start">저장 공간이 모자라요(남은 공간 %1$d MB). 공간을 비운 뒤 다시 눌러 주세요.</string>
+    <string name="notif_public_title">서기</string>
+
     <!-- common -->
     <string name="home">홈</string>
     <string name="allow">허용</string>
@@ -96,6 +105,8 @@
     <string name="undo">되돌리기</string>
     <string name="delete_hint">줄을 길게 누르면 지울 수 있어요</string>
     <string name="delete_phone_failed">폰 파일을 지우지 못했어요. 내 파일 › Recordings › 서기 에서 지워 주세요.</string>
+    <string name="delete_other_account">다른 계정(%1$s)에 올린 파일이라 드라이브 휴지통으로 보내지 못했어요. 그 계정의 드라이브에서 지워 주세요.</string>
+    <string name="delete_list_failed">폰 파일은 지웠지만 목록에서 빼지 못했어요. 앱을 다시 열어 주세요.</string>
     <string name="delete_drive_failed">드라이브 휴지통으로 보내지 못했어요. 드라이브에서 직접 지워 주세요.</string>
 
     <!-- uploads -->
@@ -122,6 +133,7 @@
     <string name="set_feedback">불편해요</string>
     <string name="set_feedback_why">GitHub 이슈로 보내 주세요. 녹음이나 이름은 쓰지 마세요.</string>
     <string name="set_version">버전</string>
+    <string name="set_licenses">오픈소스 라이선스</string>
 
     <!-- dictation (next version) -->
     <string name="dict_title">받아쓰기는\n다음 판에 들어옵니다</string>

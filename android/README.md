@@ -44,10 +44,24 @@ secret is in the app.
   ADTS stream in the app's own storage, so a crash or a kill keeps everything
   up to the last frame. The next start finishes such a recording and marks it
   "되살림".
-- On stop, the same AAC frames are moved, not re-encoded, into an `.m4a` in
-  `Recordings/서기/` (MediaStore). If that fails, the ADTS stream itself is
+- On stop, the same AAC frames are moved, not re-encoded, straight into an
+  `.m4a` in `Recordings/서기/` (MediaStore). A recording starts only with
+  200 MB free and stops (saving what it has) when room runs short. If that fails, the ADTS stream itself is
   kept as `.aac`. The app never changes or deletes that file afterwards.
 - Uploads run in one WorkManager queue with Drive's resumable upload, 8 MB at a
   time; an interrupted upload continues from the last piece. A small JSON with
   the start time, length, important marks, calendar title, phone and SHA-256
   goes next to each recording.
+
+## Deleting
+
+- Only the user deletes, and only after a question: "버리기" while recording
+  (nothing is saved), or a long press on a recording in the lists.
+- A confirmed delete waits eight seconds for "되돌리기" (undo); until then
+  nothing happens to the file, the list or Drive. Leaving the app ends the
+  wait; turning the phone or the screen going off does not.
+- With "드라이브에 올린 것도 휴지통으로" (on by default) the recording and its
+  JSON go to the Drive trash with `files.update trashed=true`, never a permanent
+  delete. An upload still under way is stopped, and either trashed (if it had
+  just finished) or given up. A file uploaded with another account is left
+  alone and the user is told.

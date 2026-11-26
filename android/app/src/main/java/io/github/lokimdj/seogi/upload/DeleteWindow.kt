@@ -59,5 +59,11 @@ class DeleteWindow(
 
     companion object {
         const val WINDOW_MS = 8_000L
+
+        /**
+         * Leaving the app commits the delete at once; turning the phone or the
+         * screen going off does not (the window just runs on).
+         */
+        fun commitOnStop(changingConfigurations: Boolean, screenOn: Boolean) = !changingConfigurations && screenOn
     }
 }

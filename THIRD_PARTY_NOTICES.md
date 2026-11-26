@@ -62,9 +62,16 @@ package ships its license text in its source distribution. Notable ones:
   ("한 장 요약") into the picture and the A4 page that are saved.
 - The Android app (`android/`): AndroidX, Jetpack Compose, WorkManager and
   Credential Manager (Apache-2.0), Kotlin and kotlinx libraries (Apache-2.0),
+  OkHttp and Okio (Apache-2.0),
   Google Identity Services (`play-services-auth`) and the Google ID library
   under the Android Software Development Kit License, for Google sign-in.
-  Versions are pinned in `android/gradle/libs.versions.toml`.
+  Versions are pinned in `android/gradle/libs.versions.toml`. The app shows
+  each licence in full under 설정 › 오픈소스 라이선스 (texts in
+  `android/app/src/main/res/raw/`).
+- Gradle wrapper (`android/gradle/wrapper/gradle-wrapper.jar`, `android/gradlew`,
+  `android/gradlew.bat`), Apache-2.0, Copyright the original authors (Gradle,
+  Inc.) <https://gradle.org>. Used only to build, not shipped in the app; CI
+  checks the jar against Gradle's published checksums.
 
 ## Fonts
 

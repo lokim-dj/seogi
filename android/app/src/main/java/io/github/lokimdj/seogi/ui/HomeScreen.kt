@@ -57,6 +57,7 @@ fun HomeScreen(
     onRetry: (Recording) -> Unit,
     onLogin: () -> Unit,
     onDelete: (Recording) -> Unit = {},
+    saveProblem: Boolean = false,
 ) {
     val zone = ZoneId.systemDefault()
     val eventLine: @Composable () -> Unit = {
@@ -90,6 +91,13 @@ fun HomeScreen(
         Column {
             Label(stringResource(R.string.recent), stringResource(R.string.see_all), onUploads)
             Hairline()
+            if (saveProblem) {
+                T(
+                    stringResource(R.string.save_failed_line), size = 13.sp, color = pal.rt,
+                    modifier = Modifier.padding(vertical = 11.dp),
+                )
+                Hairline()
+            }
             if (!signedIn) {
                 ListLine(
                     stringResource(R.string.need_login_line), stringResource(R.string.login), null,
