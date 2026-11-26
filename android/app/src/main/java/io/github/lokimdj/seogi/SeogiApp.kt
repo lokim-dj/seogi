@@ -8,6 +8,7 @@ import io.github.lokimdj.seogi.record.Finalizer
 import io.github.lokimdj.seogi.record.Notifications
 import io.github.lokimdj.seogi.record.RecorderService
 import io.github.lokimdj.seogi.record.SessionDir
+import io.github.lokimdj.seogi.upload.DeleteWindow
 import io.github.lokimdj.seogi.upload.Deleter
 import io.github.lokimdj.seogi.upload.DriveApi
 import io.github.lokimdj.seogi.upload.GoogleAuth
@@ -93,6 +94,38 @@ class SeogiApp : Application() {
                     if (contentResolver.delete(uri, null, null) > 0) Deleter.PhoneResult.DELETED else Deleter.PhoneResult.ALREADY_GONE
                 } catch (e: SecurityException) {
                     Deleter.PhoneResult.FAILED
+                }
+            }
+        },
+    )
+
+    /**
+     * The undo window for deletes. It lives here, not in the screen, so a
+     * rotation keeps it; leaving the app commits it.
+     */
+    val deletes = DeleteWindow(
+        scope = scope,
+        onHide = { pendingDeletes.value = pendingDeletes.value + it },
+        onShow = {
+            pendingDeletes.value = pendingDeletes.value - it
+            UploadQueue.enqueue(this, UploadQueue.Mode.APPEND)
+        },
+        commit = { p ->
+            val current = store.get(p.recording.id) ?: p.recording
+            val result = try {
+                deleter().delete(current, p.trashInDrive)
+            } finally {
+                pendingDeletes.value = pendingDeletes.value - p.recording.id
+                UploadQueue.enqueue(this, UploadQueue.Mode.APPEND)
+            }
+            val problem = when {
+                !result.phoneDeleted -> R.string.delete_phone_failed
+                result.drive == Deleter.DriveResult.FAILED -> R.string.delete_drive_failed
+                else -> null
+            }
+            if (problem != null) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(this@SeogiApp, problem, android.widget.Toast.LENGTH_LONG).show()
                 }
             }
         },

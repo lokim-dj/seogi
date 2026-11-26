@@ -74,9 +74,6 @@ class MainActivity : ComponentActivity() {
     private val app get() = application as SeogiApp
     private var pickedEmail: String? = null
 
-    /** A delete the user confirmed, waiting out its few seconds of "되돌리기". */
-    private data class PendingDelete(val recording: Recording, val trashInDrive: Boolean)
-    private var pendingDelete by mutableStateOf<PendingDelete?>(null)
     private var deleteTarget by mutableStateOf<Recording?>(null)
 
     /** Why the last sign-in did not work, shown in red until the next try. */
@@ -188,42 +185,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Confirmed: hide it and keep it from uploading; the real delete waits for the undo window. */
+    /** Confirmed: hidden and kept from uploading; the real delete waits out the undo window. */
     private fun startDelete(r: Recording, trashInDrive: Boolean) {
-        pendingDelete?.let { commitDelete(it) }
-        app.pendingDeletes.value = app.pendingDeletes.value + r.id
         if (app.store.get(r.id)?.upload == UploadState.UPLOADING) {
             // Stop the upload under way; the queue comes back after the delete or the undo.
             WorkManager.getInstance(this).cancelUniqueWork(UploadQueue.NAME)
         }
-        pendingDelete = PendingDelete(r, trashInDrive)
-    }
-
-    private fun undoDelete() {
-        val p = pendingDelete ?: return
-        pendingDelete = null
-        app.pendingDeletes.value = app.pendingDeletes.value - p.recording.id
-        UploadQueue.enqueue(this, UploadQueue.Mode.APPEND)
-    }
-
-    private fun commitDelete(p: PendingDelete) {
-        if (pendingDelete == p) pendingDelete = null
-        val app = app
-        app.scope.launch {
-            val current = app.store.get(p.recording.id) ?: p.recording
-            val result = try {
-                app.deleter().delete(current, p.trashInDrive)
-            } finally {
-                app.pendingDeletes.value = app.pendingDeletes.value - p.recording.id
-                UploadQueue.enqueue(app, UploadQueue.Mode.APPEND)
-            }
-            val problem = when {
-                !result.phoneDeleted -> R.string.delete_phone_failed
-                result.drive == Deleter.DriveResult.FAILED -> R.string.delete_drive_failed
-                else -> null
-            }
-            if (problem != null) withContext(Dispatchers.Main) { Toast.makeText(app, problem, Toast.LENGTH_LONG).show() }
-        }
+        app.deletes.start(r, trashInDrive)
     }
 
     private fun retry(r: Recording) {
@@ -282,14 +250,8 @@ class MainActivity : ComponentActivity() {
         }
         LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh() }
         // Leaving the app ends the undo window: the delete happens now.
-        LifecycleEventEffect(Lifecycle.Event.ON_STOP) { pendingDelete?.let { commitDelete(it) } }
-        val pending = pendingDelete
-        LaunchedEffect(pending) {
-            if (pending != null) {
-                kotlinx.coroutines.delay(UNDO_MS)
-                commitDelete(pending)
-            }
-        }
+        LifecycleEventEffect(Lifecycle.Event.ON_STOP) { app.deletes.commitNow() }
+        val pending by app.deletes.pending.collectAsState()
         LaunchedEffect(Unit) {
             while (true) {
                 kotlinx.coroutines.delay(30_000)
@@ -411,7 +373,7 @@ class MainActivity : ComponentActivity() {
           }
             if (pending != null) {
                 UndoBar(
-                    stringResource(R.string.deleted), stringResource(R.string.undo), ::undoDelete,
+                    stringResource(R.string.deleted), stringResource(R.string.undo), { app.deletes.undo() },
                     Modifier.align(Alignment.BottomCenter).widthIn(max = ReadingWidth),
                 )
             }
@@ -435,7 +397,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private companion object {
-        const val UNDO_MS = 5_000L
         const val PRIVACY_URL = "https://github.com/lokim-dj/seogi/blob/main/docs/privacy.md"
         const val FEEDBACK_URL = "https://github.com/lokim-dj/seogi/issues/new/choose"
     }
