@@ -1692,11 +1692,12 @@ async seogiNameSpeaker(id: string, speaker: number, name: string, scope: NameSco
 },
 /**
  * Puts back a naming of speakers just made: who said what and who was
- * given each task, as kept before it.
+ * given each task as kept before it, while the meeting is still as it
+ * was just after it.
  */
-async seogiRestoreNaming(id: string, naming: Naming) : Promise<Result<null, string>> {
+async seogiRestoreNaming(id: string, kept: Naming, now: Naming) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("seogi_restore_naming", { id, naming }) };
+    return { status: "ok", data: await TAURI_INVOKE("seogi_restore_naming", { id, kept, now }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2467,6 +2468,15 @@ id: string; duplicate: boolean;
  * Why it could not be brought in; empty when it was.
  */
 error: string }
+/**
+ * One task of the minutes as a naming keeps it: which task (its text and
+ * the moment it rests on) and who was given it.
+ */
+export type KeptTask = { text: string; 
+/**
+ * The first moment the task rests on, when it has one.
+ */
+at_ms: number | null; owner: string }
 export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_pid: number | null; culprit_name: string | null; 
 /**
  * Counts only — key identity is deliberately never captured.
@@ -2838,8 +2848,8 @@ export type NameScope =
  */
 "here"
 /**
- * Who said what and who was given each task, kept by the screen just
- * before it names a speaker, so the naming can be put back.
+ * Who said what and who was given each task, kept by the screen around a
+ * naming of speakers, so the naming can be put back.
  */
 export type Naming = { speakers: Speaker[]; 
 /**
@@ -2847,10 +2857,9 @@ export type Naming = { speakers: Speaker[];
  */
 lines: LineSpeaker[]; 
 /**
- * Every entry's owner, in order: each minutes, its sections, their
- * entries.
+ * Every task, in order: each minutes, its sections, their entries.
  */
-owners: string[] }
+tasks: KeptTask[] }
 export type Notice = { code: NoticeCode; level: NoticeLevel; source: NoticeSource; 
 /**
  * What only Rust knows, such as a model name or a raw error.

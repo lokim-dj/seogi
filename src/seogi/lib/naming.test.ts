@@ -11,6 +11,7 @@ import {
   named,
   nameKey,
   quotedWithWa,
+  sameNaming,
   namingSteps,
   speakerQueue,
   startAsking,
@@ -241,30 +242,34 @@ assert.equal(verdict(ask(["지우", "지우", "하린", "지우"])).kind, "askin
   );
 }
 
-// What is kept before a naming: every line's speaker in order, every task's
-// owner in order, and a copy of the speakers (not the same objects).
+// What is kept around a naming: every line's speaker in order, every task
+// in order with its text and moment, and a copy of the speakers.
 {
   const speakers = [{ id: 1, name: "화자 1" }];
-  const kept = keptNaming(
-    {
-      speakers,
-      segments: [
-        { start_ms: 0, speaker: 1 },
-        { start_ms: 900, speaker: 2 },
-      ],
-    },
-    [
-      { sections: [{ entries: [{ owner: "지우" }] }, { entries: [] }] },
-      { sections: [{ entries: [{ owner: "" }, { owner: "하린" }] }] },
-    ],
-  );
-  assert.deepEqual(kept.lines, [
+  const task = (text: string, owner: string, ms?: number) => ({
+    text,
+    owner,
+    sources: ms === undefined ? [] : [{ ms }],
+  });
+  const minutes = [
+    { sections: [{ entries: [task("도면", "지우", 5)] }, { entries: [] }] },
+    { sections: [{ entries: [task("견적", ""), task("타일", "하린", 9)] }] },
+  ];
+  const segments = [
     { start_ms: 0, speaker: 1 },
     { start_ms: 900, speaker: 2 },
+  ];
+  const kept = keptNaming({ speakers, segments }, minutes);
+  assert.deepEqual(kept.lines, segments);
+  assert.deepEqual(kept.tasks, [
+    { text: "도면", at_ms: 5, owner: "지우" },
+    { text: "견적", at_ms: null, owner: "" },
+    { text: "타일", at_ms: 9, owner: "하린" },
   ]);
-  assert.deepEqual(kept.owners, ["지우", "", "하린"]);
+  assert.ok(sameNaming(kept, keptNaming({ speakers, segments }, minutes)));
   speakers[0].name = "도윤";
   assert.equal(kept.speakers[0].name, "화자 1");
+  assert.ok(!sameNaming(kept, keptNaming({ speakers, segments }, minutes)));
 }
 
 // Korean particles after a name.

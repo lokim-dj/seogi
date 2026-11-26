@@ -679,13 +679,21 @@ mockIPC(
         return null;
       }
       case "seogi_restore_naming": {
-        const naming = args.naming as Naming;
+        // As the backend does it: who said each line and who was given
+        // each task, as kept before the naming.
+        const kept = args.kept as Naming;
         if (done.transcript) {
-          done.transcript.speakers = naming.speakers.map((one) => ({ ...one }));
+          done.transcript.speakers = kept.speakers.map((one) => ({ ...one }));
           done.transcript.segments.forEach((line, i) => {
-            line.speaker = naming.lines[i]?.speaker ?? line.speaker;
+            line.speaker = kept.lines[i]?.speaker ?? line.speaker;
           });
         }
+        const entries = (done.minutes ?? []).flatMap((m) =>
+          m.sections.flatMap((section) => section.entries),
+        );
+        entries.forEach((entry, i) => {
+          entry.owner = kept.tasks[i]?.owner ?? entry.owner;
+        });
         return null;
       }
       case "seogi_talk":

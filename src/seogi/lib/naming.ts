@@ -243,16 +243,21 @@ export function joinsWith<S extends { id: number; name: string }>(
 }
 
 /**
- * Who said what and who was given each task, kept just before a naming so
- * it can be put back (every line in order; every task's owner, minutes by
- * minutes, section by section).
+ * Who said what and who was given each task, as the backend compares and
+ * puts it back around a naming (every line in order; every task in order,
+ * minutes by minutes, section by section, with its text and the moment it
+ * rests on).
  */
 export function keptNaming(
   transcript: {
     speakers: { id: number; name: string }[];
     segments: { start_ms: number; speaker: number }[];
   },
-  minutes: { sections: { entries: { owner: string }[] }[] }[],
+  minutes: {
+    sections: {
+      entries: { text: string; owner: string; sources: { ms: number }[] }[];
+    }[];
+  }[],
 ): Naming {
   return {
     speakers: transcript.speakers.map((s) => ({ id: s.id, name: s.name })),
@@ -260,10 +265,21 @@ export function keptNaming(
       start_ms: line.start_ms,
       speaker: line.speaker,
     })),
-    owners: minutes.flatMap((m) =>
-      m.sections.flatMap((section) => section.entries.map((e) => e.owner)),
+    tasks: minutes.flatMap((m) =>
+      m.sections.flatMap((section) =>
+        section.entries.map((e) => ({
+          text: e.text,
+          at_ms: e.sources[0]?.ms ?? null,
+          owner: e.owner,
+        })),
+      ),
     ),
   };
+}
+
+/** The same who-said-what, as compared to know nothing changed since. */
+export function sameNaming(a: Naming, b: Naming): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 /** A speaker who said less than this share (percent) is asked about last. */

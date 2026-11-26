@@ -764,11 +764,12 @@ impl Secretary {
 
     /// Puts a naming back: the speakers, who said each line and who was
     /// given each task, as the screen kept them just before it named
-    /// someone. Refused, changing nothing, when the transcript or the
-    /// minutes are no longer the ones kept (written again since).
-    pub fn restore_naming(&self, id: &str, naming: &Naming) -> Result<()> {
+    /// someone (`kept`). Refused, changing nothing, unless the meeting is
+    /// still as the screen saw it just after (`now`): any later change of a
+    /// name, or minutes written again, keeps it as it is.
+    pub fn restore_naming(&self, id: &str, kept: &Naming, now: &Naming) -> Result<()> {
         let (mut meeting, folder) = self.editable(id)?;
-        put_back_naming(&mut meeting, naming)?;
+        put_back_naming(&mut meeting, kept, now)?;
         self.save(&meeting, &folder)
     }
 
@@ -2628,27 +2629,72 @@ pub fn tidy_names(names: Vec<String>) -> Vec<String> {
     kept
 }
 
-/// Who said what and who was given each task, kept by the screen just
-/// before it names a speaker, so the naming can be put back.
+/// One task of the minutes as a naming keeps it: which task (its text and
+/// the moment it rests on) and who was given it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct KeptTask {
+    pub text: String,
+    /// The first moment the task rests on, when it has one.
+    pub at_ms: Option<u64>,
+    pub owner: String,
+}
+
+/// Who said what and who was given each task, kept by the screen around a
+/// naming of speakers, so the naming can be put back.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct Naming {
     pub speakers: Vec<Speaker>,
     /// Every line of the transcript, in order.
     pub lines: Vec<LineSpeaker>,
-    /// Every entry's owner, in order: each minutes, its sections, their
-    /// entries.
-    pub owners: Vec<String>,
+    /// Every task, in order: each minutes, its sections, their entries.
+    pub tasks: Vec<KeptTask>,
 }
 
-/// [`Naming`] put back into `meeting`; nothing changes when it does not fit.
-fn put_back_naming(meeting: &mut Meeting, naming: &Naming) -> Result<()> {
-    let entries = meeting
-        .minutes
-        .iter()
-        .flat_map(|m| &m.sections)
-        .map(|section| section.entries.len())
-        .sum::<usize>();
-    if entries != naming.owners.len() {
+/// Who said what and who was given each task in `meeting` now.
+fn naming_of(meeting: &Meeting) -> Naming {
+    let transcript = meeting.transcript.as_ref();
+    Naming {
+        speakers: transcript.map(|t| t.speakers.clone()).unwrap_or_default(),
+        lines: transcript
+            .map(|t| {
+                t.segments
+                    .iter()
+                    .map(|s| LineSpeaker {
+                        start_ms: s.start_ms,
+                        speaker: s.speaker,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        tasks: meeting
+            .minutes
+            .iter()
+            .flat_map(|m| &m.sections)
+            .flat_map(|section| &section.entries)
+            .map(|entry| KeptTask {
+                text: entry.text.clone(),
+                at_ms: entry.sources.first().map(|source| source.ms),
+                owner: entry.owner.clone(),
+            })
+            .collect(),
+    }
+}
+
+/// Puts `kept` (taken just before a naming) back into `meeting`, only when
+/// the meeting is still exactly `now` (taken just after it): then what is
+/// undone is that naming and nothing else. Nothing changes otherwise.
+fn put_back_naming(meeting: &mut Meeting, kept: &Naming, now: &Naming) -> Result<()> {
+    if naming_of(meeting) != *now {
+        bail!("who said what has changed since");
+    }
+    let same_task = |a: &KeptTask, b: &KeptTask| a.text == b.text && a.at_ms == b.at_ms;
+    if kept.tasks.len() != now.tasks.len()
+        || kept
+            .tasks
+            .iter()
+            .zip(&now.tasks)
+            .any(|(a, b)| !same_task(a, b))
+    {
         bail!("the minutes have changed since");
     }
     let mut transcript = meeting
@@ -2656,7 +2702,7 @@ fn put_back_naming(meeting: &mut Meeting, naming: &Naming) -> Result<()> {
         .clone()
         .ok_or_else(|| anyhow!("it has not been transcribed yet"))?;
     transcript
-        .put_back_speakers(&naming.speakers, &naming.lines)
+        .put_back_speakers(&kept.speakers, &kept.lines)
         .map_err(|e| anyhow!(e))?;
     meeting.transcript = Some(transcript);
     let entries = meeting
@@ -2664,8 +2710,8 @@ fn put_back_naming(meeting: &mut Meeting, naming: &Naming) -> Result<()> {
         .iter_mut()
         .flat_map(|m| m.sections.iter_mut())
         .flat_map(|section| section.entries.iter_mut());
-    for (entry, owner) in entries.zip(&naming.owners) {
-        entry.owner = owner.clone();
+    for (entry, task) in entries.zip(&kept.tasks) {
+        entry.owner = task.owner.clone();
     }
     Ok(())
 }
@@ -2749,33 +2795,44 @@ mod tests {
             written_by: String::new(),
         }];
         let before = meeting.clone();
-        let transcript = before.transcript.as_ref().unwrap();
-        let naming = Naming {
-            speakers: transcript.speakers.clone(),
-            lines: transcript
-                .segments
-                .iter()
-                .map(|s| LineSpeaker {
-                    start_ms: s.start_ms,
-                    speaker: s.speaker,
-                })
-                .collect(),
-            owners: vec!["화자 1".into(), "화자 2".into()],
-        };
+        let kept = naming_of(&meeting);
         // Named as the screen does it, tasks following.
         let named = meeting.transcript.as_mut().unwrap();
         named.name_speaker(1, "김서윤 실장", NameScope::All, 0, 0);
         meeting.minutes[0].sections[0].entries[0].owner = "김서윤 실장".into();
-        put_back_naming(&mut meeting, &naming).unwrap();
+        let after = meeting.clone();
+        let now = naming_of(&meeting);
+        put_back_naming(&mut meeting, &kept, &now).unwrap();
         assert_eq!(meeting, before);
-        // Minutes written again since (another number of entries): refused,
-        // nothing changed.
-        let mut rewritten = before.clone();
-        rewritten.minutes[0].sections[0].entries.pop();
-        rewritten.transcript.as_mut().unwrap().speakers[0].name = "김서윤 실장".into();
-        let kept = rewritten.clone();
-        assert!(put_back_naming(&mut rewritten, &naming).is_err());
-        assert_eq!(rewritten, kept);
+
+        // Refused, changing nothing: the case and what goes wrong.
+        let refused = |change: &dyn Fn(&mut Meeting)| {
+            let mut changed = after.clone();
+            change(&mut changed);
+            let untouched = changed.clone();
+            assert!(put_back_naming(&mut changed, &kept, &now).is_err());
+            assert_eq!(changed, untouched);
+        };
+        // Another name changed since.
+        refused(&|m| {
+            m.transcript.as_mut().unwrap().speakers[1].name = "고객".into();
+        });
+        // Minutes written again with as many tasks, but other ones: the old
+        // owners would land on the wrong tasks.
+        refused(&|m| {
+            m.minutes[0].sections[0].entries[0].text = "견적서 다시 보내기".into();
+        });
+        refused(&|m| {
+            m.minutes[0].sections[0].entries[1].sources[0].ms = 5_000;
+        });
+        // Fewer tasks.
+        refused(&|m| {
+            m.minutes[0].sections[0].entries.pop();
+        });
+        // A task given to someone else by hand since.
+        refused(&|m| {
+            m.minutes[0].sections[0].entries[1].owner = "박도현 소장".into();
+        });
     }
 
     #[test]

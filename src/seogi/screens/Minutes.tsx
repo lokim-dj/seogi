@@ -57,6 +57,7 @@ import {
   QUIET_SHARE,
   quotedWithWa,
   SAME_ENOUGH,
+  sameNaming,
   speakerQueue,
   startAsking,
   verdict,
@@ -1319,16 +1320,27 @@ function NameSpeakers({
   const [from, setFrom] = useState<number[] | null>(null);
   // Names typed this round, offered as keys from then on.
   const [typed, setTyped] = useState<string[]>([]);
-  // The naming just made, to put back once.
+  // The naming just made, to put back once: as it was before (`kept`) and
+  // just after (`now`). It goes when anything about who said what changes
+  // since, or the person moves on.
   const [undo, setUndo] = useState<{
-    naming: Naming;
+    kept: Naming;
+    now: Naming;
     said: string;
     speaker: number;
     who: "unnamed" | "all";
   } | null>(null);
   const [undoing, setUndoing] = useState(false);
   const [said, setSaid] = useState("");
+  const naming = useMemo(
+    () =>
+      meeting.transcript
+        ? keptNaming(meeting.transcript, meeting.minutes ?? [])
+        : null,
+    [meeting.transcript, meeting.minutes],
+  );
   if (!meeting.transcript) return null;
+  const canUndo = Boolean(undo && naming && sameNaming(undo.now, naming));
   const speakers = meeting.transcript.speakers;
   const share: Record<number, number> = {};
   for (const s of talk?.speakers ?? []) share[s.speaker] = s.share;
@@ -1354,16 +1366,35 @@ function NameSpeakers({
     setSeen((now) => [...now, current.id]);
     if (queue.length <= 1) setOpen(false);
   };
-  const settled = (naming: Naming, text: string, done: boolean) => {
-    if (!current || !open) return;
-    setUndo({ naming, said: text, speaker: current.id, who: open });
+  // A naming made of speaker `id`; after a part of it failed and it was
+  // tried again, what was there before the first try is what goes back.
+  const settled = (
+    id: number,
+    kept: Naming,
+    now: Naming | null,
+    text: string,
+    done: boolean,
+  ) => {
+    if (!open) return;
+    setUndo((was) => {
+      if (!now) return null;
+      if (was && was.speaker === id) return { ...was, now, said: text };
+      return { kept, now, said: text, speaker: id, who: open };
+    });
     setSaid("");
-    if (done) next();
+    if (done) {
+      setSeen((seenNow) => [...seenNow, id]);
+      if (queue.length <= 1) setOpen(false);
+    }
   };
   const putBack = async () => {
-    if (!undo) return;
+    if (!undo || !canUndo) return;
     setUndoing(true);
-    const result = await commands.seogiRestoreNaming(meeting.id, undo.naming);
+    const result = await commands.seogiRestoreNaming(
+      meeting.id,
+      undo.kept,
+      undo.now,
+    );
     setUndoing(false);
     if (result.status === "error") {
       setSaid(t("failed", { reason: result.error }));
@@ -1378,13 +1409,13 @@ function NameSpeakers({
   };
 
   const undoLine =
-    undo || said ? (
+    canUndo || said ? (
       <div
         className="flex flex-wrap items-center gap-x-3 mt-3 text-[13.5px]"
         aria-live="polite"
       >
-        {undo ? <span className="t2">{undo.said}</span> : null}
-        {undo ? (
+        {undo && canUndo ? <span className="t2">{undo.said}</span> : null}
+        {canUndo ? (
           <button
             type="button"
             className="lnk"
@@ -1395,7 +1426,7 @@ function NameSpeakers({
           </button>
         ) : null}
         {said ? (
-          <span role={undo ? undefined : "status"} className="t2">
+          <span role={canUndo ? undefined : "status"} className="t2">
             {said}
           </span>
         ) : null}
@@ -1482,9 +1513,15 @@ function AskSpeaker({
   /** Names typed earlier this round. */
   typed: string[];
   onTyped: (name: string) => void;
-  /** A naming was made (`done`: all of it, on to the next speaker); what
-   *  was kept before it, and what to say about it. */
-  onSettled: (naming: Naming, said: string, done: boolean) => void;
+  /** A naming of the speaker was made (`done`: all of it, on to the next
+   *  speaker): who said what before it and just after, and what to say. */
+  onSettled: (
+    id: number,
+    kept: Naming,
+    now: Naming | null,
+    said: string,
+    done: boolean,
+  ) => void;
   onNext: () => void;
   onLater: () => void;
 }) {
@@ -1550,6 +1587,13 @@ function AskSpeaker({
 
   // Gives the names, single lines first, keeping what was there before so it
   // can be put back; a failure stops there and says so.
+  // Who said what as the backend has it now, read again after a naming.
+  const after = () => {
+    const fresh = useSeogi.getState().detail;
+    return fresh?.id === meeting.id && fresh.transcript
+      ? keptNaming(fresh.transcript, fresh.minutes ?? [])
+      : null;
+  };
   const settle = async (steps: NameStep[], said: string) => {
     const naming = keptNaming(transcript, meeting.minutes ?? []);
     setWorking(true);
@@ -1567,15 +1611,17 @@ function AskSpeaker({
       if (result.status === "error") {
         setTrouble(t("failed", { reason: result.error }));
         setWorking(false);
-        if (done > 0) onSettled(naming, t("names.partial"), false);
         await refreshDetail();
+        if (done > 0) {
+          onSettled(speaker.id, naming, after(), t("names.partial"), false);
+        }
         return;
       }
       done += 1;
     }
-    setWorking(false);
-    onSettled(naming, said, true);
     await refreshDetail();
+    setWorking(false);
+    onSettled(speaker.id, naming, after(), said, true);
   };
   const settleSaid =
     v.kind === "decide"
