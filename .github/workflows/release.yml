@@ -26,13 +26,54 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Build provenance: a signed statement from GitHub that these files
+      # came out of this workflow run, from this repository and commit.
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           path: artifacts
           merge-multiple: true
+
+      # Anyone can check a downloaded file with
+      # gh attestation verify <file> -R lokim-dj/seogi
+      - name: Attest the installers' provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            artifacts/*.dmg
+            artifacts/*-setup.exe
+            artifacts/*.app.tar.gz
+
+      # The release's text: the notes of this version, then each installer's
+      # SHA-256 and how to check it. The file in docs/ stays as written (the
+      # updater shows it as is). The virus scan link is added by hand after
+      # the release (docs/RELEASING.md).
+      - name: Write the release text
+        run: |
+          version="$(grep -o '"version": "[^"]*"' src-tauri/tauri.conf.json | head -1 | cut -d'"' -f4)"
+          body="$RUNNER_TEMP/release-notes.md"
+          cp "docs/release-notes/v${version}.md" "$body"
+          {
+            echo
+            echo "## 설치 파일 검사"
+            echo
+            echo '받은 파일이 이 판의 것인지 SHA-256 값으로 맞춰 볼 수 있습니다. macOS 는 터미널에서 `shasum -a 256 파일이름`, Windows 는 PowerShell 에서 `Get-FileHash 파일이름` 으로 값을 내어 아래와 같은지 봅니다.'
+            echo
+            echo "| 파일 | SHA-256 |"
+            echo "| --- | --- |"
+            for file in artifacts/*.dmg artifacts/*-setup.exe artifacts/*.app.tar.gz; do
+              test -f "$file" || { echo "missing $file" >&2; exit 1; }
+              echo "| \`$(basename "$file")\` | \`$(sha256sum "$file" | cut -d' ' -f1)\` |"
+            done
+            echo
+            echo '이 파일들이 이 저장소의 Release 작업에서 만들어졌다는 GitHub 의 빌드 출처 증명도 붙어 있습니다. GitHub CLI 가 있으면 `gh attestation verify 파일이름 -R lokim-dj/seogi` 로 확인합니다.'
+          } >> "$body"
+          cat "$body"
 
       # What an installed Seogi reads to learn of a new version: the version,
       # what changed, and for each platform the file and its signature.
@@ -73,11 +114,11 @@ jobs:
             --jq ".[] | select(.isDraft and .name == \"서기 v${version}\") | .tagName" | head -1)"
           if [ -n "$existing" ]; then
             gh release upload "$existing" artifacts/* --clobber
-            gh release edit "$existing" --notes-file docs/release-notes/v${version}.md \
+            gh release edit "$existing" --notes-file "$RUNNER_TEMP/release-notes.md" \
               --target "${GITHUB_SHA}" ${draft:+--draft}
           else
             gh release create "v${version}" artifacts/* $draft \
               --title "서기 v${version}" \
-              --notes-file docs/release-notes/v${version}.md \
+              --notes-file "$RUNNER_TEMP/release-notes.md" \
               --target "${GITHUB_SHA}"
           fi
