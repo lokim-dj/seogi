@@ -11,6 +11,7 @@ import {
   cardOf,
   fitSteps,
   LINE_MAX,
+  moneyOf,
   roomAt,
   shorten,
   TITLE_MAX,
@@ -218,6 +219,125 @@ const without = (meeting: Meeting, keep: (s: MinutesSection) => boolean) => {
   assert.equal(card.flow, null);
   assert.equal(card.checks, null);
   assert.equal(card.kind, null);
+}
+
+// An amount is taken whole; two amounts or a range are not drawn large.
+{
+  assert.deepEqual(moneyOf("총 예산은 1억 2천만 원"), {
+    value: "1억 2천",
+    unit: "만 원",
+  });
+  assert.deepEqual(moneyOf("예산 3억 5000만원으로 확정"), {
+    value: "3억 5,000",
+    unit: "만 원",
+  });
+  assert.deepEqual(moneyOf("예산은 4500만원 안쪽"), {
+    value: "4,500",
+    unit: "만 원",
+  });
+  assert.deepEqual(moneyOf("예산 2억 원"), { value: "2", unit: "억 원" });
+  assert.equal(moneyOf("예산은 4500~5000만원 사이"), null);
+  assert.equal(moneyOf("예산을 5000만 원에서 4500만 원으로 줄임"), null);
+  assert.equal(moneyOf("예산은 아직 모른다"), null);
+
+  const said = (text: string) => {
+    const meeting = base();
+    const budget = meeting.minutes![0].sections.find(
+      (s) => s.key === "budget",
+    )!;
+    budget.entries[0].text = text;
+    return cardOf(meeting, talk, "a4", words).numbers;
+  };
+  assert.equal(said("총 예산은 1억 2천만 원이다.")?.lead?.value, "1억 2천");
+  assert.equal(
+    said("예산 3억 5000만원으로 확정했다.")?.lead?.value,
+    "3억 5,000",
+  );
+  for (const text of [
+    "예산은 4500~5000만원 사이로 생각한다.",
+    "예산을 5000만 원에서 4500만 원으로 줄였다.",
+  ]) {
+    const numbers = said(text);
+    assert.equal(numbers?.lead, null, text);
+    // The line itself is still there, as said.
+    assert.ok(
+      numbers?.lines.some((line) => text.startsWith(line.text)),
+      text,
+    );
+  }
+}
+
+// Headings that say "not settled" are not decisions, even with 결정 or 합의.
+{
+  for (const title of ["결정 보류", "결정할 것", "합의 안 된 것", "결정 전"]) {
+    const meeting = base();
+    meeting.minutes![0].sections.find((s) => s.key === "decisions")!.key =
+      "mine";
+    meeting.minutes![0].sections.find((s) => s.key === "mine")!.title = title;
+    const card = cardOf(meeting, talk, "kakao", words);
+    assert.equal(card.decisions, null, title);
+  }
+  for (const title of ["합의한 것", "약속한 것", "결정 사항"]) {
+    const meeting = base();
+    meeting.minutes![0].sections.find((s) => s.key === "decisions")!.key =
+      "mine";
+    meeting.minutes![0].sections.find((s) => s.key === "mine")!.title = title;
+    assert.ok(cardOf(meeting, talk, "kakao", words).decisions, title);
+  }
+}
+
+// Numbers come only from the parts that hold figures, not worries,
+// wishes, risks or talk.
+{
+  const meeting = base();
+  const sections = meeting.minutes![0].sections;
+  sections.find((s) => s.key === "concerns")!.entries[0].text =
+    "공사비가 5000만 원을 넘을까 걱정했다.";
+  sections.find((s) => s.key === "requests")!.entries[0].text =
+    "거실 폭 4200mm 를 넓히고 싶다고 했다.";
+  sections.push({
+    key: "risks",
+    title: "리스크",
+    kind: "items",
+    entries: [
+      {
+        text: "자재비가 10% 오를 수 있다.",
+        owner: "",
+        due: "",
+        sources: [{ ms: 1000, quote: "" }],
+        reasons: [],
+      },
+    ],
+  });
+  const card = cardOf(meeting, talk, "a4", words);
+  const all = [
+    ...(card.numbers?.lines ?? []),
+    ...(card.numbers?.lead ? [card.numbers.lead.line] : []),
+  ].map((line) => line.text);
+  assert.ok(all.length > 0);
+  assert.ok(
+    all.every((text) => !/걱정했다|넓히고|오를 수/.test(text)),
+    all.join(),
+  );
+}
+
+// A doubted task goes under 확인 필요; a faint one or one with no moment
+// stays, marked.
+{
+  const meeting = base();
+  const ours = meeting.minutes![0].sections.find((s) => s.key === "our_tasks")!;
+  ours.entries[0].reasons = ["owner_unclear"];
+  ours.entries[1].faint = true;
+  ours.entries[2].sources = [];
+  const card = cardOf(meeting, talk, "a4", words);
+  const group = card.tasks[0];
+  assert.equal(group.lines.length + group.more, 5);
+  assert.ok(group.lines.every((line) => !/신발장/.test(line.text)));
+  assert.ok(card.checks?.lines.some((line) => /신발장/.test(line.text)));
+  assert.equal(group.lines[0].flagged, true);
+  assert.equal(group.lines[1].flagged, true);
+  assert.equal(group.lines[1].ms, null);
+  assert.equal(group.lines[2].flagged, false);
 }
 
 // Stepping down takes a line from the fullest part, never below one.

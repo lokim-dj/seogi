@@ -21,6 +21,9 @@ export interface CardLine {
   note: string;
   /** The checks doubt it: its time is drawn in red. */
   doubted: boolean;
+  /** A task the card cannot vouch for (a small doubt, or no moment of the
+   *  recording behind it): marked "확인 필요" where it stands. */
+  flagged?: boolean;
 }
 
 /** A part of the card that lists lines, with how many did not fit. */
@@ -159,22 +162,71 @@ const doubted = (entry: Entry) => (entry.reasons ?? []).length > 0;
  *  on the card as decided or as a number. */
 const unsure = (entry: Entry) => doubted(entry) || Boolean(entry.faint);
 
-/** An amount of money said in a line: "4500만원", "1억 2천만 원", "280만 원". */
-const MONEY = /(\d[\d,]*(?:\.\d+)?)\s*(억|천만|만|천)?\s*원/;
+/** One amount of money as said, whole: "4500만원", "1억 2천만 원",
+ *  "3억 5000만원", "280만 원". */
+const MONEY =
+  /\d[\d,]*(?:\.\d+)?\s*(?:억|천만|만|천)?(?:\s*\d[\d,]*(?:\.\d+)?\s*(?:천만|만|천)?)*\s*원/g;
+/** A range between two numbers: "4500~5000만원", "4천-5천만 원". */
+const RANGE = /\d\s*(?:억|천만|만|천)?\s*(?:~|∼|〜|–|—|-|부터)\s*\d/;
+
+/**
+ * The one amount of money a line says, split for drawing large: "1억
+ * 2천만 원" → "1억 2천" + "만 원". None when the line says no amount, more
+ * than one ("5000만 원에서 4500만 원으로"), or a range: then which one
+ * stands is not for the card to pick.
+ */
+export function moneyOf(text: string): { value: string; unit: string } | null {
+  if (RANGE.test(text)) return null;
+  const found = text.match(MONEY) ?? [];
+  if (found.length !== 1) return null;
+  const parts = [
+    ...found[0].matchAll(/(\d[\d,]*(?:\.\d+)?)\s*(억|천만|만|천)?/g),
+  ].map(([, digits, unit]) => ({ digits: grouped(digits), unit: unit ?? "" }));
+  const last = parts[parts.length - 1];
+  // "천만" is 천 of 만: the 천 stays with the number, the 만 goes to the unit.
+  const tail =
+    last.unit === "천만"
+      ? { inValue: "천", unit: "만 원" }
+      : last.unit === "천"
+        ? { inValue: "천", unit: "원" }
+        : { inValue: "", unit: last.unit ? `${last.unit} 원` : "원" };
+  const value = [
+    ...parts.slice(0, -1).map((part) => `${part.digits}${part.unit}`),
+    `${last.digits}${tail.inValue}`,
+  ].join(" ");
+  return { value, unit: tail.unit };
+}
 /** Words that make an amount the whole of it: the budget, the total. */
 const TOTAL = /예산|총액|총\s*공사비|전체\s*금액|합계/;
 /** A number with what it counts: money, a size, an area, a share. */
 const AMOUNT =
   /\d[\d,]*(?:\.\d+)?\s*(?:억|천만|만\s*원|만원|천\s*원|원|mm|밀리|cm|센티|미터|m²|㎡|평|%|퍼센트)/;
 
-/** What was left open: "아직 안 정한 것", "미정". */
-const isOpen = (section: { key: string; title: string }) =>
-  section.key === "open" || /(?:안|못)\s*정한|미정|정하지/.test(section.title);
-const isDecisions = (section: { key: string; title: string }) =>
+/** A heading that says its lines are not settled: "아직 안 정한 것",
+ *  "결정 보류", "결정할 것", "합의 안 된 것", "결정 전", "미정". */
+const NOT_SETTLED =
+  /보류|할\s*것|(?:안|못)\s*(?:된|한|정한|정해진)|않은|정하지|미정|아직|(?:결정|합의|확정)\s*전/;
+type Heading = { key: string; title: string; kind?: string };
+const isOpen = (section: Heading) =>
+  section.key === "open" || NOT_SETTLED.test(section.title);
+const isDecisions = (section: Heading) =>
   !isOpen(section) &&
-  (section.key === "decisions" || /결정|정한|합의|약속한/.test(section.title));
-const isBudget = (section: { key: string; title: string }) =>
+  (section.key === "decisions" ||
+    /결정|정한|합의|약속한|확정/.test(section.title));
+const isBudget = (section: Heading) =>
   section.key === "budget" || /예산|금액|비용/.test(section.title);
+/** Where the numbers of what was settled are: the budget, the materials
+ *  and sizes, the site, the schedule. Not worries, wishes, risks or talk,
+ *  whose amounts are no one's figure. */
+const isFigures = (section: Heading) =>
+  section.kind === "items" &&
+  !isOpen(section) &&
+  !isDecisions(section) &&
+  !/우려|걱정|요청|바람|희망|리스크|위험|논의|용건|이야기/.test(
+    section.title,
+  ) &&
+  (["budget", "materials", "site", "schedule"].includes(section.key) ||
+    /예산|금액|비용|견적|자재|사양|치수|규격|현장|일정/.test(section.title));
 
 /** "4500" → "4,500": the digits as said, grouped. */
 function grouped(digits: string): string {
@@ -288,24 +340,22 @@ export function cardOf(
       }))
     : null;
 
-  // Numbers: lines that carry an amount, from what was said and settled,
-  // not from the decisions (shown already) or what was left open.
-  const numberSections = sections.filter(
-    (section) =>
-      section.kind !== "actions" && !isDecisions(section) && !isOpen(section),
-  );
+  // Numbers: lines that carry an amount, from the parts that hold figures
+  // (not the decisions, shown already, nor what was left open, worried
+  // about or wished for).
+  const numberSections = sections.filter(isFigures);
   const budget = numberSections.find(isBudget);
-  // Drawn large only when the line says it is the budget or the total.
+  // Drawn large only when the line says it is the budget or the total, and
+  // says one amount, not two or a range.
   const leadEntry = budget?.entries.find(
     (entry) =>
-      !unsure(entry) && MONEY.test(entry.text) && TOTAL.test(entry.text),
+      !unsure(entry) && TOTAL.test(entry.text) && moneyOf(entry.text) !== null,
   );
+  const leadMoney = leadEntry ? moneyOf(leadEntry.text) : null;
   let lead: CardNumbers["lead"] = null;
-  if (leadEntry) {
-    const [, digits, unit] = MONEY.exec(leadEntry.text) ?? [];
+  if (leadEntry && leadMoney) {
     lead = {
-      value: grouped(digits),
-      unit: `${unit ?? ""}${unit ? " " : ""}원`,
+      ...leadMoney,
       line: {
         text: tidy(leadEntry.text),
         ms: firstMs(leadEntry),
@@ -354,17 +404,26 @@ export function cardOf(
         a.index - b.index,
     )
     .slice(0, 2);
+  // A task the checks doubt is listed under 확인 필요, like a decision; one
+  // with a faint doubt or no moment behind it stays, marked.
   const tasks = groups
     .map(({ section }) =>
-      list(section.title, section.entries, room.tasks, (entry) => {
-        const { who, text } = taskLine(section, entry, names);
-        return {
-          text: tidy(text),
-          ms: firstMs(entry),
-          note: [who, entry.due.trim()].filter(Boolean).join(" · "),
-          doubted: doubted(entry),
-        };
-      }),
+      list(
+        section.title,
+        section.entries.filter((entry) => !doubted(entry)),
+        room.tasks,
+        (entry) => {
+          const { who, text } = taskLine(section, entry, names);
+          const flagged = Boolean(entry.faint) || firstMs(entry) === null;
+          return {
+            text: tidy(text),
+            ms: firstMs(entry),
+            note: [who, entry.due.trim()].filter(Boolean).join(" · "),
+            doubted: flagged,
+            flagged,
+          };
+        },
+      ),
     )
     .filter((group): group is CardList => group !== null);
 

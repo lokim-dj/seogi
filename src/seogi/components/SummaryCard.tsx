@@ -67,7 +67,14 @@ function Lines({ lines, more }: { lines: CardLine[]; more: number }) {
         <li key={index}>
           <span>
             <span className="sc-tx">{line.text}</span>
-            {line.note ? <span className="sc-who">{line.note}</span> : null}
+            {line.flagged ? (
+              <span className="sc-who">
+                <span className="sc-red">{t("card.toCheck")}</span>
+                {line.note ? ` · ${line.note}` : ""}
+              </span>
+            ) : line.note ? (
+              <span className="sc-who">{line.note}</span>
+            ) : null}
           </span>
           <Time line={line} />
         </li>
