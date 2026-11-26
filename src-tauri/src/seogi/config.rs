@@ -43,8 +43,14 @@ pub const FUN_ASR_NANO: &str =
 /// same measurement. A recording is never kept waiting for a better model
 /// when one of these is here.
 pub const STAND_IN_SPEECH_MODELS: &[&str] = &[QWEN3_ASR_1_7B, WHISPER_TURBO, FUN_ASR_NANO];
-/// The name of the folder meetings are kept in.
-pub const LIBRARY_NAME: &str = "서기";
+/// The name of the folder meetings are kept in. A debug build keeps its own
+/// (`서기 개발판`): it runs beside the installed app, and must not pick up the
+/// installed app's meetings, work them again or repair its recordings.
+pub const LIBRARY_NAME: &str = if cfg!(debug_assertions) {
+    "서기 개발판"
+} else {
+    "서기"
+};
 
 /// A folder watched for new recordings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -434,6 +440,12 @@ mod tests {
             picked.speech_model_now(with(&[TURBO, QWEN])),
             now(QWEN, Some(FUNASR))
         );
+    }
+
+    #[test]
+    fn a_debug_build_keeps_its_meetings_apart() {
+        // Tests are debug builds; the installed app's folder is "서기".
+        assert!(Config::default().library().ends_with("서기 개발판"));
     }
 
     #[test]
