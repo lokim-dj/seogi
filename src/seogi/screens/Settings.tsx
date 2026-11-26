@@ -37,6 +37,7 @@ import {
   longDay,
   shortModel,
 } from "../lib/format";
+import { gigabytes, minutesToDownload, speechAbout } from "../lib/speech";
 import {
   KEY_OWNERS,
   keyOwnerOf,
@@ -80,6 +81,8 @@ export default function Settings() {
   const config = useSeogi((s) => s.config);
   const readiness = useSeogi((s) => s.readiness);
   const downloads = useSeogi((s) => s.downloads);
+  const downloadMinutesLeft = useSeogi((s) => s.downloadMinutesLeft);
+  const downloadFailed = useSeogi((s) => s.downloadFailed);
   const saveConfig = useSeogi((s) => s.saveConfig);
   const refreshSetup = useSeogi((s) => s.refreshSetup);
   const go = useSeogi((s) => s.go);
@@ -425,6 +428,32 @@ export default function Settings() {
   const speechPercent = readiness
     ? Math.round(downloads[readiness.speech_model] ?? -1)
     : -1;
+  const speechLeft = readiness
+    ? downloadMinutesLeft[readiness.speech_model]
+    : undefined;
+  const speechFailed =
+    !!readiness && downloadFailed.includes(readiness.speech_model);
+  const about = speechAbout(readiness?.speech_model ?? "");
+  // What the row says under the model while it is not here: its size and
+  // time, and what transcribes meanwhile.
+  const speechWaitNote =
+    !readiness || readiness.speech_model_ready
+      ? null
+      : [
+          readiness.speech_model_bytes > 0 && speechPercent < 0
+            ? t("settings.speechSize", {
+                gb: gigabytes(readiness.speech_model_bytes),
+                minutes: minutesToDownload(readiness.speech_model_bytes),
+              })
+            : null,
+          readiness.speech_model_stand_in
+            ? t("settings.speechStandIn", {
+                model: shortModel(readiness.speech_model_stand_in),
+              })
+            : t("settings.speechNoStandIn"),
+        ]
+          .filter(Boolean)
+          .join(" · ");
   const modelHint = readiness?.summary_model_refused
     ? t("settings.modelRefused", { model: config.summary.model })
     : options.find(
@@ -837,7 +866,14 @@ export default function Settings() {
                   <div className="srow !border-t-0">
                     <div>
                       <div className="l">{t("settings.speechModel")}</div>
-                      <div className="h">{t("settings.speechModelHint")}</div>
+                      <div className="h">
+                        {about
+                          ? t(`settings.speechAbout.${about}`)
+                          : t("settings.speechModelHint")}
+                      </div>
+                      {speechWaitNote ? (
+                        <div className="h">{speechWaitNote}</div>
+                      ) : null}
                     </div>
                     <div className="v">
                       <span className="t2">
@@ -846,21 +882,39 @@ export default function Settings() {
                       {readiness?.speech_model_ready ? null : speechPercent >=
                         0 ? (
                         <span>
-                          {t("settings.downloading", {
-                            percent: speechPercent,
-                          })}
+                          {speechLeft
+                            ? t("settings.downloadingLeft", {
+                                percent: speechPercent,
+                                minutes: speechLeft,
+                              })
+                            : t("settings.downloading", {
+                                percent: speechPercent,
+                              })}
                         </span>
                       ) : (
-                        <button
-                          type="button"
-                          className="btn"
-                          onClick={() =>
-                            readiness &&
-                            void commands.downloadModel(readiness.speech_model)
-                          }
-                        >
-                          {t("settings.download")}
-                        </button>
+                        <>
+                          {speechFailed ? (
+                            <span className="t3">
+                              {t("settings.downloadFailed")}
+                            </span>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="btn"
+                            onClick={() =>
+                              readiness &&
+                              void commands.downloadModel(
+                                readiness.speech_model,
+                              )
+                            }
+                          >
+                            {t(
+                              speechFailed
+                                ? "settings.downloadAgain"
+                                : "settings.download",
+                            )}
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>

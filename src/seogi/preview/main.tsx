@@ -225,10 +225,17 @@ const dictationStatus = (): DictationStatus => ({
   recent: [...recentDictations],
 });
 
+// `?speech=missing` shows the speech model not downloaded yet, with the
+// old default standing in.
+const speechMissing =
+  new URLSearchParams(window.location.search).get("speech") === "missing";
 const readiness: Readiness = {
-  speech_model:
-    "handy-computer/whisper-large-v3-turbo-gguf/whisper-large-v3-turbo-Q8_0.gguf",
-  speech_model_ready: true,
+  speech_model: qwen,
+  speech_model_ready: !speechMissing,
+  speech_model_stand_in: speechMissing
+    ? "handy-computer/whisper-large-v3-turbo-gguf/whisper-large-v3-turbo-Q8_0.gguf"
+    : null,
+  speech_model_bytes: 2083 * 1024 * 1024,
   diarizer_ready: true,
   ffmpeg: true,
   ollama_running: true,

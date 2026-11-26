@@ -85,6 +85,10 @@ interface Seogi {
   forwardStack: View[];
   /** Download progress of models, by model id, 0 to 100. */
   downloads: Record<string, number>;
+  /** Whole minutes left of a model's download, once its speed is known. */
+  downloadMinutesLeft: Record<string, number>;
+  /** Models whose last download failed, until one is tried again. */
+  downloadFailed: string[];
   /** Documents dropped on an open meeting, for its words. */
   droppedDocuments: { id: string; paths: string[] } | null;
   /** The meeting just moved to the trash, which can be brought back. */
@@ -137,6 +141,8 @@ export const useSeogi = create<Seogi>((set, get) => ({
   jump: null,
   finding: { open: false, query: "", found: null },
   downloads: {},
+  downloadMinutesLeft: {},
+  downloadFailed: [],
 
   init: async () => {
     if (started) return;

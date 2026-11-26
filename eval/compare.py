@@ -125,7 +125,7 @@ def run_seogi(binary: Path, audio: Path, out: Path, model: str, vocab: Path | No
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--samples", type=Path, required=True)
-    parser.add_argument("--model", default="turbo", help=f"one of {', '.join(MODELS)} or a model id")
+    parser.add_argument("--model", default="qwen-1.7b", help=f"one of {', '.join(MODELS)} or a model id")
     parser.add_argument("--vocab", type=Path, help="a vocabulary for every sample (your own; only read)")
     parser.add_argument("--llm", help="also write minutes with this model: ollama:<model>, claude[:<model>], codex")
     parser.add_argument("--skip-seogi", action="store_true", help="do not run Seogi, score the other tools only")

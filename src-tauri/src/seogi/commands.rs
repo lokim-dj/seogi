@@ -638,6 +638,12 @@ pub struct Readiness {
     /// The speech model recordings are transcribed with.
     pub speech_model: String,
     pub speech_model_ready: bool,
+    /// While the speech model is not here: the one recordings are
+    /// transcribed with meanwhile. `None` when it is here, or when no other
+    /// is (recordings then wait for the download).
+    pub speech_model_stand_in: Option<String>,
+    /// The speech model's download, in bytes; 0 when unknown.
+    pub speech_model_bytes: u64,
     /// The model that tells speakers apart.
     pub diarizer_ready: bool,
     /// ffmpeg is installed. Needed only for file kinds the built-in decoder
@@ -684,9 +690,17 @@ pub async fn seogi_readiness(
     off_screen(move || {
         let config = secretary.config();
         let speech_model = config.speech_model().to_string();
-        let speech_model_ready = models
-            .get_model_info(&speech_model)
-            .is_some_and(|model| model.is_downloaded);
+        let info = models.get_model_info(&speech_model);
+        let speech_model_ready = info.as_ref().is_some_and(|model| model.is_downloaded);
+        let speech_model_bytes = info.map_or(0, |model| model.size_mb * 1024 * 1024);
+        let speech_model_stand_in = config
+            .speech_model_now(|id| {
+                models
+                    .get_model_info(id)
+                    .is_some_and(|model| model.is_downloaded)
+            })
+            .filter(|now| now.standing_in_for.is_some())
+            .map(|now| now.model);
 
         let ollama_url = match &config.summary {
             Provider::Ollama { base_url, .. } => base_url.clone(),
@@ -735,6 +749,8 @@ pub async fn seogi_readiness(
         Ok(Readiness {
             speech_model,
             speech_model_ready,
+            speech_model_stand_in,
+            speech_model_bytes,
             diarizer_ready: models.diarizer_path().is_some(),
             ffmpeg: audio_in::find_ffmpeg().is_some(),
             ollama_running: !ollama_models.is_empty(),

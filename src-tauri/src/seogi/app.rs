@@ -22,7 +22,7 @@ use tauri_specta::Event;
 use super::audio_in;
 use super::calendar;
 use super::chunks::RATE;
-use super::config::{Config, WatchedFolder};
+use super::config::{Config, SpeechModelNow, WatchedFolder};
 use super::evidence::{self, Evidence};
 use super::llm::{self, Provider, Ways};
 use super::minutes;
@@ -1433,16 +1433,20 @@ impl Secretary {
         })
     }
 
-    /// Whether the speech model recordings are transcribed with is on this
-    /// computer.
-    fn speech_model_ready(&self) -> bool {
+    /// The speech model to transcribe with now: the chosen one, or one that
+    /// stands in while it is not on this computer; `None` when no usable
+    /// model is here yet.
+    fn speech_model_now(&self) -> Option<SpeechModelNow> {
         use crate::managers::model::ModelManager;
+        let config = self.config();
         let Some(models) = self.app.try_state::<Arc<ModelManager>>() else {
-            return true;
+            return config.speech_model_now(|_| true);
         };
-        models
-            .get_model_info(self.config().speech_model())
-            .is_some_and(|model| model.is_downloaded)
+        config.speech_model_now(|id| {
+            models
+                .get_model_info(id)
+                .is_some_and(|model| model.is_downloaded)
+        })
     }
 
     fn process(&self, id: &str) -> Result<()> {
@@ -1452,7 +1456,7 @@ impl Secretary {
         let started = Instant::now();
         let cancel = AtomicBool::new(false);
 
-        if meeting.transcript.is_none() && !self.speech_model_ready() {
+        if meeting.transcript.is_none() && self.speech_model_now().is_none() {
             // Nothing is wrong with the recording. It waits, without using
             // up its tries, until the model has been downloaded.
             if meeting.error != "speech_model_missing" {
@@ -1707,16 +1711,29 @@ impl Secretary {
             id: &meeting.id,
             cancel,
         };
+        // While the chosen model is downloading (or could not be), another
+        // that is here does the work, and the meeting says so.
+        let speech = self.speech_model_now().unwrap_or_else(|| SpeechModelNow {
+            model: config.speech_model().to_string(),
+            standing_in_for: None,
+        });
+        if let Some(chosen) = &speech.standing_in_for {
+            info!(
+                "{} is not here yet; transcribing {} with {}",
+                chosen, meeting.id, speech.model
+            );
+        }
         let request = Request {
             pcm: &pcm,
             language: &config.language,
             vocabulary: &vocabulary,
             mentions: &mentions,
             diarize: config.diarize,
-            model_id: Some(config.speech_model()),
+            model_id: Some(&speech.model),
         };
         match pipeline::transcribe(&self.app, &request, &monitor) {
-            Ok(Some(outcome)) => {
+            Ok(Some(mut outcome)) => {
+                outcome.stats.stood_in_for = speech.standing_in_for;
                 meeting.transcript = Some(outcome.transcript);
                 meeting.stats = Some(outcome.stats);
                 Ok(true)

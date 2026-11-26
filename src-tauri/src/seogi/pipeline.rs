@@ -109,6 +109,10 @@ pub struct Stats {
     pub vad_ms: u64,
     pub diarize_ms: u64,
     pub transcribe_ms: u64,
+    /// The chosen speech model, when it was not on this computer yet and
+    /// the model in the transcript stood in for it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stood_in_for: Option<String>,
 }
 
 pub struct Outcome {

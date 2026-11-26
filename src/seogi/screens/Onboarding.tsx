@@ -7,7 +7,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { platform } from "@tauri-apps/plugin-os";
 import { commands, type CalendarCheck, type SignIns } from "@/bindings";
 import { NS } from "../i18n";
-import { friendlyPath, keysLabel, keysShort } from "../lib/format";
+import { friendlyPath, keysLabel, keysShort, shortModel } from "../lib/format";
+import { gigabytes, minutesToDownload } from "../lib/speech";
 import {
   KEY_OWNERS,
   LOCAL,
@@ -28,6 +29,8 @@ export default function Onboarding() {
   const config = useSeogi((s) => s.config);
   const readiness = useSeogi((s) => s.readiness);
   const downloads = useSeogi((s) => s.downloads);
+  const downloadMinutesLeft = useSeogi((s) => s.downloadMinutesLeft);
+  const downloadFailed = useSeogi((s) => s.downloadFailed);
   const saveConfig = useSeogi((s) => s.saveConfig);
   const refreshSetup = useSeogi((s) => s.refreshSetup);
 
@@ -230,15 +233,38 @@ export default function Onboarding() {
         hint: t("onboarding.speechReadyHint"),
       };
     }
+    const standIn = readiness.speech_model_stand_in;
     if (speechPercent >= 0) {
+      const left = downloadMinutesLeft[readiness.speech_model];
       return {
-        head: t("onboarding.speechLoading", { percent: speechPercent }),
-        hint: t("onboarding.speechLoadingHint"),
+        head: left
+          ? t("onboarding.speechLoadingLeft", {
+              percent: speechPercent,
+              minutes: left,
+            })
+          : t("onboarding.speechLoading", { percent: speechPercent }),
+        hint: standIn
+          ? t("onboarding.speechStandIn", { model: shortModel(standIn) })
+          : t("onboarding.speechLoadingHint"),
       };
     }
+    if (downloadFailed.includes(readiness.speech_model)) {
+      return {
+        head: t("onboarding.speechFailed"),
+        hint: standIn
+          ? `${t("onboarding.speechStandIn", { model: shortModel(standIn) })} · ${t("onboarding.speechFailedHint")}`
+          : t("onboarding.speechFailedHint"),
+      };
+    }
+    const bytes = readiness.speech_model_ready
+      ? 0
+      : readiness.speech_model_bytes;
     return {
       head: t("onboarding.speechMissing"),
-      hint: t("onboarding.speechMissingHint"),
+      hint:
+        bytes > 0
+          ? `${t("onboarding.speechMissingHint")} · ${t("onboarding.speechSize", { gb: gigabytes(bytes), minutes: minutesToDownload(bytes) })}`
+          : t("onboarding.speechMissingHint"),
     };
   };
   const speech = speechState();

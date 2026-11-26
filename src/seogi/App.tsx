@@ -16,11 +16,15 @@ import Settings from "./screens/Settings";
 import { isDocument } from "./components/DocumentWords";
 import { TrashedNote } from "./components/DeleteMeeting";
 import { useSeogi } from "./store";
+import { minutesLeft } from "./lib/speech";
 import "./seogi.css";
 
 interface DownloadProgress {
   model_id: string;
   percentage: number;
+  downloaded: number;
+  total: number;
+  bytes_per_sec: number | null;
 }
 
 /** Where a key takes the window, if anywhere. */
@@ -100,25 +104,53 @@ export default function SeogiApp() {
     const progress = listen<DownloadProgress>(
       "model-download-progress",
       (event) => {
-        useSeogi.setState((state) => ({
-          downloads: {
-            ...state.downloads,
-            [event.payload.model_id]: event.payload.percentage,
-          },
-        }));
+        const { model_id, percentage, downloaded, total, bytes_per_sec } =
+          event.payload;
+        const left = minutesLeft(downloaded, total, bytes_per_sec);
+        useSeogi.setState((state) => {
+          const downloadMinutesLeft = { ...state.downloadMinutesLeft };
+          if (left === null) delete downloadMinutesLeft[model_id];
+          else downloadMinutesLeft[model_id] = left;
+          return {
+            downloads: { ...state.downloads, [model_id]: percentage },
+            downloadMinutesLeft,
+            downloadFailed: state.downloadFailed.filter(
+              (id) => id !== model_id,
+            ),
+          };
+        });
       },
     );
-    const complete = listen<string>("model-download-complete", (event) => {
+    // A download that ends, well or not, stops showing its progress; one
+    // that failed says so where the model is offered.
+    const ended = (modelId: string, failed: boolean) =>
       useSeogi.setState((state) => {
         const downloads = { ...state.downloads };
-        delete downloads[event.payload];
-        return { downloads };
+        delete downloads[modelId];
+        const downloadMinutesLeft = { ...state.downloadMinutesLeft };
+        delete downloadMinutesLeft[modelId];
+        const others = state.downloadFailed.filter((id) => id !== modelId);
+        return {
+          downloads,
+          downloadMinutesLeft,
+          downloadFailed: failed ? [...others, modelId] : others,
+        };
       });
+    const complete = listen<string>("model-download-complete", (event) => {
+      ended(event.payload, false);
       void refreshSetup();
     });
+    const failed = listen<{ model_id: string }>(
+      "model-download-failed",
+      (event) => {
+        ended(event.payload.model_id, true);
+        void refreshSetup();
+      },
+    );
     return () => {
       void progress.then((off) => off());
       void complete.then((off) => off());
+      void failed.then((off) => off());
     };
   }, [refreshSetup]);
 

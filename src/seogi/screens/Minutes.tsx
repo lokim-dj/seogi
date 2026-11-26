@@ -857,7 +857,12 @@ function Sheet({
               ? t("minutes.writtenBy", {
                   speech: shortModel(meeting.transcript.model),
                   summary: minutes.written_by,
-                })
+                }) +
+                (meeting.stats?.stood_in_for
+                  ? t("minutes.stoodIn", {
+                      wanted: shortModel(meeting.stats.stood_in_for),
+                    })
+                  : "")
               : null}
             {(meeting.total_ms ?? 0) > 0
               ? ` · ${t("minutes.took", { length: length(meeting.total_ms ?? 0) })}`

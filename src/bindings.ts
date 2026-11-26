@@ -1473,13 +1473,6 @@ async seogiCopyLastDictation() : Promise<Result<null, string>> {
 }
 },
 /**
- * Downloads the default dictation model for a new install, from the
- * first-run screen. Dictation moves to it once it is here.
- */
-async seogiDownloadDictationModel() : Promise<void> {
-    await TAURI_INVOKE("seogi_download_dictation_model");
-},
-/**
  * Forgets dictations from the recent list (by id), or every one with
  * `None`. They are gone from this computer; returns how many went.
  */
@@ -1490,6 +1483,13 @@ async seogiForgetDictations(ids: number[] | null) : Promise<Result<number, strin
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Downloads the default dictation model for a new install, from the
+ * first-run screen. Dictation moves to it once it is here.
+ */
+async seogiDownloadDictationModel() : Promise<void> {
+    await TAURI_INVOKE("seogi_download_dictation_model");
 },
 /**
  * The floating key's menu, with its two lines in the user's language.
@@ -2823,7 +2823,19 @@ detail: string | null }
 /**
  * The frontend maps each code to its text in `src/lib/notices.ts`.
  */
-export type NoticeCode = "TranscriptionFailed" | "PasteFailed" | "PasteBlockedElevated" | "NoMicrophone" | "MicrophoneSilent" | "MicPermissionDenied" | "RecordingFailed" | "ModelLoadFailed" | "NoModelSelected" | "PostProcessFailed" | "FileTranscriptionFailed" | "FilePostProcessFailed" | "TypingPermissionLost" | "CalendarPermissionLost"
+export type NoticeCode = "TranscriptionFailed" | "PasteFailed" | "PasteBlockedElevated" | "NoMicrophone" | "MicrophoneSilent" | "MicPermissionDenied" | "RecordingFailed" | "ModelLoadFailed" | "NoModelSelected" | "PostProcessFailed" | "FileTranscriptionFailed" | "FilePostProcessFailed" | 
+/**
+ * Dictation is on but macOS no longer lets Seogi type (Accessibility),
+ * as after an update whose signature macOS did not recognize.
+ */
+"TypingPermissionLost" | 
+/**
+ * Calendars from macOS's Calendar app were chosen, but macOS no longer
+ * lets Seogi read them, for the same reason. The detail is the access
+ * as `mac_calendar::access` says it: `not_determined` (macOS no longer
+ * knows Seogi, so it is asked again) or `denied`.
+ */
+"CalendarPermissionLost"
 export type NoticeLevel = 
 /**
  * Nothing came out, or Handy can't do its job.
@@ -2838,7 +2850,16 @@ export type NoticeLevel =
  * overlay: a file job finishes while the user is doing something else, and
  * `Model` is a switch the user made in Settings or the tray.
  */
-export type NoticeSource = "dictation" | "file" | "model" | "calendar" | "typing"
+export type NoticeSource = "dictation" | "file" | "model" | 
+/**
+ * Reading the calendars, every few minutes in the background.
+ */
+"calendar" | 
+/**
+ * Whether the system lets dictation type. Its own slot, so a take's
+ * notice neither replaces nor clears it.
+ */
+"typing"
 export type NoticesChanged = { 
 /**
  * Every active notice, newest first.
@@ -2949,6 +2970,16 @@ export type Readiness = {
  * The speech model recordings are transcribed with.
  */
 speech_model: string; speech_model_ready: boolean; 
+/**
+ * While the speech model is not here: the one recordings are
+ * transcribed with meanwhile. `None` when it is here, or when no other
+ * is (recordings then wait for the download).
+ */
+speech_model_stand_in: string | null; 
+/**
+ * The speech model's download, in bytes; 0 when unknown.
+ */
+speech_model_bytes: number; 
 /**
  * The model that tells speakers apart.
  */
@@ -3166,6 +3197,26 @@ export type ShortcutActivation =
 "hold_or_toggle"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 /**
+ * Where a tool stands on this computer.
+ */
+export type SignIn = 
+/**
+ * The tool is not installed.
+ */
+"missing" | 
+/**
+ * Installed, not signed in.
+ */
+"signed_out" | 
+/**
+ * Installed and signed in.
+ */
+"signed_in"
+/**
+ * Where both tools stand.
+ */
+export type SignIns = { claude: SignIn; codex: SignIn }
+/**
  * A document that could not be read.
  */
 export type Skipped = { 
@@ -3227,26 +3278,6 @@ questions: number;
  */
 cut_ins: number }
 /**
- * Where a tool stands on this computer.
- */
-export type SignIn = 
-/**
- * The tool is not installed.
- */
-"missing" | 
-/**
- * Installed, not signed in.
- */
-"signed_out" | 
-/**
- * Installed and signed in.
- */
-"signed_in"
-/**
- * Where both tools stand.
- */
-export type SignIns = { claude: SignIn; codex: SignIn }
-/**
  * A speech model the user can pick for dictation.
  */
 export type SpeechChoice = { id: string; label: string; downloaded: boolean; size_mb: number; speed: Speed; 
@@ -3290,7 +3321,12 @@ diarize_skipped: string | null;
 /**
  * The most speakers the diarization model can tell apart.
  */
-max_speakers: number; vad_ms: number; diarize_ms: number; transcribe_ms: number }
+max_speakers: number; vad_ms: number; diarize_ms: number; transcribe_ms: number; 
+/**
+ * The chosen speech model, when it was not on this computer yet and
+ * the model in the transcript stood in for it.
+ */
+stood_in_for?: string | null }
 export type Status = 
 /**
  * Being recorded in the app right now.
