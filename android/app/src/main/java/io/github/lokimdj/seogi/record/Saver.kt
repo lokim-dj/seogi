@@ -19,7 +19,8 @@ class Saver(
     private val finalize: (stream: File, state: SessionState, recovered: Boolean, onPending: (String) -> Unit) -> Recording,
     private val discardPublished: (uri: String) -> Unit,
     private val enqueue: () -> Unit,
-    private val onFailure: (id: String, e: Exception) -> Unit,
+    /** [first] is true only for a recording's first failed save, so the user is told once. */
+    private val onFailure: (id: String, e: Exception, first: Boolean) -> Unit,
     private val onSuccess: () -> Unit,
 ) {
     private val lock = Mutex()
@@ -61,7 +62,8 @@ class Saver(
             enqueue()
             onSuccess()
         } catch (e: Exception) {
-            onFailure(id, e)
+            val first = try { sessions.noteFailure(id) } catch (_: Exception) { true }
+            onFailure(id, e, first)
         }
     }
 }

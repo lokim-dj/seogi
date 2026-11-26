@@ -19,11 +19,16 @@ import java.io.File
 class DeleterTest {
     @get:Rule val tmp = TemporaryFolder()
 
-    private class TrashDrive(val fail: Boolean = false, val sessionStatus: UploadStatus = UploadStatus.Expired) : Drive {
+    private class TrashDrive(
+        val fail: Boolean = false,
+        val sessionStatus: UploadStatus = UploadStatus.Expired,
+        val known: Boolean = true,
+    ) : Drive {
         val trashed = mutableListOf<String>()
         val cancelled = mutableListOf<String>()
         override fun trash(token: String, fileId: String): Boolean {
             if (fail) throw DriveHttpException(500, "busy")
+            if (!known) return false
             trashed += fileId
             return true
         }
@@ -131,5 +136,20 @@ class DeleterTest {
         } finally {
             dir.setWritable(true)
         }
+    }
+
+    /** Fix 3: Drive does not know the file: say it was not found, not that it went to the trash. */
+    @Test fun notFoundIsNotCalledTrashed() = runTest {
+        val s = store().apply { upsert(uploaded) }
+        assertEquals(Deleter.DriveResult.NOT_FOUND, deleter(s, TrashDrive(known = false)).delete(uploaded, trashInDrive = true).drive)
+    }
+
+    /** Fix 3: signed in without a known address: success only when Drive confirms it. */
+    @Test fun anUnknownAccountOnlySucceedsWhenDriveConfirms() = runTest {
+        val noAccount = uploaded.copy(account = null)
+        val s = store().apply { upsert(noAccount) }
+        assertEquals(Deleter.DriveResult.NOT_FOUND, deleter(s, TrashDrive(known = false), account = "").delete(noAccount, trashInDrive = true).drive)
+        val s2 = RecordingStore(File(tmp.root, "r2.json")).apply { upsert(noAccount) }
+        assertEquals(Deleter.DriveResult.TRASHED, deleter(s2, TrashDrive(), account = "").delete(noAccount, trashInDrive = true).drive)
     }
 }

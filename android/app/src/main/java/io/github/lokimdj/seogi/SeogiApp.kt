@@ -2,6 +2,9 @@ package io.github.lokimdj.seogi
 
 import android.app.Application
 import android.net.Uri
+import android.provider.MediaStore
+import io.github.lokimdj.seogi.data.PhoneFile
+import io.github.lokimdj.seogi.data.Reconcile
 import io.github.lokimdj.seogi.data.RecordingStore
 import io.github.lokimdj.seogi.data.Settings
 import io.github.lokimdj.seogi.record.Finalizer
@@ -38,6 +41,7 @@ class SeogiApp : Application() {
         store = RecordingStore(File(filesDir, "recordings.json"))
         settings = Settings(this)
         Notifications.createChannels(this)
+        if (store.restoredFromBackup) scope.launch { reconcileWithPhone() }
         recoverLeftovers()
         UploadQueue.enqueue(this, UploadQueue.Mode.KEEP)
     }
@@ -51,10 +55,10 @@ class SeogiApp : Application() {
             finalize = { stream, state, recovered, onPending -> Finalizer.finalize(this, stream, state, recovered, onPending) },
             discardPublished = { Finalizer.discard(this, it) },
             enqueue = { UploadQueue.enqueue(this, UploadQueue.Mode.APPEND) },
-            onFailure = { id, e ->
+            onFailure = { id, e, first ->
                 android.util.Log.w("Seogi", "saving $id failed; kept for the next start", e)
                 saveProblem.value = true
-                Notifications.saveFailed(this)
+                if (first) Notifications.saveFailed(this)
             },
             onSuccess = { saveProblem.value = false },
         )
@@ -107,6 +111,7 @@ class SeogiApp : Application() {
                 !result.listRemoved -> getString(R.string.delete_list_failed)
                 result.drive == Deleter.DriveResult.OTHER_ACCOUNT -> getString(R.string.delete_other_account, result.otherAccount)
                 result.drive == Deleter.DriveResult.FAILED -> getString(R.string.delete_drive_failed)
+                result.drive == Deleter.DriveResult.NOT_FOUND -> getString(R.string.delete_drive_not_found)
                 else -> null
             }
             if (problem != null) {
@@ -116,6 +121,35 @@ class SeogiApp : Application() {
             }
         },
     )
+
+    /** The list came back from its backup: match it with the files really in `Recordings/서기/`. */
+    private suspend fun reconcileWithPhone() {
+        val files = mutableListOf<PhoneFile>()
+        val cols = arrayOf(
+            MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.MIME_TYPE,
+            MediaStore.MediaColumns.SIZE, MediaStore.MediaColumns.DURATION, MediaStore.MediaColumns.DATE_ADDED,
+        )
+        val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        try {
+            contentResolver.query(
+                collection, cols,
+                "${MediaStore.MediaColumns.RELATIVE_PATH} = ? AND ${MediaStore.MediaColumns.OWNER_PACKAGE_NAME} = ?",
+                arrayOf("${android.os.Environment.DIRECTORY_RECORDINGS}/${Finalizer.FOLDER}/", packageName), null,
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    files += PhoneFile(
+                        uri = android.content.ContentUris.withAppendedId(collection, c.getLong(0)).toString(),
+                        name = c.getString(1).orEmpty(), mime = c.getString(2) ?: "audio/mp4",
+                        sizeBytes = c.getLong(3), durationMs = c.getLong(4), addedAt = c.getLong(5) * 1000,
+                    )
+                }
+            } ?: return
+        } catch (e: Exception) {
+            return // could not look: keep the backup as it is
+        }
+        store.replaceAll(Reconcile.merge(store.all.value, files, ZoneId.systemDefault()))
+        UploadQueue.enqueue(this, UploadQueue.Mode.APPEND)
+    }
 
     /** Finishes recordings a crash left behind. Safe to call any time. */
     fun recoverLeftovers() {

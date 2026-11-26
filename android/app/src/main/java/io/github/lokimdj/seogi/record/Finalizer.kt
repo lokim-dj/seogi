@@ -39,11 +39,20 @@ object Finalizer {
         val start = Instant.ofEpochMilli(state.startedAt).atZone(zone)
         val base = FileNames.baseName(start, state.eventTitle)
         // The .m4a is written straight into its MediaStore item: the stream
-        // plus one copy, not two.
+        // plus one copy, not two. Before the stream may go, the saved file
+        // must hold every frame of it: read back and counted.
+        val frames = Adts.countFrames(stream)
         val saved = try {
-            publish(context, "$base.m4a", "audio/mp4", onPending) { pfd -> remux(stream, pfd.fileDescriptor) }
+            publish(context, "$base.m4a", "audio/mp4", onPending, verify = { uri ->
+                val got = countSamples(context, uri)
+                check(Adts.complete(got, frames)) { "m4a holds $got of $frames frames" }
+            }) { pfd -> remux(stream, pfd.fileDescriptor) }
         } catch (e: Exception) {
-            publish(context, "$base.aac", "audio/aac", onPending) { pfd ->
+            // The stream as it is, byte for byte; checked by size.
+            publish(context, "$base.aac", "audio/aac", onPending, verify = { uri ->
+                val size = context.contentResolver.openFileDescriptor(uri, "r")!!.use { it.statSize }
+                check(size == stream.length()) { "aac copy is $size of ${stream.length()} bytes" }
+            }) { pfd ->
                 FileOutputStream(pfd.fileDescriptor).use { out -> stream.inputStream().use { it.copyTo(out, 64 * 1024) } }
                 0L
             }
@@ -80,6 +89,7 @@ object Finalizer {
         displayName: String,
         mime: String,
         onPending: (String) -> Unit,
+        verify: (Uri) -> Unit,
         write: (ParcelFileDescriptor) -> Long,
     ): Published {
         val resolver = context.contentResolver
@@ -106,6 +116,7 @@ object Finalizer {
                 }
             }
             check(size > 0) { "empty file" }
+            verify(uri)
             resolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
             val name = resolver.query(uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)?.use {
                 if (it.moveToFirst()) it.getString(0) else null
@@ -115,6 +126,24 @@ object Finalizer {
             // Only our own half-written pending copy; the stream stays for the next try.
             resolver.delete(uri, null, null)
             throw e
+        }
+    }
+
+    /** How many audio samples (AAC frames) the saved file really has. */
+    private fun countSamples(context: Context, uri: Uri): Int {
+        val ex = MediaExtractor()
+        try {
+            context.contentResolver.openFileDescriptor(uri, "r")!!.use { pfd -> ex.setDataSource(pfd.fileDescriptor) }
+            if (ex.trackCount == 0) return 0
+            ex.selectTrack(0)
+            var n = 0
+            while (ex.sampleTime >= 0) {
+                n++
+                if (!ex.advance()) break
+            }
+            return n
+        } finally {
+            ex.release()
         }
     }
 

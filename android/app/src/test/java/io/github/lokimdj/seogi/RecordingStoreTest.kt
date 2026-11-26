@@ -59,7 +59,9 @@ class RecordingStoreTest {
             upsert(recording("b", 2))
         }
         f.writeText("{broken")
-        assertEquals(listOf("a"), RecordingStore(f).all.value.map { it.id })
+        val restored = RecordingStore(f)
+        assertEquals(listOf("a"), restored.all.value.map { it.id })
+        assertEquals(true, restored.restoredFromBackup) // so the app matches it with the phone's files
     }
 
     @Test fun whatNeedsUpload() {

@@ -57,6 +57,17 @@ class SessionDir(val dir: File) {
         publishingFile(id).delete()
     }
 
+    private fun failedFile(id: String) = File(dir, "$id.failed")
+
+    /** Notes a failed save; true only the first time for this recording. */
+    fun noteFailure(id: String): Boolean {
+        val f = failedFile(id)
+        if (f.exists()) return false
+        dir.mkdirs()
+        f.writeText(System.currentTimeMillis().toString())
+        return true
+    }
+
     /**
      * The finished recording, written right after it reached MediaStore and
      * before it is listed, so a crash in between does not save it twice.
@@ -82,6 +93,7 @@ class SessionDir(val dir: File) {
         stateFile(id).delete()
         savedFile(id).delete()
         publishingFile(id).delete()
+        failedFile(id).delete()
     }
 
     /**

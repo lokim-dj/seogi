@@ -21,6 +21,7 @@ class SaverTest {
         val finalized = mutableListOf<String>()
         val discarded = mutableListOf<String>()
         val failures = mutableListOf<String>()
+        val firstFailures = mutableListOf<String>()
         var enqueued = 0
     }
 
@@ -39,7 +40,7 @@ class SaverTest {
             },
             discardPublished = { calls.discarded += it },
             enqueue = { calls.enqueued++ },
-            onFailure = { id, _ -> calls.failures += id },
+            onFailure = { id, _, first -> calls.failures += id; if (first) calls.firstFailures += id },
             onSuccess = {},
         )
         return Triple(saver, dir, store to calls)
@@ -81,5 +82,15 @@ class SaverTest {
         assertEquals(emptyList<String>(), sc.second.finalized)
         assertEquals("content://media/9", sc.first.get("rec-1")!!.mediaUri)
         assertEquals(1, sc.second.enqueued)
+    }
+
+    /** Fix 4: the same failed save tells the user once, not on every start. */
+    @Test fun aFailedSaveIsToldOnce() = runTest {
+        val (saver, dir, sc) = setup(fail = true)
+        dir.stream("rec-1")
+        saver.save(dir, "rec-1", recovered = false, zone = "Asia/Seoul")
+        saver.save(dir, "rec-1", recovered = true, zone = "Asia/Seoul")
+        assertEquals(listOf("rec-1", "rec-1"), sc.second.failures)
+        assertEquals(listOf("rec-1"), sc.second.firstFailures)
     }
 }

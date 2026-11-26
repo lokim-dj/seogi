@@ -79,13 +79,6 @@ class RecorderService : LifecycleService() {
     private fun free() = try { StatFs(filesDir.path).availableBytes } catch (e: Exception) { Long.MAX_VALUE }
 
     private fun begin() {
-        val free = free()
-        if (!Space.canStart(free)) {
-            _error.value = R.string.no_space_to_start
-            _errorArg.value = (free / Space.MB).toInt()
-            stopSelf()
-            return
-        }
         val now = System.currentTimeMillis()
         val zone = ZoneId.systemDefault()
         val id = SessionDir.newId(now)
@@ -98,6 +91,14 @@ class RecorderService : LifecycleService() {
             startForeground(Notifications.ID_RECORDING, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         } catch (e: Exception) {
             fail(R.string.error_cannot_record)
+            return
+        }
+        // Checked after startForeground, which a started foreground service
+        // must call before it stops; the screens check before starting too.
+        val free = free()
+        if (!Space.canStart(free)) {
+            _errorArg.value = (free / Space.MB).toInt()
+            fail(R.string.no_space_to_start)
             return
         }
         try {

@@ -20,7 +20,15 @@ class Deleter(
     private val deleteOnPhone: (Recording) -> PhoneResult,
 ) {
     enum class PhoneResult { DELETED, ALREADY_GONE, FAILED }
-    enum class DriveResult { TRASHED, LEFT_IN_DRIVE, NOT_UPLOADED, OTHER_ACCOUNT, FAILED }
+    enum class DriveResult {
+        TRASHED,
+        LEFT_IN_DRIVE,
+        NOT_UPLOADED,
+        OTHER_ACCOUNT,
+        /** Drive does not know the file in this account: gone already, or in an account we cannot tell. */
+        NOT_FOUND,
+        FAILED,
+    }
 
     data class Result(
         val phoneDeleted: Boolean,
@@ -74,8 +82,9 @@ class Deleter(
                     ids.isEmpty() -> DriveResult.NOT_UPLOADED
                     !trashInDrive -> DriveResult.LEFT_IN_DRIVE
                     else -> {
-                        ids.forEach { drive.trash(token, it) }
-                        DriveResult.TRASHED
+                        // Every file must really have gone to the trash to say so.
+                        val all = ids.map { drive.trash(token, it) }.all { it }
+                        if (all) DriveResult.TRASHED else DriveResult.NOT_FOUND
                     }
                 }
             }

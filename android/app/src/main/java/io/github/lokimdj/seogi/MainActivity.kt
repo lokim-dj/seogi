@@ -291,7 +291,11 @@ class MainActivity : ComponentActivity() {
         }
         val askMicThenRecord = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
             refresh()
-            if (ok) {
+            if (ok && !Space.canStart(freeBytes())) {
+                Toast.makeText(
+                    this@MainActivity, getString(R.string.no_space_to_start, (freeBytes() / Space.MB).toInt()), Toast.LENGTH_LONG,
+                ).show()
+            } else if (ok) {
                 RecorderService.start(this@MainActivity)
                 screen = Screen.RECORDING
             } else if (!shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)) {

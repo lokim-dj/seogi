@@ -23,6 +23,10 @@ class RecordingStore(private val file: File) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val serializer = ListSerializer(Recording.serializer())
     private val lock = Mutex()
+
+    /** True when the list had to come back from its backup this start; see [Reconcile]. */
+    var restoredFromBackup = false
+        private set
     private val state = MutableStateFlow(load())
 
     /** Every recording, newest first. */
@@ -34,6 +38,9 @@ class RecordingStore(private val file: File) {
         val rest = state.value.filterNot { it.id == recording.id }
         save((rest + recording).sortedByDescending { it.startedAt })
     }
+
+    /** Replaces the whole list, after [Reconcile]. */
+    suspend fun replaceAll(list: List<Recording>) = lock.withLock { save(list.sortedByDescending { it.startedAt }) }
 
     /** Takes a recording off the list (after its file was deleted). */
     suspend fun remove(id: String) = lock.withLock {
@@ -69,7 +76,7 @@ class RecordingStore(private val file: File) {
         if (!file.exists()) return read(backup) ?: emptyList()
         read(file)?.let { return it }
         file.renameTo(File(file.path + ".broken-" + System.currentTimeMillis()))
-        return read(backup) ?: emptyList()
+        return read(backup)?.also { restoredFromBackup = true } ?: emptyList()
     }
 
     private fun read(f: File): List<Recording>? = try {
