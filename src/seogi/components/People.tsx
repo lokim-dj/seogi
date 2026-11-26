@@ -3,7 +3,7 @@
 // typed. Nothing is suggested from other meetings or made up: every name
 // is one the user typed for this meeting, and stays on this computer.
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Meeting } from "@/bindings";
 import { NS } from "../i18n";
@@ -199,11 +199,14 @@ export function NamePicker({
   meeting,
   current,
   onPick,
+  children,
 }: {
   meeting: Meeting;
   /** The speaker's present name, not offered again. */
   current: string;
   onPick: (name: string) => void;
+  /** More keys after the names, such as "모르겠어요". */
+  children?: ReactNode;
 }) {
   const people = unique(meeting.people ?? [], [current]);
   return (
@@ -212,6 +215,7 @@ export function NamePicker({
         <NameKey key={name} name={name} onPress={() => onPick(name)} />
       ))}
       <NewName onAdd={onPick} />
+      {children}
     </div>
   );
 }
