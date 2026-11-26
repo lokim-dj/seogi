@@ -184,6 +184,9 @@ fn force_overlay_topmost(overlay_window: &tauri::webview::WebviewWindow) {
     // Make sure the Win32 call happens on the UI thread
     let _ = overlay_clone.clone().run_on_main_thread(move || {
         if let Ok(hwnd) = overlay_clone.hwnd() {
+            // Tauri's handle type comes from a newer `windows` crate than
+            // the one called here; the pointer inside is the same.
+            let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
             unsafe {
                 // Force Z-order: make this window topmost without changing size/pos or stealing focus
                 let _ = SetWindowPos(
@@ -383,6 +386,8 @@ fn place_windows_overlay(
     );
     let hwnd = overlay_window
         .hwnd()
+        // Tauri's newer `windows` crate type; the pointer inside is the same.
+        .map(|hwnd| windows::Win32::Foundation::HWND(hwnd.0))
         .map_err(|error| format!("failed to get overlay window handle: {error}"))?;
 
     unsafe {
