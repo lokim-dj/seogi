@@ -102,7 +102,7 @@ await flow(
     const rows = box.locator(".a-row");
     const before = await rows.count();
     await rows.first().click({ button: "right" });
-    await page.getByRole("menuitem", { name: "삭제" }).click();
+    await page.getByRole("menuitem", { name: "휴지통으로 옮기기" }).click();
     const ask = page.getByRole("alertdialog", {
       name: "이 회의를 휴지통으로 옮길까요?",
     });
@@ -135,7 +135,7 @@ await flow(
   "minutes",
   async (page, called) => {
     await page.getByRole("button", { name: "더 보기" }).first().click();
-    await page.getByRole("menuitem", { name: "삭제" }).click();
+    await page.getByRole("menuitem", { name: "휴지통으로 옮기기" }).click();
     const ask = page.getByRole("alertdialog");
     await ask.getByRole("button", { name: "취소" }).click();
     expect((await ask.count()) === 0, "the question did not close");
@@ -197,7 +197,7 @@ await flow(
   "hearing five seconds of a doubtful line",
   "minutes",
   async (page, called) => {
-    await unfold(page, "확인할 곳");
+    await unfold(page, "확인 필요");
     await page
       .getByRole("button", { name: /부터 5초 듣기/ })
       .first()
@@ -353,7 +353,7 @@ await flow(
   async (page, called) => {
     await page
       .getByRole("main")
-      .getByRole("button", { name: "이름 붙이기" })
+      .getByRole("button", { name: "누구 목소리인지 고르기" })
       .click();
     const card = page.getByRole("region", {
       name: "말한 사람에게 이름 붙이기",
@@ -719,7 +719,7 @@ await flow(
     const keys = page.getByRole("combobox", { name: "단축키" });
     const first = await keys.locator("option").first().textContent();
     expect(first?.startsWith("⌥Space"), "Option+Space is not the default");
-    await page.getByText("Handy 가 켜져 있어").waitFor({ timeout: 2000 });
+    await page.getByText("다른 앱 Handy 도").waitFor({ timeout: 2000 });
     await keys.selectOption("ctrl+shift+space");
     await page.waitForTimeout(300);
     expect(
@@ -730,7 +730,7 @@ await flow(
       "the chosen shortcut was not saved",
     );
     expect(
-      (await page.getByText("Handy 가 켜져 있어").count()) === 0,
+      (await page.getByText("다른 앱 Handy 도").count()) === 0,
       "the Handy warning stays on a key Handy does not use",
     );
   },

@@ -147,6 +147,10 @@
     font-weight: 700;
     line-height: 1.6;
     letter-spacing: -0.01em;
+    /* Korean wraps between words, not inside one ("고르세/요"); a long
+       address or path still breaks when nothing else fits. */
+    word-break: keep-all;
+    overflow-wrap: break-word;
     -webkit-font-smoothing: antialiased;
     overflow-x: clip;
   }
@@ -203,6 +207,11 @@
   input::placeholder,
   textarea::placeholder {
     color: var(--t3);
+  }
+  /* The find field has its own close key beside it; the browser's own
+     clear key made two look-alike crosses side by side. */
+  input[type="search"]::-webkit-search-cancel-button {
+    appearance: none;
   }
 }
 
@@ -715,6 +724,10 @@
     color: var(--rt);
     font-size: 13.5px;
   }
+  /* The hint in an empty note must not read like a note someone wrote. */
+  .a-marks .m input::placeholder {
+    font-weight: 500;
+  }
   .live {
     width: 7px;
     height: 7px;
@@ -881,6 +894,21 @@
     background: var(--t1);
     color: var(--bg);
   }
+  /* Small to look at, not small to hit: the time key and the task box
+     take a press a few pixels around what is drawn (about 28px). */
+  .tkey,
+  .chk {
+    position: relative;
+  }
+  .tkey::before,
+  .chk::before {
+    content: "";
+    position: absolute;
+    inset: -3px 0;
+  }
+  .chk::before {
+    inset: -7px;
+  }
   .chk {
     width: 14px;
     height: 14px;
@@ -933,9 +961,11 @@
     border: 0;
     border-radius: 6px;
     background: transparent;
-    color: var(--t2);
+    color: var(--t3);
     font-weight: 500;
   }
+  /* The chosen one stands out by its fill and by the others stepping back
+     to the quietest grey; same weight, so nothing shifts when choosing. */
   .seg > .on,
   .seg > [aria-checked="true"],
   .seg > [aria-pressed="true"] {
@@ -965,6 +995,8 @@
     border-radius: 9px;
     appearance: none;
     background: var(--s2);
+    /* Off, the track would sink into the page; a thin line keeps it seen. */
+    box-shadow: inset 0 0 0 1px var(--ringc);
     position: relative;
     flex: none;
     cursor: pointer;
@@ -983,6 +1015,7 @@
   }
   .tg:checked {
     background: var(--t1);
+    box-shadow: none;
   }
   .tg:checked::after {
     background: var(--bg);

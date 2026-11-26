@@ -612,6 +612,27 @@ function Sheet({
       })),
   );
 
+  // What needs a look sits folded under 자세히; a red line by 할 일 says
+  // so at the top and opens it, so it is not found only by scrolling down.
+  const goCheck = () => {
+    const fold = document.getElementById("check-fold");
+    if (!(fold instanceof HTMLDetailsElement)) return;
+    fold.open = true;
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)");
+    fold.scrollIntoView({
+      block: "start",
+      behavior: still.matches ? "auto" : "smooth",
+    });
+    // The keyboard goes there too, so the next Tab is in the list.
+    fold.querySelector("summary")?.focus({ preventScroll: true });
+  };
+  const checkLink =
+    checks.length > 0 ? (
+      <button type="button" className="lnk ml-auto rt" onClick={goCheck}>
+        {t("minutes.toCheck", { n: checks.length })}
+      </button>
+    ) : null;
+
   const start = meeting.started_at_ms;
   const end = start + meeting.duration_ms;
   const late = lateMinutes(meeting);
@@ -675,6 +696,7 @@ function Sheet({
               <h2 id="tasks-h">
                 {t("minutes.tasks")}
                 <span className="t3">{taskCount}</span>
+                {checkLink}
               </h2>
               {actionSections.map((section) => (
                 <TaskGroup
@@ -693,7 +715,10 @@ function Sheet({
             </section>
           ) : (
             <section className="a-sec" aria-labelledby="tasks-h">
-              <h2 id="tasks-h">{t("minutes.tasks")}</h2>
+              <h2 id="tasks-h">
+                {t("minutes.tasks")}
+                {checkLink}
+              </h2>
               <p className="m-0 t2">{t("minutes.noTasksPlain")}</p>
             </section>
           )}
@@ -774,7 +799,12 @@ function Sheet({
           </p>
         ) : null}
         {checks.length > 0 ? (
-          <Fold title={t("minutes.checkFold")} count={checks.length} countRed>
+          <Fold
+            id="check-fold"
+            title={t("minutes.checkFold")}
+            count={checks.length}
+            countRed
+          >
             <p className="mt-0 mb-2 text-[13.5px] t3">
               {t("minutes.checkLead")}
             </p>

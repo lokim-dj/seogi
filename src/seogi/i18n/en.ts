@@ -8,7 +8,7 @@ const en: Strings = {
   untitled: "Untitled recording",
   speaker: "Speaker {{n}}",
   ownerUnknown: "No owner yet",
-  dueUnknown: "Not set",
+  dueUnknown: "No due date",
   failed: "That did not work: {{reason}}",
   today: "Today",
   yesterday: "Yesterday",
@@ -94,7 +94,7 @@ const en: Strings = {
     paper: "Paper",
     dark: "Dark",
     light: "Light",
-    lead: "Only what the minutes say. PNG saves a 4:5 picture for chats, PDF one A4 page, both in this meeting's folder.",
+    lead: "Only what the minutes say. The picture is 4:5 for chats, the PDF one A4 page, both saved in this meeting's folder.",
     making: "Making it…",
     saved: "Saved {{name}} in the meeting's folder.",
     copied: "Picture copied. Paste it into a chat.",
@@ -102,13 +102,13 @@ const en: Strings = {
     showInFolder: "Show in folder",
     close: "Close",
     copy: "Copy picture",
-    savePdf: "Save PDF",
-    savePng: "Save PNG",
+    savePdf: "Save A4 PDF",
+    savePng: "Save picture for chats",
     customer: "{{name}} (customer)",
     toCheck: "to check",
     numbers: "Numbers",
     flow: "Flow",
-    share: "Who talked",
+    share: "Share of talk",
     more: "{{n}} more",
     foot: "Only what the minutes say · small numbers are places in the recording",
   },
@@ -121,7 +121,7 @@ const en: Strings = {
     tapToRename: "Press a name to change who said it.",
     peopleFirst: "First type the names of those who were in this meeting.",
     unnamed: "{{n}} speakers have no name ·",
-    start: "Name them",
+    start: "Pick whose voice it is",
     askLead:
       "Pick who this voice is for up to {{ask}} lines. When {{enough}} agree, it is settled.",
     progress: "{{n}}/{{of}}",
@@ -198,7 +198,7 @@ const en: Strings = {
       "Say so together where the AI is wrong, and where it is right. The company's standard can be written in consult-feedback.md in the data folder.",
   },
   trash: {
-    menu: "Delete",
+    menu: "Move to Trash",
     open: "Open",
     title: "Move this meeting to the trash?",
     what: "The original recording, the transcript and the minutes go with it. You can bring it back from the Trash, at the right end of the Dock.",
@@ -290,9 +290,9 @@ const en: Strings = {
     toCheck: "{{n}} to check",
     noSpeech: "No speech",
     recording: "Recording",
-    queued: "Waiting, next in line",
-    waitingModel: "Waiting for the speech model",
-    transcribed: "Transcribed, minutes pending",
+    queued: "Waiting for its turn",
+    waitingModel: "Getting the speech model",
+    transcribed: "Transcribed · waiting for the minutes",
     failedShort: "Failed",
     stage: {
       decoding: "Reading the file",
@@ -599,7 +599,8 @@ const en: Strings = {
     speechLoadingHint: "You can record meanwhile",
     speechStandIn: "Meanwhile {{model}} transcribes instead",
     speechFailed: "The download failed",
-    speechFailedHint: "You can try again under Speech model in the settings",
+    speechFailedHint:
+      "You can try again under Settings › Recording › More › Meeting speech model",
     atLogin:
       "Seogi also opens when you log in. You can turn this off in Settings.",
     dictation:
@@ -711,7 +712,7 @@ const en: Strings = {
     removeKey: "Remove key",
     saveKey: "Save key",
     speech: "Recording",
-    speechModel: "Speech model",
+    speechModel: "Meeting speech model",
     speechAbout: {
       qwen: "More accurate, a little slower. On the same 1 h 50 min meeting recording: 17.1 % of characters wrong, 8.2 min to transcribe.",
       turbo:
@@ -848,6 +849,7 @@ const en: Strings = {
     lead: "Seogi needs a few permissions from the computer to do its work. You can start without all of them and come back to them in Settings at any time.",
     needed: "Needed",
     optional: "Optional",
+    forTyping: "Needed to type into other apps",
     allowed: "Allowed",
     notYet: "Not allowed yet",
     off: "Off",
@@ -858,7 +860,7 @@ const en: Strings = {
     microphoneFor: "For recording meetings and for dictation.",
     typing: "Accessibility",
     typingFor:
-      "Puts dictated words where the cursor is. Turn on Seogi in System Settings › Privacy & Security › Accessibility, and this row changes by itself.",
+      "Puts dictated words where the cursor is. Meetings record without it. Turn on Seogi in System Settings › Privacy & Security › Accessibility, and this row changes by itself.",
     calendar: "Calendar",
     calendarFor:
       "Names meetings after events in the Mac's Calendar app. Your calendar is never changed.",
@@ -884,7 +886,7 @@ const en: Strings = {
     enabled: "Dictation",
     enabledHint:
       "When on, the shortcut below and the microphone key take dictation anywhere.",
-    permission: "Typing into other apps",
+    permission: "Typing into other apps (Accessibility)",
     permissionNeeded:
       "To type into other apps, macOS has to allow it. In System Settings › Privacy & Security › Accessibility, turn on Seogi. This line changes by itself once you do.",
     permissionOpen: "Open System Settings",
@@ -898,7 +900,7 @@ const en: Strings = {
     },
     shortcutDefault: "default",
     handyRunning:
-      "Handy is running and also answers {{keys}}. Quit or remove Handy.",
+      "Another app, Handy, also answers {{keys}}. Pick another key on the right, or quit Handy.",
     shortcutTrouble:
       "Another app or the system holds {{keys}}, so Seogi cannot take it. Pick another key.",
     altSpaceNote:
@@ -992,7 +994,7 @@ const en: Strings = {
       inRecent: "also in Settings › Recent dictation",
       close: "Close",
       note: {
-        tidyLimit: "Your plan ran out, so the words went in untidied",
+        tidyLimit: "The words went in, untidied: the usage limit was reached",
         tidySlow: "Tidying took too long, so the words went in as heard",
         tidyFailed: "Could not tidy, so the words went in as heard",
         meeting: "A meeting is being recorded; dictation waits",
@@ -1006,8 +1008,8 @@ const en: Strings = {
     startingNow: "This event is starting now",
     startingSoon: "This event starts in {{n}} min",
     record: "Record",
-    later: "Later",
-    mute: "Turn this event off",
+    later: "Close",
+    mute: "Stop reminders for this event",
     startLabel: "An event is starting",
     readyLabel: "Minutes are ready",
     ready: "The minutes are ready. {{n}} tasks",
