@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>서기 개인정보처리방침 · Seogi Privacy Policy</title>
+    <meta
+      name="description"
+      content="서기(Seogi) 컴퓨터 앱과 안드로이드 앱이 다루는 정보, 두는 곳, 밖으로 나가는 곳, 지우는 법."
+    />
+    <style>
+      :root {
+        --paper: #fbfaf7;
+        --ink: #1d1c1a;
+        --soft: #5d5a54;
+        --line: #e3dfd6;
+        --link: #1f5fa8;
+        color-scheme: light dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --paper: #171614;
+          --ink: #ecebe7;
+          --soft: #a8a49b;
+          --line: #34322d;
+          --link: #8bb8ec;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family:
+          Pretendard,
+          "Apple SD Gothic Neo",
+          "Malgun Gothic",
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        font-size: 16px;
+        line-height: 1.7;
+        word-break: keep-all;
+        overflow-wrap: anywhere;
+      }
+      main {
+        max-width: 44rem;
+        margin: 0 auto;
+        padding: 40px 16px 72px;
+      }
+      h1 {
+        font-size: 1.6rem;
+        line-height: 1.3;
+        letter-spacing: -0.02em;
+        margin: 0 0 6px;
+      }
+      h2 {
+        font-size: 1.15rem;
+        letter-spacing: -0.01em;
+        margin: 40px 0 8px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+      }
+      h3 {
+        font-size: 1rem;
+        margin: 28px 0 4px;
+      }
+      p,
+      ul {
+        margin: 8px 0;
+      }
+      ul {
+        padding-left: 1.2em;
+      }
+      li {
+        margin: 4px 0;
+      }
+      a {
+        color: var(--link);
+      }
+      code {
+        font-family: inherit;
+        font-weight: 600;
+      }
+      .meta {
+        color: var(--soft);
+        margin: 0 0 8px;
+      }
+      .lang {
+        margin: 0 0 24px;
+      }
+      section + section {
+        margin-top: 64px;
+      }
+      section > h2:first-child {
+        margin-top: 0;
+        padding-top: 0;
+        border-top: 0;
+        font-size: 1.35rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>서기 개인정보처리방침<br />Seogi Privacy Policy</h1>
+      <p class="meta">시행일 · Effective date: 2026-11-26</p>
+      <p class="lang"><a href="#en">English below</a></p>
+
+      <section lang="ko" id="ko">
+        <h2>한국어</h2>
+
+        <p>
+          서기는 회의를 녹음하고, 받아쓰고, 해야 할 일부터 정리해 주는 무료
+          오픈소스 앱입니다. 컴퓨터 앱(맥 · 윈도우)과 안드로이드 앱이 있습니다.
+          한 개인이 만들어
+          <a href="https://github.com/lokim-dj/seogi">GitHub</a>에 공개하고
+          있으며, 회사와는 관계가 없습니다.
+        </p>
+        <p>
+          <strong>서기에는 만든 사람의 서버가 없습니다.</strong> 녹음 · 받아쓴
+          글 · 회의록은 내 컴퓨터, 내 폰, 그리고 내가 로그인한 내 구글
+          드라이브에만 둡니다. 만든 사람은 어떤 정보도 받지 않습니다.
+        </p>
+
+        <h3>컴퓨터 앱이 다루는 정보</h3>
+        <ul>
+          <li>
+            <strong>녹음</strong>: 마이크로 녹음하거나 내가 가져온 녹음
+            파일입니다. 회의마다 폴더 하나로 내 컴퓨터의 <code>문서/서기</code>
+            (설정에서 바꿀 수 있음)에 둡니다. 가져온 파일은 복사해 쓰고 원래
+            파일은 건드리지 않습니다.
+          </li>
+          <li>
+            <strong>받아쓰기와 화자 구분</strong>: 내 컴퓨터에서 돌아가는 음성
+            모델이 합니다. 녹음 소리는 어떤 회사로도 보내지 않습니다.
+          </li>
+          <li>
+            <strong>회의록</strong>: 받아쓴 글로 만들어 회의 폴더에 둡니다. 감시
+            폴더(예: 폰 녹음이 들어오는 폴더)에서 온 녹음이면 그 녹음 옆에도
+            회의록 사본을 둡니다(설정에서 끌 수 있음).
+          </li>
+          <li>
+            <strong>회의록을 쓰는 모델</strong>: 처음 설정은 내 컴퓨터의
+            Ollama라서 글이 컴퓨터 밖으로 나가지 않습니다. 내가 직접 Claude
+            Code나 Codex 로그인, 또는 내 API 키(Anthropic, OpenAI, Google
+            Gemini)를 고르면, 받아쓴 글과, 내가 그 회의에 대해 서기에 알려 준
+            것(참석자 · 고객 이름, 장소, 날짜, 메모와 중요 표시에 적은 말, 이
+            회의에 나오는 이름 · 용어, 상담 기준 파일)이 그 회사로 갑니다. 내가
+            회의에 붙인 문서의 글(로그인한 도구일 때는 문서 사진도)과 녹음에
+            대해 묻는 질문(받아쓴 글의 관련 부분과 함께)도 같은 곳으로 갑니다.
+            키를 넣어 두면 설정 화면이 쓸 수 있는 모델 목록을 그 회사에
+            묻습니다. 내 계정으로 보내므로 그 회사의 약관과 개인정보 방침이
+            적용됩니다. 클라우드 방법을 골랐는데 그 방법이 안 될 때는, 내가 이미
+            로그인했거나 키를 넣어 둔 다른 방법으로 이어서 해 봅니다. 컴퓨터 안
+            모델을 골랐다면 밖으로 넘어가지 않습니다.
+          </li>
+          <li>
+            <strong>받아쓰기(단축키로 말하면 글자 입력)</strong>: 최근 몇
+            개(처음 설정 5개)의 소리와 글만 컴퓨터에 남기고, 오래된 것은 앱이
+            지웁니다. '다듬기'를 켜고 클라우드 모델을 고른 경우에만 그 글이 그
+            회사로 갑니다(처음 설정은 꺼짐, 컴퓨터 안 모델).
+          </li>
+          <li>
+            <strong>캘린더(고르면)</strong>: 맥에서는 캘린더 앱의 일정을 컴퓨터
+            안에서 읽고, 내가 비공개 iCal 주소를 넣으면 그 주소에서 일정 파일을
+            받아 옵니다. 일정 제목 · 시각 · 장소 · 참석자를 회의 이름과 알림에
+            씁니다.
+          </li>
+          <li>
+            <strong>API 키</strong>: 운영체제의 키체인(맥 키체인, 윈도우 자격
+            증명 관리자)에 둡니다.
+          </li>
+        </ul>
+
+        <h3>안드로이드 앱이 다루는 정보</h3>
+        <ul>
+          <li>
+            <strong>녹음</strong>: 내 폰의 <code>Recordings/서기</code> 폴더에
+            저장합니다. 앱에는 AI가 없고, 폰에서 받아쓰지 않습니다.
+          </li>
+          <li>
+            <strong>내 구글 드라이브로 올리기</strong>: 녹음이 끝나면 내가
+            로그인한 구글 계정의 드라이브, <code>서기 폰 녹음</code> 폴더로
+            올립니다. 녹음 옆에 작은 설명 파일(시작 시각, 길이, 중요 표시 시각,
+            파일 이름, 녹음 이름, 캘린더 일정 이름, 폰 모델, 앱 버전, 파일 지문,
+            되살린 녹음인지)이 같이 올라갑니다. 컴퓨터의 서기가 쓰도록 둔
+            파일입니다.
+          </li>
+          <li>
+            <strong>구글 계정 이메일 주소</strong>: 어느 계정으로 올리는지 보여
+            주고, 지울 때 같은 계정인지 확인하려고 폰 안 앱 설정에 둡니다.
+          </li>
+          <li>
+            <strong>캘린더(허용하면)</strong>: 오늘 일정의 제목과 시각을 폰
+            안에서 읽어 녹음 이름으로 씁니다. 일정 제목은 녹음 파일 이름과 위
+            설명 파일에 담겨 내 드라이브로만 갑니다.
+          </li>
+          <li>
+            앱 목록 · 설정 · 녹음 중인 파일은 안드로이드 백업과 기기 옮기기에서
+            뺍니다.
+          </li>
+        </ul>
+
+        <h3>구글 사용자 데이터(구글 드라이브)</h3>
+        <ul>
+          <li>
+            서기는 구글 드라이브 권한 중 <code>drive.file</code> 하나만
+            요청합니다. 이 권한으로는 <strong>서기가 만든 폴더와 파일만</strong>
+            볼 수 있고, 내 드라이브의 다른 파일은 보지도 읽지도 못합니다.
+          </li>
+          <li>
+            이 권한으로 하는 일: 서기가 만든 <code>서기 폰 녹음</code> 폴더
+            찾기와 만들기, 그 폴더가 아직 있는지 확인하기, 녹음과 설명 파일
+            올리기, 내가 녹음을 지울 때 서기가 올린 그 파일을 드라이브
+            휴지통으로 옮기기(올리던 중이면 그 올리기를 멈추기), 그리고 어느
+            계정인지 보여 주려고 계정의 이메일 주소 읽기. 구글 계정 선택 창으로
+            로그인하면 구글이 계정의 기본 프로필을 함께 건네지만, 서기는 그중
+            이메일 주소만 씁니다.
+          </li>
+          <li>
+            컴퓨터의 서기는 '데스크톱용 Google Drive'가 내 컴퓨터에 동기화한
+            폴더를 읽어 폰 녹음을 가져옵니다(이때 서기에 따로 로그인하지 않음).
+            나중에 컴퓨터의 서기에 구글 로그인으로 드라이브를 연결하는 기능이
+            생기면, 그때도 같은 <code>drive.file</code> 권한만 쓰고 서기가 만든
+            폴더의 녹음을 찾아 내 컴퓨터로 내려받는 데만 씁니다. 그 기능이 생길
+            때 이 방침에 무엇을 어디에 두는지 더 적습니다.
+          </li>
+          <li>
+            폰의 구글 로그인은 구글 계정 시스템이 폰 안에서 관리하고, 서기는
+            비밀번호를 보지 못합니다.
+          </li>
+          <li>
+            서기가 구글 API로 받은 정보를 쓰는 일과 다른 앱으로 옮기는 일은
+            <a
+              href="https://developers.google.com/terms/api-services-user-data-policy"
+              >Google API 서비스 사용자 데이터 정책</a
+            >을 따르며, 그 정책의 제한적 사용(Limited Use) 요건을 지킵니다.
+            드라이브에서 온 정보는 내 녹음을 내 컴퓨터로 옮기고 회의록을 만드는
+            데만 쓰고, 광고에 쓰지 않으며, 팔지 않고, AI 모델 학습에 쓰지
+            않습니다. 만든 사람을 포함해 누구도 그 정보를 읽지 않습니다.
+            회의록을 쓰는 모델을 내가 클라우드로 고른 경우에만, 컴퓨터에서
+            받아쓴 글이 위에 적은 대로 내가 고른 회사(그 방법이 안 되면 내가
+            로그인했거나 키를 넣어 둔 다른 회사)로 갑니다. 녹음 소리는 보내지
+            않습니다.
+          </li>
+        </ul>
+
+        <h3>밖으로 나가는 연결, 전부</h3>
+        <ul>
+          <li>내 구글 드라이브(안드로이드 앱, 내가 로그인한 계정).</li>
+          <li>회의록 · 다듬기 모델을 클라우드로 골랐을 때 그 회사(위 설명).</li>
+          <li>캘린더 iCal 주소를 넣었을 때 그 주소의 서버.</li>
+          <li>
+            음성 모델 내려받기: Hugging Face(안 되면 그 사본을 둔
+            <code>blob.handy.computer</code>). Ollama 모델은 Ollama가 직접
+            받습니다.
+          </li>
+          <li>
+            새 버전 확인: 컴퓨터 앱의 첫 화면이 열릴 때마다와 6시간마다
+            GitHub에서 최신 버전 정보를 받아 옵니다. 설치는 내가 누를 때만
+            합니다.
+          </li>
+          <li>
+            서기가 보내는 요청을 받는 서버는 보통의 인터넷 연결처럼 내 IP 주소를
+            봅니다.
+          </li>
+        </ul>
+        <p>
+          <strong>없는 것</strong>: 만든 사람의 서버, 광고, 사용 통계, 오류
+          보고(크래시 리포트), 위치, 연락처 수집. 앱 기록(로그)은 기기 안에만
+          남습니다. 정보를 팔거나 다른 사람과 나누지 않습니다.
+        </p>
+
+        <h3>보관과 지우기</h3>
+        <ul>
+          <li>
+            모든 정보는 내가 지울 때까지 내 기기와 내 드라이브에 남습니다. 만든
+            사람은 아무것도 가지고 있지 않으니, 만든 사람에게 지워 달라고 할
+            정보도 없습니다.
+          </li>
+          <li>
+            컴퓨터: 회의를 지우면 그 회의 폴더(녹음 · 받아쓴 글 · 회의록)를
+            시스템 휴지통으로 옮깁니다. 감시 폴더의 원래 파일과 그 옆에 둔
+            회의록 사본은 건드리지 않으니, 필요하면 거기서 직접 지웁니다(그
+            폴더가 드라이브와 동기화되면 드라이브에도 남아 있습니다). 앱을
+            지워도 회의 폴더는 남습니다.
+          </li>
+          <li>
+            폰: 녹음 목록에서 줄을 길게 눌러 지웁니다. 확인한 뒤 몇 초 안에
+            '되돌리기'를 누르면 아무것도 지워지지 않습니다. 녹음 중 '버리기'는
+            저장하지 않고 끝냅니다. '내 파일' 앱에서 직접 지워도 됩니다.
+          </li>
+          <li>
+            드라이브: 서기는 드라이브의 파일을 스스로 지우지 않습니다.
+            '드라이브에 올린 것도 휴지통으로'(처음 설정 켜짐)가 켜져 있을 때,
+            내가 폰에서 지운 그 녹음과 설명 파일만 드라이브 휴지통으로 옮깁니다.
+            영구 삭제는 하지 않으니 휴지통에서 되살릴 수 있습니다. 드라이브에서
+            직접 지워도 됩니다.
+          </li>
+          <li>앱을 지워도 폰의 녹음과 드라이브의 파일은 남습니다.</li>
+          <li>
+            구글 계정의
+            <a href="https://myaccount.google.com/connections"
+              >서드 파티 앱 및 서비스</a
+            >에서 서기의 드라이브 권한을 언제든 거둘 수 있습니다.
+          </li>
+        </ul>
+
+        <h3>어린이</h3>
+        <p>
+          서기는 어린이를 위한 앱이 아니며, 만 14세 미만 아동의 정보를 일부러
+          모으지 않습니다. 만든 사람은 어떤 사용자의 정보도 받지 않습니다.
+        </p>
+
+        <h3>바뀔 때</h3>
+        <p>
+          이 방침이 바뀌면 이 페이지를 고치고 위 시행일을 바꿉니다. 지난 내용은
+          <a
+            href="https://github.com/lokim-dj/seogi/commits/main/docs/privacy/index.html"
+            >GitHub의 변경 기록</a
+          >에서 볼 수 있습니다.
+        </p>
+
+        <h3>문의</h3>
+        <p>
+          <a href="https://github.com/lokim-dj/seogi/issues"
+            >github.com/lokim-dj/seogi/issues</a
+          >
+        </p>
+      </section>
+
+      <section lang="en" id="en">
+        <h2>English</h2>
+
+        <p>
+          Seogi is a free, open-source app that records a meeting, transcribes
+          it and writes it up, leading with what you have to do. There is a
+          desktop app (macOS, Windows) and an Android app. It is made by one
+          person and published on
+          <a href="https://github.com/lokim-dj/seogi">GitHub</a>; it has no
+          relation to any company.
+        </p>
+        <p>
+          <strong>Seogi has no server of its own.</strong> Recordings,
+          transcripts and minutes stay on your computer, your phone and the
+          Google Drive of the account you sign in with. Nothing is sent to the
+          developer.
+        </p>
+
+        <h3>What the desktop app handles</h3>
+        <ul>
+          <li>
+            <strong>Recordings</strong> from the microphone or files you bring
+            in. Each meeting is one folder in <code>Documents/서기</code> on
+            your computer (you can change it). A file you bring in is copied;
+            the original is left as it was.
+          </li>
+          <li>
+            <strong>Transcription and speaker separation</strong> run on your
+            computer with a local speech model. Audio is never sent to any
+            company.
+          </li>
+          <li>
+            <strong>Minutes</strong> are written from the transcript into the
+            meeting's folder. For a recording that came from a watched folder
+            (for example, the one phone recordings arrive in), a copy of the
+            minutes is also put next to that recording (you can turn this off).
+          </li>
+          <li>
+            <strong>The model that writes the minutes</strong> is, by default,
+            Ollama on your own computer, so the text stays there. If you choose
+            Claude Code or Codex signed in with your own plan, or your own API
+            key (Anthropic, OpenAI or Google Gemini), the transcript and what
+            you told Seogi about the meeting (attendee and customer names,
+            place, date, your notes and the words on important marks, names and
+            terms you listed for it, a consultation-rules file) are sent to that
+            company under your own account, and its terms and privacy policy
+            apply. The text of documents you attach to a meeting (and pictures
+            of them, for a signed-in tool) and questions you ask about a
+            recording (with the matching parts of the transcript) go there too.
+            With a key saved, the settings screen asks that company which models
+            it offers. If a cloud way you chose fails, Seogi tries another way
+            you have already signed in to or saved a key for. If you chose a
+            model on your computer, it never falls back to a cloud one.
+          </li>
+          <li>
+            <strong>Dictation</strong> (press a shortcut, speak, the words are
+            typed): only the last few takes (5 by default) are kept on the
+            computer, audio and text; older ones are removed by the app. The
+            words are sent out only if you turn on tidying and choose a cloud
+            model (off and local by default).
+          </li>
+          <li>
+            <strong>Calendar (optional)</strong>: on macOS, events are read on
+            the computer from the Calendar app; if you enter a secret iCal
+            address, the calendar file is fetched from that address. Event
+            titles, times, places and attendees are used to name meetings and to
+            remind you.
+          </li>
+          <li>
+            <strong>API keys</strong> are kept in the operating system's
+            keychain (Keychain on macOS, Credential Manager on Windows).
+          </li>
+        </ul>
+
+        <h3>What the Android app handles</h3>
+        <ul>
+          <li>
+            <strong>Recordings</strong> are saved on your phone in
+            <code>Recordings/서기</code>. The phone app has no AI and does not
+            transcribe.
+          </li>
+          <li>
+            <strong>Upload to your Google Drive</strong>: when a recording ends
+            it is uploaded to the Drive of the Google account you signed in
+            with, into a folder named <code>서기 폰 녹음</code>. A small
+            description file goes with it (file name, start time, length,
+            important marks, recording name, calendar event title, phone model,
+            app version, a fingerprint of the file, whether it was recovered
+            after a crash), for Seogi on your computer.
+          </li>
+          <li>
+            <strong>Your Google account's email address</strong> is kept in the
+            app's settings on the phone, to show which account recordings go to
+            and to check it is the same account before deleting.
+          </li>
+          <li>
+            <strong>Calendar (if you allow it)</strong>: today's event titles
+            and times are read on the phone to name recordings. The event title
+            goes only into the recording's file name and the description file
+            above, in your own Drive.
+          </li>
+          <li>
+            The app's list, settings and recordings in progress are excluded
+            from Android backup and device-to-device transfer.
+          </li>
+        </ul>
+
+        <h3>Google user data (Google Drive)</h3>
+        <ul>
+          <li>
+            Seogi asks for one Google Drive scope, <code>drive.file</code>. With
+            it Seogi can see
+            <strong>only the folder and files it created</strong>
+            and cannot see or read anything else in your Drive.
+          </li>
+          <li>
+            What it does with that access: find and create the
+            <code>서기 폰 녹음</code> folder it made, check that the folder
+            still exists, upload recordings and their description files, move a
+            recording it uploaded (and its description file) to the Drive trash
+            when you delete that recording (stopping the upload if it is still
+            under way), and read your account's email address to show which
+            account is in use. If you sign in through Google's account picker,
+            Google also hands over the account's basic profile; Seogi uses only
+            the email address from it.
+          </li>
+          <li>
+            Seogi on your computer brings phone recordings in by reading the
+            folder that Google Drive for desktop syncs to your computer (no
+            sign-in to Seogi is involved). If the desktop app later offers
+            connecting Drive by signing in with Google, it will use the same
+            <code>drive.file</code> scope, only to find the recordings in the
+            folder Seogi created and download them to your computer. This policy
+            will say more about it when that feature ships.
+          </li>
+          <li>
+            On the phone, your Google sign-in is handled by Google's account
+            system on the phone; Seogi never sees your password.
+          </li>
+          <li>
+            Seogi's use and transfer to any other app of information received
+            from Google APIs will adhere to the
+            <a
+              href="https://developers.google.com/terms/api-services-user-data-policy"
+              >Google API Services User Data Policy</a
+            >, including the Limited Use requirements. Data from Drive is used
+            only to move your recordings to your computer and write their
+            minutes. It is not used for advertising, not sold, and not used to
+            train AI models, and no person — the developer included — reads it.
+            Only if you choose a cloud model for the minutes is the transcript,
+            made on your computer, sent out: to the company you chose or, if
+            that fails, another one you have signed in to or saved a key for, as
+            described above. The audio is never sent.
+          </li>
+        </ul>
+
+        <h3>Every connection that leaves your device</h3>
+        <ul>
+          <li>
+            Your Google Drive (the Android app, the account you signed in with).
+          </li>
+          <li>
+            The company you chose, if you chose a cloud model for minutes or
+            tidying (see above).
+          </li>
+          <li>The server of a calendar iCal address, if you entered one.</li>
+          <li>
+            Speech model downloads: Hugging Face (or its copy at
+            <code>blob.handy.computer</code> if that fails). Ollama models are
+            downloaded by Ollama itself.
+          </li>
+          <li>
+            Update check: each time the desktop app's home screen opens and
+            every six hours, it fetches the latest version information from
+            GitHub. An update is installed only when you press the button.
+          </li>
+          <li>
+            Like any internet connection, the servers that receive these
+            requests see your IP address.
+          </li>
+        </ul>
+        <p>
+          <strong>None of these</strong>: a developer's server, ads, analytics,
+          crash reports, location or contacts. The app's logs stay on the
+          device. Your information is never sold or shared.
+        </p>
+
+        <h3>Keeping and deleting</h3>
+        <ul>
+          <li>
+            Everything stays on your devices and in your Drive until you delete
+            it. The developer holds nothing about you, so there is nothing to
+            ask the developer to delete.
+          </li>
+          <li>
+            Desktop: deleting a meeting moves its folder (recording, transcript,
+            minutes) to the system trash. The original file in a watched folder,
+            and the minutes copy next to it, are left alone; delete them there
+            yourself if you want (if that folder syncs with Drive, they are in
+            Drive too). Uninstalling the app leaves the meeting folders in
+            place.
+          </li>
+          <li>
+            Phone: long-press a recording in the list to delete it. For a few
+            seconds after you confirm, "되돌리기" (undo) keeps anything from
+            being deleted. "버리기" while recording stops without saving. You
+            can also delete with the Files app.
+          </li>
+          <li>
+            Drive: Seogi never deletes Drive files on its own. With "드라이브에
+            올린 것도 휴지통으로" on (the default), when you delete a recording
+            on the phone, Seogi moves that recording and its description file to
+            the Drive trash — never a permanent delete, so you can restore them.
+            You can also delete them in Drive yourself.
+          </li>
+          <li>
+            Uninstalling the app leaves the recordings on the phone and in
+            Drive.
+          </li>
+          <li>
+            You can remove Seogi's Drive access at any time under
+            <a href="https://myaccount.google.com/connections"
+              >Third-party apps &amp; services</a
+            >
+            in your Google Account.
+          </li>
+        </ul>
+
+        <h3>Children</h3>
+        <p>
+          Seogi is not meant for children and does not knowingly collect
+          information from children under 14. The developer receives no
+          information from any user.
+        </p>
+
+        <h3>Changes</h3>
+        <p>
+          When this policy changes, this page is updated along with the
+          effective date above. Earlier versions are in the page's
+          <a
+            href="https://github.com/lokim-dj/seogi/commits/main/docs/privacy/index.html"
+            >history on GitHub</a
+          >.
+        </p>
+
+        <h3>Contact</h3>
+        <p>
+          <a href="https://github.com/lokim-dj/seogi/issues"
+            >github.com/lokim-dj/seogi/issues</a
+          >
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

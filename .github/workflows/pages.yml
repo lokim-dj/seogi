@@ -1,0 +1,45 @@
+name: Pages
+
+# Publishes the privacy policy, and nothing else, to GitHub Pages:
+# docs/privacy/index.html becomes https://lokim-dj.github.io/seogi/privacy/.
+# Only that one file is copied into the site, so the rest of docs/ (release
+# notes, decisions, plans) never becomes a page. Needs Pages turned on with
+# "GitHub Actions" as its source (Settings > Pages).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/privacy/**
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}privacy/
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Site with the privacy page only
+        run: |
+          mkdir -p _site/privacy
+          cp docs/privacy/index.html _site/privacy/index.html
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
