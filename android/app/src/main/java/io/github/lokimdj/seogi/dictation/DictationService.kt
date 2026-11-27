@@ -17,6 +17,7 @@ import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.media.AudioManager
 import android.media.AudioRecordingConfiguration
+import android.os.Binder
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -53,8 +54,14 @@ import java.util.concurrent.Executors
  * Runs in its own process (`:dictation`): the speech engine is native code
  * holding 1.4 GB, and if it ever crashes or is killed for memory, a meeting
  * being recorded by [io.github.lokimdj.seogi.record.RecorderService] goes on.
- * A microphone foreground service, because Android lets only those listen
- * while another app is in front.
+ *
+ * How it stays alive ([KeyKeeper]): with the accessibility service on,
+ * [InsertService] holds it bound and the key is that service's overlay, so
+ * nothing shows in the notifications while the key waits; it becomes a
+ * microphone foreground service only while the microphone is open (Android
+ * lets only those listen while another app is in front), started while the
+ * key is on screen. Without accessibility nothing else keeps it, so it stays
+ * a microphone foreground service with its notification.
  */
 class DictationService : Service() {
     private val main = Handler(Looper.getMainLooper())
@@ -66,6 +73,10 @@ class DictationService : Service() {
 
     private val wm by lazy { getSystemService(WindowManager::class.java) }
     private var view: BubbleView? = null
+    /** The window manager the key was added with (the accessibility service's own, for its overlay). */
+    private var keyWm: WindowManager? = null
+    /** Which way the key on screen was put up, so a change of way puts it up again. */
+    private var viewWay: KeyKeeper.Way? = null
     private var params: WindowManager.LayoutParams? = null
     private val gesture by lazy { BubbleGesture(slop = 10 * resources.displayMetrics.density) }
     private var dragFromX = 0
@@ -74,6 +85,11 @@ class DictationService : Service() {
     private var mic: Mic? = null
     private var hidden = false
     private var foreground = false
+    /** [InsertService] holds this service bound: the accessibility way ([KeyKeeper]). */
+    private var bound = false
+    /** The user left the key on, as last read from [DictationPrefs]. */
+    private var on = false
+    private val way get() = KeyKeeper.way(bound)
     private val presence = KeyPresence()
     private val settle = Runnable { refresh() }
     private var followsShown: Boolean? = null
@@ -84,36 +100,108 @@ class DictationService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        running = true
+        on = DictationPrefs.isOn(this)
         InsertService.listener = { refresh() }
         InsertService.keystroke = { typedByHand() }
         // A meeting starting or ending changes whether the key may show.
         getSystemService(AudioManager::class.java).registerAudioRecordingCallback(recordings, main)
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    // --- staying alive ---
+
+    /** Bound by [InsertService] while accessibility is on: Android keeps the key, no notification needed. */
+    override fun onBind(intent: Intent?): IBinder {
+        kept()
+        return Binder()
+    }
+
+    override fun onRebind(intent: Intent?) = kept()
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        bound = false
+        // Accessibility went off. Started as a foreground service as well, the
+        // key goes on that way; otherwise Android ends this service now and
+        // opening Seogi brings the key back, with its notification.
+        refresh(atOnce = true)
+        return true
+    }
+
+    private fun kept() {
+        bound = true
+        on = DictationPrefs.isOn(this)
+        // Hiding is done from the notification, which this way has none of.
+        hidden = false
+        settleForeground()
+        refresh(atOnce = true)
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_OFF -> {
                 DictationPrefs.setOn(this, false)
+                on = false
+                // Bound by accessibility, the service lives on without the key.
+                refresh(atOnce = true)
+                leaveForeground()
                 stopSelf()
                 return START_NOT_STICKY
             }
             ACTION_HIDE -> hidden = true
             ACTION_SHOW -> hidden = false
         }
-        if (!goForeground()) {
+        // Started with startForegroundService, it must say so within seconds,
+        // even when it leaves the foreground again at once.
+        val mustAnswer = intent?.getBooleanExtra(EXTRA_FOREGROUND, false) == true
+        if ((mustAnswer || way == KeyKeeper.Way.FOREGROUND) && !goForeground()) {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (!DictationPrefs.isOn(this)) {
+        on = DictationPrefs.isOn(this)
+        if (!on) {
+            refresh(atOnce = true)
+            leaveForeground()
             stopSelf()
             return START_NOT_STICKY
         }
+        settleForeground()
         refresh(atOnce = true)
-        updateNotification()
-        return START_STICKY
+        if (foreground) updateNotification()
+        if (!foreground) stopSelf(startId)
+        return if (way == KeyKeeper.Way.FOREGROUND) START_STICKY else START_NOT_STICKY
+    }
+
+    /**
+     * Leaves the foreground, and so drops the notification, when nothing
+     * needs it any more ([KeyKeeper.foreground]): the accessibility way with
+     * the microphone closed. The binding keeps the service.
+     */
+    private fun settleForeground() {
+        if (!foreground || KeyKeeper.foreground(way, mic != null)) return
+        leaveForeground()
+        stopSelf()
+    }
+
+    private fun leaveForeground() {
+        if (!foreground) return
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        foreground = false
+    }
+
+    /**
+     * The accessibility way, before the microphone opens: Android lets a
+     * microphone foreground service start from behind another app while
+     * Seogi has a window on screen, which the key the user is touching is.
+     * False when Android refused all the same.
+     */
+    private fun holdMic(): Boolean {
+        if (foreground) return true
+        try {
+            startForegroundService(Intent(this, DictationService::class.java).putExtra(EXTRA_FOREGROUND, true))
+        } catch (e: Exception) {
+            Log.w(TAG, "could not start listening in the foreground", e)
+            return false
+        }
+        return goForeground()
     }
 
     /**
@@ -122,7 +210,7 @@ class DictationService : Service() {
      */
     private fun refresh(atOnce: Boolean = false) {
         main.removeCallbacks(settle)
-        if (destroyed || !foreground) return
+        if (destroyed) return
         val follows = InsertService.instance != null
         val meeting by lazy {
             MeetingCheck.recording(
@@ -130,18 +218,21 @@ class DictationService : Service() {
                 getSystemService(AudioManager::class.java).activeRecordingConfigurations.isNotEmpty(),
             )
         }
-        val want = KeyRule.wanted(mode, hidden, meeting, follows, InsertService.typing)
-        val wait = presence.update(want, SystemClock.uptimeMillis(), atOnce)
+        val alive = KeyKeeper.alive(way, foreground, on)
+        val want = alive && KeyRule.wanted(mode, hidden, meeting, follows, InsertService.typing)
+        val wait = presence.update(want, SystemClock.uptimeMillis(), atOnce || !alive)
         if (wait != null && wait > 0) main.postDelayed(settle, wait)
+        // Put up again when the way changed: the accessibility overlay belongs to that service.
+        if (view != null && viewWay != way) removeBubble()
         if (presence.shown) showBubble() else removeBubble()
         if (follows != followsShown) {
             val first = followsShown == null
             followsShown = follows
-            if (!first) updateNotification()
+            if (!first && foreground) updateNotification()
         }
     }
 
-    /** Started as a foreground service, it must say so within seconds, even when it is about to stop. */
+    /** Into the foreground, with the notification of the way the key is kept. */
     private fun goForeground(): Boolean {
         if (foreground) return true
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return false
@@ -160,7 +251,12 @@ class DictationService : Service() {
     // --- the key on the screen ---
 
     private fun showBubble() {
-        if (view != null || !Settings.canDrawOverlays(this)) return
+        if (view != null) return
+        // The accessibility way: the accessibility service's own overlay, which
+        // needs neither the overlay permission nor a notification.
+        val insert = if (way == KeyKeeper.Way.ACCESSIBILITY) InsertService.instance ?: return else null
+        if (insert == null && !Settings.canDrawOverlays(this)) return
+        val host = insert?.getSystemService(WindowManager::class.java) ?: wm
         val size = (SIZE_DP * resources.displayMetrics.density).toInt()
         val v = BubbleView(this, ::onTouch)
         v.mode = mode
@@ -181,7 +277,7 @@ class DictationService : Service() {
         })
         val p = WindowManager.LayoutParams(
             size, size,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            if (insert != null) WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY else WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             // Never takes the keyboard or the focus, so the field in the app behind keeps its cursor.
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT,
@@ -189,8 +285,10 @@ class DictationService : Service() {
         params = p
         placeAt(DictationPrefs.place(this))
         try {
-            wm.addView(v, p)
+            host.addView(v, p)
             view = v
+            keyWm = host
+            viewWay = way
             if (steppedBack) v.stepBack(true, animate = false)
         } catch (e: Exception) {
             Log.w(TAG, "could not show the key", e)
@@ -200,10 +298,13 @@ class DictationService : Service() {
 
     private fun removeBubble() {
         val v = view ?: return
+        val host = keyWm ?: wm
         view = null
         params = null
+        keyWm = null
+        viewWay = null
         if (mode == BubbleGesture.Mode.LISTENING) cancelListening()
-        try { wm.removeView(v) } catch (_: Exception) {}
+        try { host.removeView(v) } catch (_: Exception) {}
     }
 
     private fun screen(): Pair<Int, Int> {
@@ -229,7 +330,7 @@ class DictationService : Service() {
         val (x, y) = place.toPixels(w, h, p.width, sideMargin())
         p.x = x
         p.y = y
-        view?.let { try { wm.updateViewLayout(it, p) } catch (_: Exception) {} }
+        view?.let { try { (keyWm ?: wm).updateViewLayout(it, p) } catch (_: Exception) {} }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -295,7 +396,7 @@ class DictationService : Service() {
                 val m = dragMargin.coerceIn(0, ((w - p.width) / 2).coerceAtLeast(0))
                 p.x = (dragFromX + a.dx.toInt()).coerceIn(m, (w - p.width - m).coerceAtLeast(m))
                 p.y = (dragFromY + a.dy.toInt()).coerceIn(0, (h - p.height).coerceAtLeast(0))
-                view?.let { try { wm.updateViewLayout(it, p) } catch (_: Exception) {} }
+                view?.let { try { (keyWm ?: wm).updateViewLayout(it, p) } catch (_: Exception) {} }
             }
             BubbleGesture.Act.DragEnd -> {
                 val p = params ?: return
@@ -341,8 +442,13 @@ class DictationService : Service() {
             toast(getString(why))
             return
         }
+        if (KeyKeeper.foreground(way, micOpen = true) && !holdMic()) {
+            toast(getString(R.string.dict_err_mic_silenced))
+            return
+        }
         val m = Mic(onFull = { main.post { if (mode == BubbleGesture.Mode.LISTENING) stopAndWrite() } })
         if (!m.start()) {
+            settleForeground()
             toast(getString(R.string.dict_err_mic_busy))
             return
         }
@@ -364,6 +470,7 @@ class DictationService : Service() {
         main.removeCallbacks(warm)
         mic?.cancel()
         mic = null
+        settleForeground()
         if (mode == BubbleGesture.Mode.LISTENING) setMode(BubbleGesture.Mode.IDLE)
     }
 
@@ -371,6 +478,8 @@ class DictationService : Service() {
         val m = mic ?: return
         mic = null
         val pcm = m.stop()
+        // The microphone is closed: the accessibility way leaves the foreground now, before the writing.
+        settleForeground()
         view?.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
         if (pcm.size < Speech.MIN_SAMPLES) {
             setMode(BubbleGesture.Mode.IDLE)
@@ -422,6 +531,12 @@ class DictationService : Service() {
 
     // --- the notification ---
 
+    /**
+     * The notification Android asks of a microphone foreground service. The
+     * accessibility way shows one only while listening, without buttons:
+     * Android then holds it back for its first ten seconds, so a short
+     * sentence shows only the microphone dot.
+     */
     private fun notification(): Notification {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
@@ -429,6 +544,17 @@ class DictationService : Service() {
                 setShowBadge(false)
             },
         )
+        if (way == KeyKeeper.Way.ACCESSIBILITY) {
+            return NotificationCompat.Builder(this, CHANNEL)
+                .setSmallIcon(R.drawable.ic_dictation)
+                .setContentTitle(getString(R.string.notif_dictation_listening))
+                .setOngoing(true)
+                .setSilent(true)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_DEFAULT)
+                .setContentIntent(Notifications.openApp(this))
+                .build()
+        }
         fun action(a: String) = PendingIntent.getService(
             this, a.hashCode(), Intent(this, DictationService::class.java).setAction(a),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
@@ -473,7 +599,6 @@ class DictationService : Service() {
 
     override fun onDestroy() {
         destroyed = true
-        running = false
         main.removeCallbacks(warm)
         main.removeCallbacks(settle)
         InsertService.listener = null
@@ -504,31 +629,42 @@ class DictationService : Service() {
         private const val ACTION_HIDE = "io.github.lokimdj.seogi.dictation.HIDE"
         private const val ACTION_SHOW = "io.github.lokimdj.seogi.dictation.SHOW"
         private const val ACTION_OFF = "io.github.lokimdj.seogi.dictation.OFF"
+        /** Set on an intent sent with startForegroundService: the service must go into the foreground. */
+        private const val EXTRA_FOREGROUND = "io.github.lokimdj.seogi.dictation.FOREGROUND"
 
-        /** Turns the key on, or brings it back if Android stopped it. Call while Seogi is on screen. */
+        /**
+         * Turns the key on, or brings it back if Android stopped it. Call while
+         * Seogi is on screen. With accessibility on, [InsertService] keeps the
+         * service and a plain start is enough; otherwise it is a foreground service.
+         */
         fun start(context: Context) {
             DictationPrefs.setOn(context, true)
+            val intent = Intent(context, DictationService::class.java)
             try {
-                context.startForegroundService(Intent(context, DictationService::class.java))
+                if (Accessibility.isOn(context)) {
+                    context.startService(intent)
+                } else {
+                    context.startForegroundService(intent.putExtra(EXTRA_FOREGROUND, true))
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "could not start", e)
             }
         }
 
-        /** True while the service lives in this process (`:dictation`, beside [InsertService]). */
-        @Volatile
-        var running = false
-            private set
-
         /**
-         * Brings the key back without Seogi on screen (the accessibility
-         * service was bound, the app was updated, the phone started), when the
-         * user left it on and it has what it needs. Android may still refuse a
-         * microphone service started from the background; that is logged, and
-         * opening Seogi starts it.
+         * Brings the key back without Seogi on screen (the app was updated, the
+         * phone started), when the user left it on and it has what it needs.
+         * With accessibility on there is nothing to do: Android binds
+         * [InsertService] again, and that brings the key. Otherwise Android may
+         * still refuse a microphone service started from the background; that
+         * is logged, and opening Seogi starts it.
          */
         fun resume(context: Context, why: String) {
             if (!DictationPrefs.isOn(context)) return
+            if (Accessibility.isOn(context)) {
+                Log.i(TAG, "the key comes back with accessibility ($why)")
+                return
+            }
             val ready = context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED &&
                 Settings.canDrawOverlays(context) && DictationModel.isReady(context)
             if (!ready) {
@@ -536,16 +672,23 @@ class DictationService : Service() {
                 return
             }
             try {
-                context.startForegroundService(Intent(context, DictationService::class.java))
+                context.startForegroundService(Intent(context, DictationService::class.java).putExtra(EXTRA_FOREGROUND, true))
                 Log.i(TAG, "bringing the key back ($why)")
             } catch (e: Exception) {
                 Log.i(TAG, "Android did not let the key come back ($why)", e)
             }
         }
 
+        /** Turns the key off. Call while Seogi is on screen. */
         fun stop(context: Context) {
             DictationPrefs.setOn(context, false)
-            context.stopService(Intent(context, DictationService::class.java))
+            // Bound by accessibility, stopService would not reach it: it is told instead.
+            try {
+                context.startService(Intent(context, DictationService::class.java).setAction(ACTION_OFF))
+            } catch (e: Exception) {
+                Log.w(TAG, "could not tell the key to go", e)
+                context.stopService(Intent(context, DictationService::class.java))
+            }
         }
     }
 }

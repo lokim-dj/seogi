@@ -7,6 +7,7 @@ import io.github.lokimdj.seogi.dictation.BubblePlace
 import io.github.lokimdj.seogi.dictation.DictationModel
 import io.github.lokimdj.seogi.dictation.InsertTarget
 import io.github.lokimdj.seogi.dictation.Inserter
+import io.github.lokimdj.seogi.dictation.KeyKeeper
 import io.github.lokimdj.seogi.dictation.KeyPresence
 import io.github.lokimdj.seogi.dictation.KeyRule
 import io.github.lokimdj.seogi.dictation.Typing
@@ -300,6 +301,25 @@ class DictationTest {
         assertTrue(Typing.from(keyboardShowing = null, editableFocused = true, hardKeyboard = false))
         assertFalse(Typing.from(keyboardShowing = null, editableFocused = false, hardKeyboard = false))
         assertTrue(Typing.from(keyboardShowing = false, editableFocused = true, hardKeyboard = true))
+    }
+
+    @Test fun withAccessibilityTheKeyIsForegroundOnlyWhileTheMicIsOpen() {
+        val a11y = KeyKeeper.way(boundByAccessibility = true)
+        assertEquals(KeyKeeper.Way.ACCESSIBILITY, a11y)
+        assertFalse("waiting: no notification", KeyKeeper.foreground(a11y, micOpen = false))
+        assertTrue("listening: a microphone foreground service", KeyKeeper.foreground(a11y, micOpen = true))
+        assertTrue("kept by the binding, not by the foreground", KeyKeeper.alive(a11y, foreground = false, on = true))
+        assertFalse(KeyKeeper.alive(a11y, foreground = false, on = false))
+    }
+
+    @Test fun withoutAccessibilityTheKeyStaysAForegroundService() {
+        val fgs = KeyKeeper.way(boundByAccessibility = false)
+        assertEquals(KeyKeeper.Way.FOREGROUND, fgs)
+        assertTrue(KeyKeeper.foreground(fgs, micOpen = false))
+        assertTrue(KeyKeeper.foreground(fgs, micOpen = true))
+        assertTrue(KeyKeeper.alive(fgs, foreground = true, on = true))
+        assertFalse("nothing keeps it out of the foreground", KeyKeeper.alive(fgs, foreground = false, on = true))
+        assertFalse(KeyKeeper.alive(fgs, foreground = true, on = false))
     }
 
     @Test fun theKeyShowsOnlyWhileTyping() {

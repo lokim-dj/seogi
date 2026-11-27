@@ -7,7 +7,8 @@ import android.content.Intent
 /**
  * Brings the floating key back after Seogi is updated or the phone starts,
  * when the user left it on, so it does not wait for Seogi to be opened.
- * (When accessibility is on, [InsertService] being bound again does the same.)
+ * (When accessibility is on, Android binds [InsertService] again, and that
+ * brings the key back without a notification.)
  */
 class KeyRestart : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

@@ -3,8 +3,12 @@ package io.github.lokimdj.seogi.dictation
 import android.accessibilityservice.AccessibilityService
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
+import android.content.Intent
+import android.content.ServiceConnection
 import android.content.res.Configuration
 import android.os.Bundle
+import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
@@ -21,7 +25,8 @@ import android.view.accessibility.AccessibilityWindowInfo
  * whether the focused field takes text and that a field changed, never at
  * what is written or shown. It keeps
  * nothing and sends nothing. Runs in the `:dictation` process beside
- * [DictationService].
+ * [DictationService], which it holds bound: Android keeps an accessibility
+ * service running, so the key needs no notification of its own while it waits.
  */
 class InsertService : AccessibilityService() {
     /**
@@ -30,16 +35,36 @@ class InsertService : AccessibilityService() {
      * ready; it is used then ([InsertTarget]). Only the reference is kept.
      */
     private var last: AccessibilityNodeInfo? = null
-    private var lastResume = 0L
     private var wroteAt = 0L
+    private var holdsKey = false
+    private val key = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {}
+        override fun onServiceDisconnected(name: ComponentName?) {}
+    }
 
     override fun onServiceConnected() {
         instance = this
-        // Bound again after an update or a restart: the key the user left on comes back.
-        lastResume = SystemClock.elapsedRealtime()
-        DictationService.resume(this, "accessibility bound")
+        // Also bound again after an update or a restart: the key the user left on comes back.
+        holdKey()
         check()
         listener?.invoke()
+    }
+
+    /** Keeps [DictationService] alive for as long as this service is on; it shows the key when the user left it on. */
+    private fun holdKey() {
+        if (holdsKey) return
+        holdsKey = try {
+            bindService(Intent(this, DictationService::class.java), key, BIND_AUTO_CREATE)
+        } catch (e: Exception) {
+            Log.w(TAG, "could not hold the key's service", e)
+            false
+        }
+    }
+
+    private fun letKeyGo() {
+        if (!holdsKey) return
+        holdsKey = false
+        try { unbindService(key) } catch (_: Exception) {}
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -71,12 +96,6 @@ class InsertService : AccessibilityService() {
         if (now != typing) {
             typing = now
             listener?.invoke()
-        }
-        // The user types but the key's service is not running (Android stopped
-        // it, or it never came back): try again, at most twice a minute.
-        if (now && !DictationService.running && SystemClock.elapsedRealtime() - lastResume > RESUME_EVERY_MS) {
-            lastResume = SystemClock.elapsedRealtime()
-            DictationService.resume(this, "typing")
         }
     }
 
@@ -129,6 +148,7 @@ class InsertService : AccessibilityService() {
     /** Switched off: the key can no longer tell when the user types. */
     private fun gone() {
         last = null
+        letKeyGo()
         if (instance !== this) return
         instance = null
         typing = false
@@ -189,7 +209,6 @@ class InsertService : AccessibilityService() {
 
     companion object {
         private const val TAG = "SeogiDictation"
-        private const val RESUME_EVERY_MS = 30_000L
 
         /** The running service, when the user has switched it on. Read and set on the main thread. */
         @Volatile

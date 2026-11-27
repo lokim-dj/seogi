@@ -110,3 +110,14 @@ start and tap to stop; the words go into the field that has the cursor.
 - The key and the engine run in their own process (`:dictation`), so a crash
   or a kill there never stops a meeting being recorded. While a meeting is
   recorded the key does not listen.
+- No notification while the key waits, when accessibility is on: the
+  accessibility service holds the key's service bound (Android keeps an
+  accessibility service running) and shows the key as its own overlay
+  (`TYPE_ACCESSIBILITY_OVERLAY`). Only while the microphone is open is it a
+  microphone foreground service, started from the key the user is touching:
+  Android lets an app with a window on screen start one from behind another
+  app. That notification has no buttons, so Android holds it back for ten
+  seconds and a short sentence shows only the microphone dot. Without
+  accessibility nothing else keeps the key, so it stays a foreground service
+  with its notification (Android raises a lowest-importance channel to low for
+  a foreground service, so hiding it that way does not work).

@@ -194,3 +194,24 @@ class KeyPresence(private val showAfterMs: Long = 120, private val hideAfterMs: 
         return wait
     }
 }
+
+/**
+ * How the floating key's service stays alive, and so when Android needs a
+ * notification for it.
+ * - [Way.ACCESSIBILITY]: the accessibility service is on and holds the key's
+ *   service bound, so Android keeps both; the key is the accessibility
+ *   service's overlay. Only listening runs as a microphone foreground service.
+ * - [Way.FOREGROUND]: without accessibility nothing else keeps it, so it is a
+ *   microphone foreground service all along, with its notification.
+ */
+object KeyKeeper {
+    enum class Way { ACCESSIBILITY, FOREGROUND }
+
+    fun way(boundByAccessibility: Boolean): Way = if (boundByAccessibility) Way.ACCESSIBILITY else Way.FOREGROUND
+
+    /** Whether the service must be in the foreground now: the microphone is open, or nothing else keeps it. */
+    fun foreground(way: Way, micOpen: Boolean): Boolean = way == Way.FOREGROUND || micOpen
+
+    /** Whether the key may be on screen: the user left it on and the service is kept one way or the other. */
+    fun alive(way: Way, foreground: Boolean, on: Boolean): Boolean = on && (way == Way.ACCESSIBILITY || foreground)
+}

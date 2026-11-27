@@ -11,9 +11,14 @@ import io.github.lokimdj.seogi.dictation.InsertService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Test
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -39,6 +44,30 @@ class DictationAndroidTest {
         assertEquals(BubblePlace.Default, DictationPrefs.place(context))
         DictationPrefs.setPlace(context, BubblePlace(0f, 0.3f))
         assertEquals(BubblePlace(0f, 0.3f), DictationPrefs.place(context))
+    }
+
+    @After fun keyOff() = DictationPrefs.setOn(context, false)
+
+    /** Accessibility on: the binding keeps the key, so no notification while it waits. */
+    @Test fun keptByAccessibilityTheKeyShowsNoNotification() {
+        shadowOf(context).grantPermissions(android.Manifest.permission.RECORD_AUDIO)
+        DictationPrefs.setOn(context, true)
+        val controller = Robolectric.buildService(DictationService::class.java).create().bind()
+        assertNull(shadowOf(controller.get()).lastForegroundNotification)
+    }
+
+    /** Without accessibility it is a foreground service with its notification; accessibility coming on takes that away. */
+    @Test fun theNotificationGoesWhenAccessibilityTakesTheKeyOver() {
+        shadowOf(context).grantPermissions(android.Manifest.permission.RECORD_AUDIO)
+        DictationPrefs.setOn(context, true)
+        val controller = Robolectric.buildService(DictationService::class.java).create().startCommand(0, 1)
+        val shadow = shadowOf(controller.get())
+        val shown = shadow.lastForegroundNotification
+        assertNotNull(shown)
+        assertEquals("hide and off", 2, shown!!.actions.size)
+        assertFalse(shadow.isForegroundStopped)
+        controller.bind()
+        assertTrue(shadow.isForegroundStopped)
     }
 
     /** The engine never shares a process with the recorder: a crash in it cannot stop a meeting's recording. */

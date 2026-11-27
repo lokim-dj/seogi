@@ -142,6 +142,7 @@
     <string name="notif_dictation_text">떠 있는 단추를 누르고 말하세요</string>
     <string name="notif_dictation_typing">글자를 쓸 때 단추가 떠요 · 누르고 말하세요</string>
     <string name="notif_dictation_hidden">단추를 숨겼어요 · \'보이기\'로 다시 띄웁니다</string>
+    <string name="notif_dictation_listening">말로 입력 · 듣는 중</string>
     <string name="action_hide_key">숨기기</string>
     <string name="action_show_key">보이기</string>
     <string name="action_dictation_off">끄기</string>
@@ -166,7 +167,7 @@
     <!-- dictation: setting it up, one step a screen -->
     <string name="dict_step">%1$d / %2$d</string>
     <string name="dict_mic_title">마이크와 알림을\n허용해 주세요</string>
-    <string name="dict_mic_body">말한 것을 듣는 데 마이크를 씁니다. 단추가 켜져 있다는 것은 알림 줄에 보이고, 거기서 단추를 숨기거나 끌 수 있어요.</string>
+    <string name="dict_mic_body">말한 것을 듣는 데 마이크를 씁니다. 듣는 동안에는 화면 위에 마이크 표시가 뜨고, 길게 말하면 알림 줄에도 잠깐 보여요.</string>
     <string name="dict_mic_action">허용하기</string>
     <string name="dict_overlay_title">다른 앱 위에\n단추를 띄울게요</string>
     <string name="dict_overlay_body">메시지 · 메모 · 메일 같은 다른 앱을 쓰는 중에도 둥근 서기 단추를 화면 가장자리에 띄웁니다. 손가락으로 끌어 옮길 수 있어요.</string>
@@ -195,9 +196,9 @@
     <string name="dict_cpu_body">말로 입력은 최근 몇 년 안에 나온 폰의 계산 기능이 있어야 합니다. 녹음은 그대로 쓸 수 있어요.</string>
     <string name="dict_ready_title">말로 입력</string>
     <string name="dict_key">떠 있는 단추</string>
-    <string name="dict_key_why">켜면 다른 앱에서 글자를 쓸 때(자판이 열리면)만 둥근 서기 단추가 뜨고, 다 쓰면 사라집니다.</string>
-    <string name="dict_key_why_always">복사만 쓰는 동안은 언제 글자를 쓰는지 알 수 없어 단추가 늘 떠 있어요(회의 녹음 중에는 숨어요). 숨기기는 알림 줄에서. 접근성을 켜면 글자를 쓸 때만 뜹니다.</string>
-    <string name="dict_how">· 누른 채 말하고 떼면 글자가 들어갑니다.\n· 한 번 눌러 말하고, 다시 한 번 누르면 끝.\n· 끌어서 자리를 옮기면 그 자리에 다시 뜹니다. 숨기기 · 끄기는 알림 줄에서.</string>
+    <string name="dict_key_why">켜면 다른 앱에서 글자를 쓸 때(자판이 열리면)만 둥근 서기 단추가 뜨고, 다 쓰면 사라집니다. 기다리는 동안 알림은 없어요.</string>
+    <string name="dict_key_why_always">복사만 쓰는 동안은 언제 글자를 쓰는지 알 수 없어 단추가 늘 떠 있어요(회의 녹음 중에는 숨어요). 숨기기는 알림 줄에서. 접근성을 켜면 글자를 쓸 때만 뜨고 알림도 없어집니다.</string>
+    <string name="dict_how">· 누른 채 말하고 떼면 글자가 들어갑니다.\n· 한 번 눌러 말하고, 다시 한 번 누르면 끝.\n· 끌어서 자리를 옮기면 그 자리에 다시 뜹니다. 끄기는 이 화면에서.</string>
     <string name="dict_insert">글자 넣기</string>
     <string name="dict_insert_direct">칸에 바로</string>
     <string name="dict_insert_copy">복사만</string>
