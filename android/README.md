@@ -94,6 +94,13 @@ start and tap to stop; the words go into the field that has the cursor.
 - The sound stays in memory, is never written or sent, and is dropped once it
   has become text. Long speech is cut into pieces of at most 25 s at quiet
   moments; listening stops on its own after two minutes.
+- Spoken numbers before a unit are written as digits by the computer's rules
+  ("세 시 반" → "3시 반", "이십 프로 할인" → "20% 할인"; "세 번째" and
+  "아이폰 십오 프로" stay). `dictation/Numbers.kt` is a port of the desktop's
+  `src-tauri/src/seogi/numbers.rs`, and both are tested against the same
+  sentences in `src-tauri/src/seogi/numbers.cases.json`, so a rule changed on
+  one side fails the other side's test. Punctuation is kept; nothing else
+  tidies the text.
 - Text goes in through an accessibility service (`InsertService`), which only
   looks for the focused field when there is text to put in. Without it, or
   when no field has the cursor, the text is copied and a toast says

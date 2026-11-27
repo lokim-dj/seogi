@@ -386,7 +386,7 @@ class DictationService : Service() {
         ui.launch {
             val text = try {
                 withContext(engineContext) {
-                    engine.use { e -> Speech.join(Speech.pieces(pcm).map { e.transcribe(it) }) }
+                    engine.use { e -> Speech.written(Speech.pieces(pcm).map { e.transcribe(it) }) }
                 }
             } catch (e: CancellationException) {
                 throw e // the key was turned off meanwhile: nothing failed, nothing to say

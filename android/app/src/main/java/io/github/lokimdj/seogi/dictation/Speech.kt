@@ -46,6 +46,13 @@ object Speech {
 
     /** The pieces' texts as one: trimmed, empty ones dropped, joined by a space. Punctuation is kept. */
     fun join(texts: List<String>): String = texts.map { it.trim() }.filter { it.isNotEmpty() }.joinToString(" ")
+
+    /**
+     * What is typed: the pieces joined, then spoken numbers before a unit
+     * written as digits by the computer's rules ("세 시 반" → "3시 반", see
+     * [Numbers]). Punctuation is kept.
+     */
+    fun written(texts: List<String>): String = Numbers.toDigits(join(texts))
 }
 
 /** Text put into a field: where it goes and where the cursor ends up. */

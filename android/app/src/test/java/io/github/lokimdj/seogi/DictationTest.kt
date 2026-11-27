@@ -70,6 +70,13 @@ class DictationTest {
         assertEquals("", Speech.join(listOf(" ", "")))
     }
 
+    /** What is typed has the numbers written as the computer writes them, and keeps its punctuation. */
+    @Test fun writtenTextHasDigitsAndKeepsPunctuation() {
+        assertEquals("안녕하세요. 내일 3시에 봬요!", Speech.written(listOf(" 안녕하세요. ", "", "내일 세 시에 봬요!")))
+        assertEquals("첫 번째 두 번째 세 번째", Speech.written(listOf("첫 번째 두 번째 세 번째")))
+        assertEquals("", Speech.written(listOf(" ", "")))
+    }
+
     // --- putting text into a field ---
 
     @Test fun insertAtTheCursorWithASpace() {
