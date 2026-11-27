@@ -30,6 +30,9 @@ pub enum Status {
 
 static MEETING_RECORDING: AtomicBool = AtomicBool::new(false);
 static MEETING_BUSY: AtomicBool = AtomicBool::new(false);
+/// The meeting's microphone went away and is being opened again: the dot
+/// stops blinking and stays low until sound comes in again.
+static MEETING_RECONNECTING: AtomicBool = AtomicBool::new(false);
 /// The blink's off half is showing.
 static DIM: AtomicBool = AtomicBool::new(false);
 static BLINKING: AtomicBool = AtomicBool::new(false);
@@ -82,7 +85,18 @@ pub fn dim() -> bool {
 /// A meeting started or stopped being recorded.
 pub fn set_meeting_recording(app: &AppHandle, recording: bool) {
     MEETING_RECORDING.store(recording, Ordering::SeqCst);
+    if !recording {
+        MEETING_RECONNECTING.store(false, Ordering::SeqCst);
+    }
     changed(app);
+}
+
+/// The meeting's microphone went away (true) or came back (false).
+pub fn set_meeting_reconnecting(app: &AppHandle, reconnecting: bool) {
+    if MEETING_RECONNECTING.swap(reconnecting, Ordering::SeqCst) != reconnecting {
+        DIM.store(reconnecting, Ordering::SeqCst);
+        crate::tray::refresh_tray_icon(app);
+    }
 }
 
 /// The queue started or finished working on a meeting.
@@ -121,7 +135,11 @@ fn blink(app: AppHandle) {
     let recording = || SHOWN.load(Ordering::SeqCst) == code(Status::Recording);
     loop {
         loop {
-            DIM.store(false, Ordering::SeqCst);
+            // Low all the time while the microphone is being looked for.
+            DIM.store(
+                MEETING_RECONNECTING.load(Ordering::SeqCst),
+                Ordering::SeqCst,
+            );
             crate::tray::refresh_tray_icon(&app);
             std::thread::sleep(ON);
             if !recording() {

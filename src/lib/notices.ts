@@ -66,6 +66,9 @@ const NOTICE_DISPLAY: Record<NoticeCode, NoticeDisplay> = {
   CalendarPermissionLost: {
     title: "errors.calendarPermissionLostTitle",
   },
+  MicrophoneReconnecting: {
+    title: "errors.microphoneReconnectingTitle",
+  },
   CalendarUnreadable: {
     title: "errors.calendarUnreadableTitle",
   },

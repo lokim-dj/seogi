@@ -434,6 +434,11 @@ const en: Strings = {
       file_incomplete:
         "The recording file was not completed and was recovered.",
     },
+    gapsLabel: "Microphone lost",
+    gapsLead: "What was said meanwhile is not in the recording or the minutes.",
+    gap: "({{length}} lost)",
+    gapOpen: "(lost)",
+    gapLength: { h: "{{n}} h", m: "{{n}} min", s: "{{n}} s" },
     openFolder: "Open folder",
     rewrite: "Write the minutes again",
     showMinutesFile: "Show the minutes file",
@@ -589,6 +594,9 @@ const en: Strings = {
     hearing: "Listening on {{device}}",
     noSound:
       "No sound is arriving at all. Check that the microphone is not muted and is allowed.",
+    reconnecting: "Microphone lost, reconnecting",
+    reconnectingHint:
+      "The meeting goes on. When the microphone is back, the same recording continues. If it stays away over 10 minutes, the minutes are made from what was recorded.",
     micDenied:
       "The microphone may not be used, so nothing was recorded. Turn Seogi on in System Settings › Privacy & Security › Microphone and press again.",
     mark: "Mark this",

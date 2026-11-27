@@ -823,14 +823,33 @@ impl Transcript {
 
     /// Plain text: one paragraph per line, with its time and speaker.
     pub fn to_text(&self) -> String {
+        self.to_text_with_gaps(&[])
+    }
+
+    /// [`Transcript::to_text`], with a line `[time] (12초 끊김)` where the
+    /// microphone was away while recording, so a reader knows the talk
+    /// around it is not continuous.
+    pub fn to_text_with_gaps(&self, gaps: &[super::store::Gap]) -> String {
         let mut out = String::new();
+        let mut gaps: Vec<&super::store::Gap> = gaps.iter().collect();
+        gaps.sort_by_key(|gap| gap.at_ms);
+        let mut gaps = gaps.into_iter().peekable();
+        let gap_line = |out: &mut String, gap: &super::store::Gap| {
+            out.push_str(&format!("[{}] {}\n", clock(gap.at_ms), gap.note()));
+        };
         for paragraph in self.paragraphs() {
+            while let Some(gap) = gaps.next_if(|gap| gap.at_ms <= paragraph.start_ms) {
+                gap_line(&mut out, gap);
+            }
             out.push_str(&format!("[{}] ", clock(paragraph.start_ms)));
             if self.has_speakers() {
                 out.push_str(&format!("{}: ", self.speaker_name(paragraph.speaker)));
             }
             out.push_str(&paragraph.text);
             out.push('\n');
+        }
+        for gap in gaps {
+            gap_line(&mut out, gap);
         }
         out
     }
@@ -1243,6 +1262,36 @@ mod tests {
         assert!(transcript
             .to_srt()
             .contains("00:00:00,000 --> 00:00:01,000\n혼자 말합니다."));
+    }
+
+    #[test]
+    fn where_the_microphone_was_away_is_a_line_of_the_transcript() {
+        use super::super::store::Gap;
+        let transcript = Transcript {
+            segments: vec![
+                segment(0, 1000, 1, "앞의 이야기."),
+                segment(5000, 6000, 1, "뒤의 이야기."),
+            ],
+            speakers: vec![Speaker {
+                id: 1,
+                name: "화자 1".into(),
+            }],
+            ..Default::default()
+        };
+        let gaps = [
+            Gap {
+                at_ms: 9_000,
+                gap_ms: 30_000,
+            },
+            Gap {
+                at_ms: 2_000,
+                gap_ms: 12_000,
+            },
+        ];
+        assert_eq!(
+            transcript.to_text_with_gaps(&gaps),
+            "[00:00:00] 앞의 이야기.\n[00:00:02] (12초 끊김)\n[00:00:05] 뒤의 이야기.\n[00:00:09] (30초 끊김)\n"
+        );
     }
 
     #[test]

@@ -8,6 +8,7 @@ import {
   commands,
   type Answer,
   type Entry,
+  type Gap,
   type Meeting,
   type MinutesSection,
   type NameScope,
@@ -537,6 +538,24 @@ function onScrollBar(event: PointerEvent): boolean {
   return false;
 }
 
+/** How long the microphone was away, as the transcript says it: (12초 끊김). */
+function useGapText() {
+  const { t } = useTranslation(NS);
+  return (gap: Gap) => {
+    // The app stopped while the microphone was away: no length is known.
+    if (gap.gap_ms === 0) return t("minutes.gapOpen");
+    const seconds = Math.max(1, Math.ceil(gap.gap_ms / 1000));
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor(seconds / 60) % 60;
+    const s = seconds % 60;
+    const parts: string[] = [];
+    if (h > 0) parts.push(t("minutes.gapLength.h", { n: h }));
+    if (m > 0) parts.push(t("minutes.gapLength.m", { n: m }));
+    if (s > 0 && h === 0) parts.push(t("minutes.gapLength.s", { n: s }));
+    return t("minutes.gap", { length: parts.join(" ") });
+  };
+}
+
 function useGoToSpot(
   sheet: React.RefObject<HTMLElement | null>,
   jump: Jump | null,
@@ -595,6 +614,7 @@ function Sheet({
   jump: Jump | null;
 }) {
   const { t, i18n } = useTranslation(NS);
+  const gapText = useGapText();
   // A stand-in transcribed this meeting, and the model it stood in for
   // is here now: offer to transcribe it again with that one.
   const readiness = useSeogi((s) => s.readiness);
@@ -960,6 +980,18 @@ function Sheet({
                   {t(`minutes.captureNote.${meeting.capture_note}`, {
                     defaultValue: t("minutes.captureNote.file_incomplete"),
                   })}
+                </dd>
+              </>
+            ) : null}
+            {meeting.gaps && meeting.gaps.length > 0 ? (
+              <>
+                <dt className="t3">{t("minutes.gapsLabel")}</dt>
+                <dd className="m-0">
+                  {[...meeting.gaps]
+                    .sort((a, b) => a.at_ms - b.at_ms)
+                    .map((gap) => `${clock(gap.at_ms)} ${gapText(gap)}`)
+                    .join(", ")}
+                  <span className="t3"> {t("minutes.gapsLead")}</span>
                 </dd>
               </>
             ) : null}
@@ -2369,6 +2401,17 @@ function Transcript({
   const current = useRef<HTMLDivElement | null>(null);
   const transcript = meeting.transcript;
   const marks = meeting.marks_ms ?? [];
+  const gapText = useGapText();
+  const gaps = [...(meeting.gaps ?? [])].sort((a, b) => a.at_ms - b.at_ms);
+  const gapRow = (gap: Gap) => (
+    <div
+      key={`gap-${gap.at_ms}`}
+      className="flex items-center gap-2.5 py-1.5 text-[13px] t3"
+    >
+      <TimeKey ms={gap.at_ms} onListen={(ms) => player.seek(ms)} icon={false} />
+      <span>{gapText(gap)}</span>
+    </div>
+  );
 
   const lines = useMemo(
     () => paragraphs(transcript?.segments ?? []),
@@ -2466,7 +2509,7 @@ function Transcript({
         const goingOn = index > 0 && lines[index - 1].speaker === line.speaker;
         const shown = asWritten ? line.original : line.text;
         const noise = isGibberish(shown, korean);
-        return (
+        const row = (
           <div
             key={line.startMs}
             ref={on ? current : undefined}
@@ -2642,7 +2685,24 @@ function Transcript({
                   ))}
           </div>
         );
+        // Where the microphone was away, between the lines around it.
+        const gapsBefore = gaps.filter(
+          (gap) =>
+            gap.at_ms <= line.startMs &&
+            (index === 0 || gap.at_ms > lines[index - 1].startMs),
+        );
+        return gapsBefore.length > 0 ? (
+          <Fragment key={line.startMs}>
+            {gapsBefore.map((gap) => gapRow(gap))}
+            {row}
+          </Fragment>
+        ) : (
+          row
+        );
       })}
+      {gaps
+        .filter((gap) => gap.at_ms > lines[lines.length - 1].startMs)
+        .map((gap) => gapRow(gap))}
       {picked && !panel ? (
         <PickKey
           picked={picked}

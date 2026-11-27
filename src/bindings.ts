@@ -2648,7 +2648,13 @@ section: string; index: number;
  * When it was said, for a transcript line.
  */
 ms: number | null }
-export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
+/**
+ * A stretch of a meeting the microphone did not hear: it went away
+ * `at_ms` into the recording and came back `gap_ms` later. Nothing was
+ * written for it, so the recording goes straight on from that moment.
+ */
+export type Gap = { at_ms: number; gap_ms: number }
+export type GpuDeviceOption ={ id: string; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean; 
 /**
  * The name of the file this entry was transcribed from; `None` for a
@@ -2888,7 +2894,13 @@ mark_notes?: string[]; event?: EventRef | null;
 /**
  * The microphone, for a recording made in the app.
  */
-device?: string; 
+device?: string;
+/**
+ * Where the microphone went away while this was being recorded (a
+ * laptop's lid closed, a headset dropped) and came back, in the order
+ * they happened. The recording itself holds only what was heard.
+ */
+gaps?: Gap[];
 /**
  * Set when a recording made here did not end as it should have:
  * `app_stopped`, `microphone_lost` or `file_incomplete`. It stays with
@@ -3123,6 +3135,12 @@ export type NoticeCode = "TranscriptionFailed" | "PasteFailed" | "PasteBlockedEl
  */
 "CalendarPermissionLost" |
 /**
+ * The microphone went away while a meeting is being recorded (a
+ * laptop's lid closed, a headset dropped). The meeting stays open and
+ * the microphone is opened again as soon as it is back.
+ */
+"MicrophoneReconnecting" |
+/**
  * Seogi may read the Calendar app, yet no calendar came back, even
  * after a refresh and over a fresh connection, so no meeting is
  * announced. Restarting Seogi reads them again.
@@ -3151,7 +3169,11 @@ export type NoticeSource = "dictation" | "file" | "model" |
  * Whether the system lets dictation type. Its own slot, so a take's
  * notice neither replaces nor clears it.
  */
-"typing"
+"typing" |
+/**
+ * A meeting being recorded.
+ */
+"recording"
 export type NoticesChanged = { 
 /**
  * Every active notice, newest first.
@@ -3416,7 +3438,12 @@ marks_ms: number[]; device: string;
 /**
  * No sound at all is arriving: the microphone is muted or not allowed.
  */
-no_sound: boolean }
+no_sound: boolean;
+/**
+ * The microphone went away (a lid closed, a headset dropped) and is
+ * being opened again. The meeting stays open meanwhile.
+ */
+reconnecting: boolean }
 export type RecordingStateEvent = { phase: RecordingPhase }
 /**
  * An entry the user took out of the minutes, kept so it can be put back

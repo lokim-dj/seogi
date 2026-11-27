@@ -75,6 +75,10 @@ const today = (hours: number, minutes: number) => {
 
 const done = consultMeeting as unknown as Meeting;
 done.started_at_ms = today(10, 30);
+if (new URLSearchParams(window.location.search).get("mic") === "lost") {
+  // `?screen=minutes&mic=lost`: the lid closed for a moment mid-meeting.
+  done.gaps = [{ at_ms: 100_000, gap_ms: 17_000 }];
+}
 if (screen === "minutes-edited" || screen === "minutes-editing") {
   // What the user changed: a task's words, one taken out, one added, and a
   // transcript line fixed (src-tauri/src/seogi/minutes.rs, transcript.rs).
@@ -550,6 +554,9 @@ const recording: RecordingState = {
   marks_ms: [4 * minute + 12000, 12 * minute + 41000, 19 * minute + 5000],
   device: "MacBook Pro 마이크",
   no_sound: false,
+  // `?screen=recording&mic=lost`: the lid closed mid-meeting.
+  reconnecting:
+    new URLSearchParams(window.location.search).get("mic") === "lost",
 };
 
 const recordingMeeting: Meeting = {
