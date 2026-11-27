@@ -42,6 +42,9 @@ import androidx.work.WorkManager
 import com.google.android.gms.auth.api.identity.AuthorizationResult
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.CommonStatusCodes
+import io.github.lokimdj.seogi.data.ListEntry
+import io.github.lokimdj.seogi.data.MeetingLibrary
+import io.github.lokimdj.seogi.data.MeetingList
 import io.github.lokimdj.seogi.data.Recording
 import io.github.lokimdj.seogi.data.UploadError
 import io.github.lokimdj.seogi.data.UploadState
@@ -51,7 +54,11 @@ import io.github.lokimdj.seogi.record.CalendarReader
 import io.github.lokimdj.seogi.record.RecState
 import io.github.lokimdj.seogi.record.RecorderService
 import io.github.lokimdj.seogi.record.Space
+import io.github.lokimdj.seogi.ui.AudioPlayer
+import io.github.lokimdj.seogi.ui.AudioState
 import io.github.lokimdj.seogi.ui.ConfirmDialog
+import io.github.lokimdj.seogi.ui.MeetingScreen
+import io.github.lokimdj.seogi.ui.PlayState
 import io.github.lokimdj.seogi.ui.DictationScreen
 import io.github.lokimdj.seogi.ui.LicensesScreen
 import io.github.lokimdj.seogi.ui.UndoBar
@@ -73,13 +80,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private enum class Screen { ONBOARDING, HOME, RECORDING, UPLOADS, SETTINGS, DICTATION, LICENSES }
+private enum class Screen { ONBOARDING, HOME, RECORDING, UPLOADS, SETTINGS, DICTATION, LICENSES, MEETING }
 
 class MainActivity : ComponentActivity() {
     private val app get() = application as SeogiApp
     private var pickedEmail: String? = null
 
     private var deleteTarget by mutableStateOf<Recording?>(null)
+
+    /** Plays the open meeting's recording (read only). */
+    private val player by lazy { AudioPlayer(this) }
+    private var audioState by mutableStateOf<AudioState>(AudioState.None)
+    private var playState by mutableStateOf(PlayState(false, 0, 0))
+    private var audioUri: Uri? = null
+    private var openKey: String? = null
 
     /** Why the last sign-in did not work, shown in red until the next try. */
     private var loginMessage by mutableStateOf<String?>(null)
@@ -187,6 +201,7 @@ class MainActivity : ComponentActivity() {
                 app.store.update(rec.id) { it.copy(upload = UploadState.WAITING, error = null) }
             }
             UploadQueue.enqueue(this@MainActivity, if (switched) UploadQueue.Mode.REPLACE else UploadQueue.Mode.APPEND)
+            app.refreshMeetings(now = true)
         }
     }
 
@@ -235,6 +250,87 @@ class MainActivity : ComponentActivity() {
         Intent(SystemSettings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)),
     )
 
+    /** A meeting was opened: where its recording is, without downloading anything. */
+    private fun openAudio(e: ListEntry) {
+        if (openKey == e.key) return
+        player.release()
+        openKey = e.key
+        playState = PlayState(false, 0, 0)
+        val local = e.recording?.mediaUri?.let(Uri::parse)
+        val m = e.meeting
+        audioUri = local
+        audioState = when {
+            local != null -> AudioState.Ready
+            m?.audioFileId != null -> AudioState.InDrive(m.audioSize)
+            else -> AudioState.None
+        }
+    }
+
+    private fun closeAudio() {
+        player.release()
+        openKey = null
+        audioUri = null
+        playState = PlayState(false, 0, 0)
+    }
+
+    /**
+     * Plays from [ms] (or from where it was). A recording only in Drive is
+     * downloaded first, now that the user asked for it (issue #67, truth 4).
+     */
+    private fun playAt(e: ListEntry, ms: Long?) {
+        when (val st = audioState) {
+            AudioState.Ready -> {
+                val uri = audioUri ?: return
+                if (!player.play(uri, ms)) {
+                    Toast.makeText(this, R.string.p_cannot_play, Toast.LENGTH_SHORT).show()
+                    return
+                }
+                playState = PlayState(true, player.positionMs, player.durationMs)
+            }
+            is AudioState.InDrive, AudioState.Failed -> {
+                val m = e.meeting ?: return
+                audioState = AudioState.Downloading(0f)
+                val key = e.key
+                lifecycleScope.launch {
+                    val file = try {
+                        withContext(Dispatchers.IO) {
+                            app.meetings.audio(m.id, cacheDir) { p ->
+                                lifecycleScope.launch(Dispatchers.Main) {
+                                    if (openKey == key && audioState is AudioState.Downloading) audioState = AudioState.Downloading(p)
+                                }
+                            }
+                        }
+                    } catch (x: MeetingLibrary.NeedLogin) {
+                        login()
+                        null
+                    } catch (x: Exception) {
+                        null
+                    }
+                    if (openKey != key) return@launch
+                    if (file == null) {
+                        audioState = AudioState.Failed
+                    } else {
+                        audioUri = Uri.fromFile(file)
+                        audioState = AudioState.Ready
+                        playAt(e, ms)
+                    }
+                }
+            }
+            is AudioState.Downloading, AudioState.None -> Unit
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (player.playing) player.pause()
+        playState = playState.copy(playing = false)
+    }
+
+    override fun onDestroy() {
+        player.release()
+        super.onDestroy()
+    }
+
     @Composable
     private fun Root() {
         val settings = app.settings
@@ -250,9 +346,14 @@ class MainActivity : ComponentActivity() {
         val wifiOnly by settings.wifiOnly.collectAsState()
         val error by RecorderService.error.collectAsState()
         val saveProblem by app.saveProblem.collectAsState()
+        val driveMeetings by app.meetings.all.collectAsState()
+        val meetingsProblem by app.meetingsProblem.collectAsState()
+        val entries = MeetingList.merge(recordings, driveMeetings)
+        var openEntry by rememberSaveable { mutableStateOf<String?>(null) }
 
         fun refresh() {
             app.recoverLeftovers()
+            app.refreshMeetings()
             perms = perms()
             now = System.currentTimeMillis()
             lifecycleScope.launch { events = withContext(Dispatchers.IO) { CalendarReader.today(this@MainActivity) } }
@@ -305,8 +406,30 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        fun openMeeting(e: ListEntry) {
+            openEntry = e.key
+            openAudio(e)
+            screen = Screen.MEETING
+        }
+        fun closeMeeting() {
+            closeAudio()
+            openEntry = null
+            screen = Screen.UPLOADS
+        }
+        // While playing, the line follows the recording.
+        LaunchedEffect(playState.playing) {
+            while (playState.playing) {
+                kotlinx.coroutines.delay(250)
+                playState = PlayState(player.playing, player.positionMs, player.durationMs)
+            }
+        }
+
         BackHandler(enabled = screen !in setOf(Screen.HOME, Screen.ONBOARDING)) {
-            screen = if (screen == Screen.LICENSES) Screen.SETTINGS else Screen.HOME
+            when (screen) {
+                Screen.LICENSES -> screen = Screen.SETTINGS
+                Screen.MEETING -> closeMeeting()
+                else -> screen = Screen.HOME
+            }
         }
 
         // Home and recording lay themselves out in two panes when wide; the
@@ -336,6 +459,7 @@ class MainActivity : ComponentActivity() {
                     event = CalendarPick.next(events, now),
                     now = now,
                     recordings = recordings,
+                    entries = entries,
                     wifiOnly = wifiOnly,
                     signedIn = account != null,
                     onRecord = {
@@ -358,6 +482,7 @@ class MainActivity : ComponentActivity() {
                     onLogin = ::login,
                     onDelete = { deleteTarget = it },
                     saveProblem = saveProblem,
+                    onOpen = ::openMeeting,
                 )
                 Screen.RECORDING -> RecordingScreen(
                     rec = rec,
@@ -368,6 +493,7 @@ class MainActivity : ComponentActivity() {
                 )
                 Screen.UPLOADS -> UploadsScreen(
                     recordings = recordings,
+                    entries = entries,
                     account = account,
                     wifiOnly = wifiOnly,
                     now = now,
@@ -379,7 +505,40 @@ class MainActivity : ComponentActivity() {
                     onLogin = ::login,
                     onWifiOnly = ::setWifiOnly,
                     onDelete = { deleteTarget = it },
+                    onOpen = ::openMeeting,
+                    listProblem = when (meetingsProblem) {
+                        MeetingLibrary.Outcome.OFFLINE -> stringResource(R.string.list_offline)
+                        MeetingLibrary.Outcome.FAILED -> stringResource(R.string.list_failed)
+                        else -> null
+                    },
+                    onRefresh = { app.refreshMeetings(now = true) },
                 )
+                Screen.MEETING -> {
+                    val e = entries.firstOrNull { it.key == openEntry }
+                    val m = e?.meeting
+                    if (e == null || m == null) {
+                        LaunchedEffect(Unit) { closeMeeting() }
+                    } else {
+                        // Back from the background: the recording's place is found again.
+                        LaunchedEffect(e.key) { openAudio(e) }
+                        MeetingScreen(
+                            title = m.title,
+                            startedAt = m.startedAtMs,
+                            durationMs = m.durationMs,
+                            fromPhone = m.origin == "phone",
+                            doc = remember(m.id, m.jsonVersion, m.jsonFileId) { app.meetings.doc(m.id) },
+                            now = now,
+                            audio = audioState,
+                            play = playState,
+                            onBack = ::closeMeeting,
+                            onPlayAt = { ms -> playAt(e, ms) },
+                            onPause = {
+                                player.pause()
+                                playState = playState.copy(playing = false)
+                            },
+                        )
+                    }
+                }
                 Screen.SETTINGS -> SettingsScreen(
                     account = account,
                     wifiOnly = wifiOnly,

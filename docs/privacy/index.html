@@ -191,6 +191,13 @@
             컴퓨터의 서기가 쓰도록 둔 파일입니다.
           </li>
           <li>
+            <strong>회의록 읽기</strong>: 같은 <code>서기</code> 폴더에서
+            컴퓨터의 서기가 만든 회의 폴더를 찾아, 앱이 읽는
+            요약(<code>회의.json</code>: 할 일, 이야기, 받아쓴 글, 말한 사람)을
+            폰 안 앱 저장소로 내려받아 보여 줍니다. 녹음은 내가 듣기를 누를 때만
+            폰 안 앱 임시 저장소로 내려받고, 드라이브의 녹음은 읽기만 합니다.
+          </li>
+          <li>
             <strong>구글 계정 이메일 주소</strong>: 어느 계정으로 올리는지 보여
             주고, 지울 때 같은 계정인지 확인하려고 폰 안 앱 설정에 둡니다.
           </li>
@@ -215,7 +222,9 @@
           <li>
             이 권한으로 하는 일: 서기가 만든 <code>서기</code> 폴더 찾기와
             만들기, 그 폴더가 아직 있는지 확인하기, 녹음과 설명 파일 올리기,
-            내가 녹음을 지울 때 서기가 올린 그 파일을 드라이브 휴지통으로
+            컴퓨터의 서기가 그 폴더에 둔 회의 목록과
+            <code>회의.json</code> 읽기, 내가 누른 회의의 녹음 내려받기, 내가
+            녹음을 지울 때 서기가 올린 그 파일을 드라이브 휴지통으로
             옮기기(올리던 중이면 그 올리기를 멈추기), 그리고 어느 계정인지 보여
             주려고 계정의 이메일 주소 읽기. 구글 계정 선택 창으로 로그인하면
             구글이 계정의 기본 프로필을 함께 건네지만, 서기는 그중 이메일 주소만
@@ -437,11 +446,21 @@
           <li>
             <strong>Upload to your Google Drive</strong>: when a recording ends
             it is uploaded to the Drive of the Google account you signed in
-            with, into a folder named <code>서기 폰 녹음</code>. A small
-            description file goes with it (file name, start time, length,
-            important marks, recording name, calendar event title, phone model,
-            app version, a fingerprint of the file, whether it was recovered
-            after a crash), for Seogi on your computer.
+            with, into a folder named <code>서기</code> (earlier
+            <code>서기 폰 녹음</code>). A small description file goes with it
+            (file name, start time, length, important marks, recording name,
+            calendar event title, phone model, app version, a fingerprint of the
+            file, whether it was recovered after a crash), for Seogi on your
+            computer.
+          </li>
+          <li>
+            <strong>Reading minutes</strong>: in the same <code>서기</code>
+            folder the app finds the meeting folders Seogi on your computer made
+            and downloads each one's summary for apps (<code>회의.json</code>:
+            tasks, story, transcript, speakers) into the app's own storage on
+            the phone, to show it. A recording is downloaded, into the app's
+            temporary storage, only when you press play; the recording in Drive
+            is only read.
           </li>
           <li>
             <strong>Your Google account's email address</strong> is kept in the
@@ -472,13 +491,15 @@
             What it does with that access: find and create the
             <code>서기</code> folder it made (earlier named
             <code>서기 폰 녹음</code>), check that the folder still exists,
-            upload recordings and their description files, move a recording it
-            uploaded (and its description file) to the Drive trash when you
-            delete that recording (stopping the upload if it is still under
-            way), and read your account's email address to show which account is
-            in use. If you sign in through Google's account picker, Google also
-            hands over the account's basic profile; Seogi uses only the email
-            address from it.
+            upload recordings and their description files, read the list of
+            meetings Seogi on your computer put in that folder and their
+            <code>회의.json</code>, download the recording of a meeting you
+            press play on, move a recording it uploaded (and its description
+            file) to the Drive trash when you delete that recording (stopping
+            the upload if it is still under way), and read your account's email
+            address to show which account is in use. If you sign in through
+            Google's account picker, Google also hands over the account's basic
+            profile; Seogi uses only the email address from it.
           </li>
           <li>
             If you connect Google in Seogi on your computer (Settings › Storage

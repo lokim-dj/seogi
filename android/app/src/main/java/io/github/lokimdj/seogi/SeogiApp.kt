@@ -3,6 +3,7 @@ package io.github.lokimdj.seogi
 import android.app.Application
 import android.net.Uri
 import android.provider.MediaStore
+import io.github.lokimdj.seogi.data.MeetingLibrary
 import io.github.lokimdj.seogi.data.PhoneFile
 import io.github.lokimdj.seogi.data.Reconcile
 import io.github.lokimdj.seogi.data.RecordingStore
@@ -18,6 +19,7 @@ import io.github.lokimdj.seogi.upload.DriveApi
 import io.github.lokimdj.seogi.upload.GoogleAuth
 import io.github.lokimdj.seogi.upload.TokenResult
 import io.github.lokimdj.seogi.upload.UploadQueue
+import io.github.lokimdj.seogi.upload.Uploader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -44,6 +46,39 @@ class SeogiApp : Application() {
         if (store.restoredFromBackup) scope.launch { reconcileWithPhone() }
         recoverLeftovers()
         UploadQueue.enqueue(this, UploadQueue.Mode.KEEP)
+    }
+
+    /** The meetings in the shared Drive folder, the computer's too (issue #67). */
+    val meetings by lazy {
+        MeetingLibrary(
+            dir = File(filesDir, "meetings"),
+            reader = DriveApi(),
+            tokens = { settings.email.value?.let { GoogleAuth.token(this, it.ifEmpty { null }) } ?: TokenResult.NeedLogin },
+            folder = object : Uploader.FolderCache {
+                override var folderId: String?
+                    get() = settings.driveFolderId
+                    set(v) { settings.driveFolderId = v }
+            },
+        )
+    }
+
+    /** How the last look at the shared folder went; null while it went fine. */
+    val meetingsProblem = MutableStateFlow<MeetingLibrary.Outcome?>(null)
+    private var lastLook = 0L
+
+    /**
+     * Looks at the shared Drive folder for new or changed meetings, at most
+     * once a minute unless [now]. Does nothing before the first sign-in.
+     */
+    fun refreshMeetings(now: Boolean = false) {
+        if (settings.email.value == null) return
+        val t = System.currentTimeMillis()
+        if (!now && t - lastLook < 60_000) return
+        lastLook = t
+        scope.launch {
+            val outcome = meetings.refresh()
+            meetingsProblem.value = outcome.takeIf { it != MeetingLibrary.Outcome.DONE }
+        }
     }
 
     /** A recording could not be saved; it stays for the next start. Shown in red on the home. */

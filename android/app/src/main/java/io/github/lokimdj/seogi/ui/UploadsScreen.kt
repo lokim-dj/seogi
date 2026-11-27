@@ -16,13 +16,19 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.lokimdj.seogi.R
+import io.github.lokimdj.seogi.data.ListEntry
 import io.github.lokimdj.seogi.data.Recording
 import io.github.lokimdj.seogi.data.UploadState
 
-/** Uploads: where they go, one state per line, and the Wi-Fi rule. */
+/**
+ * Every meeting: the recordings made here with their upload state, and the
+ * meetings in the shared Drive folder (the computer's too) with their
+ * minutes; where uploads go, and the Wi-Fi rule.
+ */
 @Composable
 fun UploadsScreen(
     recordings: List<Recording>,
+    entries: List<ListEntry>,
     account: String?,
     wifiOnly: Boolean,
     now: Long,
@@ -32,6 +38,9 @@ fun UploadsScreen(
     onLogin: () -> Unit,
     onWifiOnly: (Boolean) -> Unit,
     onDelete: (Recording) -> Unit = {},
+    onOpen: (ListEntry) -> Unit = {},
+    listProblem: String? = null,
+    onRefresh: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize().padding(horizontal = Gutter)) {
         Spacer(Modifier.height(10.dp))
@@ -53,20 +62,31 @@ fun UploadsScreen(
                             modifier = Modifier.clickable(onClick = onLogin),
                         )
                     }
+                    if (listProblem != null) {
+                        T(
+                            listProblem, size = 12.5.sp, color = pal.rt, medium = true,
+                            modifier = Modifier.padding(top = 10.dp).clickable(onClick = onRefresh),
+                        )
+                    }
                     Spacer(Modifier.height(22.dp))
                 }
             }
-            items(recordings, key = { it.id }) { r ->
-                val l = lineText(r, recordings, wifiOnly, now, detailed = true)
+            items(entries, key = { it.key }) { e ->
+                val l = entryLineText(e, recordings, wifiOnly, now, detailed = true)
+                val r = e.recording
                 Hairline()
                 ListLine(
-                    r.title, l.state, l.sub, l.color, l.medium, l.progress,
-                    onClick = if (r.upload == UploadState.FAILED) ({ onRetry(r) }) else null,
-                    onLongClick = { onDelete(r) },
-                    longClickLabel = stringResource(R.string.delete_confirm),
+                    e.title, l.state, l.sub, l.color, l.medium, l.progress,
+                    onClick = when {
+                        e.meeting != null -> ({ onOpen(e) })
+                        r != null && r.upload == UploadState.FAILED -> ({ onRetry(r) })
+                        else -> null
+                    },
+                    onLongClick = r?.let { ({ onDelete(it) }) },
+                    longClickLabel = if (r != null) stringResource(R.string.delete_confirm) else null,
                 )
             }
-            if (recordings.isNotEmpty()) item { Hairline() }
+            if (entries.isNotEmpty()) item { Hairline() }
         }
         Column(Modifier.padding(top = 14.dp, bottom = 12.dp)) {
             Row(Modifier.fillMaxWidth().clickable { onWifiOnly(!wifiOnly) }.padding(bottom = 8.dp)) {
