@@ -96,6 +96,14 @@ class ModelDownloaderTest {
         assertFalse(dest.exists())
     }
 
+    @Test fun aMissingFileIsNotRetriedForEver() {
+        val part = tmp.root.resolve("m.gguf.part")
+        val gone = RangeFetch { _, _ -> Fetched(404, ByteArrayInputStream(ByteArray(0))) }
+        assertEquals(ModelDownloader.Result.Unavailable(404), downloader(gone).download(part, tmp.root.resolve("m.gguf"), {}, { false }))
+        val busy = RangeFetch { _, _ -> Fetched(429, ByteArrayInputStream(ByteArray(0))) }
+        assertTrue(runCatching { downloader(busy).download(part, tmp.root.resolve("m.gguf"), {}, { false }) }.exceptionOrNull() is IOException)
+    }
+
     @Test fun aServerErrorIsANetworkProblemToRetry() {
         val part = tmp.root.resolve("m.gguf.part")
         val failing = RangeFetch { _, _ -> Fetched(503, ByteArrayInputStream(ByteArray(0))) }

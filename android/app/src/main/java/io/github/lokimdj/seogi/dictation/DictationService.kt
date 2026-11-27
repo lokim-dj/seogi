@@ -29,6 +29,8 @@ import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import io.github.lokimdj.seogi.R
 import io.github.lokimdj.seogi.record.Notifications
+import io.github.lokimdj.seogi.record.RecorderService
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -235,8 +237,10 @@ class DictationService : Service() {
             checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED -> R.string.dict_err_mic_permission
             !DictationModel.isReady(this) -> R.string.dict_err_no_model
             !SpeechEngine.available() -> R.string.dict_err_cpu
-            // Our own app's recordings are the only ones Android shows us: a meeting is being recorded.
-            getSystemService(AudioManager::class.java).activeRecordingConfigurations.isNotEmpty() -> R.string.dict_err_meeting
+            MeetingCheck.recording(
+                RecorderService.sessionDir(this), System.currentTimeMillis(),
+                getSystemService(AudioManager::class.java).activeRecordingConfigurations.isNotEmpty(),
+            ) -> R.string.dict_err_meeting
             else -> null
         }
         if (why != null) {
@@ -251,13 +255,19 @@ class DictationService : Service() {
         mic = m
         setMode(BubbleGesture.Mode.LISTENING)
         view?.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-        // Load the model while the user is still speaking.
+        // Load the model while the user is still speaking, once the touch is
+        // not a drag (a drag cancels this before it runs).
+        main.postDelayed(warm, WARM_AFTER_MS)
+    }
+
+    private val warm = Runnable {
         engineScope.launch {
             try { engine.warm() } catch (e: Throwable) { Log.w(TAG, "could not load the model", e) }
         }
     }
 
     private fun cancelListening() {
+        main.removeCallbacks(warm)
         mic?.cancel()
         mic = null
         if (mode == BubbleGesture.Mode.LISTENING) setMode(BubbleGesture.Mode.IDLE)
@@ -284,6 +294,8 @@ class DictationService : Service() {
                 withContext(engineContext) {
                     engine.use { e -> Speech.join(Speech.pieces(pcm).map { e.transcribe(it) }) }
                 }
+            } catch (e: CancellationException) {
+                throw e // the key was turned off meanwhile: nothing failed, nothing to say
             } catch (e: Throwable) {
                 Log.w(TAG, "transcription failed", e)
                 null
@@ -351,6 +363,7 @@ class DictationService : Service() {
     }
 
     override fun onDestroy() {
+        main.removeCallbacks(warm)
         mic?.cancel()
         mic = null
         removeBubble()
@@ -367,6 +380,7 @@ class DictationService : Service() {
         private const val CHANNEL = "dictation"
         private const val ID_NOTIFICATION = 11
         private const val SIZE_DP = 56
+        private const val WARM_AFTER_MS = 250L
         /** The model is let go after this long without speaking. */
         const val IDLE_MS = 3 * 60_000L
         private const val ACTION_HIDE = "io.github.lokimdj.seogi.dictation.HIDE"

@@ -44,7 +44,7 @@ class SpeechEngine private constructor(private var handle: Long) : AutoCloseable
          */
         fun available(): Boolean {
             loaded?.let { return it }
-            val ok = cpuSupported(readCpuFeatures()) && try {
+            val ok = cpuSupportedHere() && try {
                 System.loadLibrary("seogi_asr")
                 true
             } catch (e: Throwable) {
@@ -62,8 +62,9 @@ class SpeechEngine private constructor(private var handle: Long) : AutoCloseable
             return SpeechEngine(h)
         }
 
-        /** The CPU check alone, without loading the library (for the settings screen). */
-        fun cpuSupportedHere(): Boolean = cpuSupported(readCpuFeatures())
+        /** The check alone, without loading the library (for the settings screen): a 64-bit ARM app with the instructions. */
+        fun cpuSupportedHere(): Boolean =
+            "arm64-v8a" in android.os.Build.SUPPORTED_64_BIT_ABIS && cpuSupported(readCpuFeatures())
 
         private fun readCpuFeatures(): String =
             try { File("/proc/cpuinfo").readText() } catch (e: Exception) { "" }

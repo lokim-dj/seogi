@@ -332,9 +332,13 @@ class MainActivity : ComponentActivity() {
                     ?: DictationModel.partFile(this@MainActivity).length(),
                 DictationModel.SIZE,
             )
-            WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> ModelDownload.WaitingForNetwork
-            WorkInfo.State.FAILED ->
-                if (work.outputData.getBoolean(ModelDownloadWorker.KEY_WRONG, false)) ModelDownload.Wrong else ModelDownload.Idle
+            WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED ->
+                ModelDownload.WaitingForNetwork(wifi = ModelDownloadWorker.TAG_UNMETERED in work.tags)
+            WorkInfo.State.FAILED -> when {
+                work.outputData.getBoolean(ModelDownloadWorker.KEY_WRONG, false) -> ModelDownload.Wrong
+                work.outputData.getBoolean(ModelDownloadWorker.KEY_UNAVAILABLE, false) -> ModelDownload.Unavailable
+                else -> ModelDownload.Idle
+            }
             else -> ModelDownload.Idle
         }
         val askDictationPerms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
@@ -501,7 +505,7 @@ class MainActivity : ComponentActivity() {
                         dict = dictationSetup()
                     },
                     onGetModel = {
-                        if (shortOfSpaceMb() <= 0) ModelDownloadWorker.start(this@MainActivity)
+                        if (shortOfSpaceMb() <= 0) ModelDownloadWorker.start(this@MainActivity, unmetered = !metered())
                     },
                     onStopModel = { ModelDownloadWorker.stop(this@MainActivity) },
                     onSwitch = { v ->

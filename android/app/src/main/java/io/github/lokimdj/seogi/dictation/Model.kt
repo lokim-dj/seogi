@@ -61,6 +61,8 @@ class ModelDownloader(
         data object Stopped : Result
         /** The server sent something that is not the file (a changed revision, a bad copy). */
         data class Wrong(val why: String) : Result
+        /** The server says the file is not there or not for us (404, 403…): trying again will not help. */
+        data class Unavailable(val code: Int) : Result
     }
 
     /** Throws [IOException] when the network drops; what came so far stays in [part]. */
@@ -81,6 +83,8 @@ class ModelDownloader(
                         part.delete()
                         return Result.Wrong("range not satisfiable at $have")
                     }
+                    408, 429 -> throw IOException("HTTP ${r.code}") // busy: later
+                    in 400..499 -> return Result.Unavailable(r.code)
                     else -> throw IOException("HTTP ${r.code}")
                 }
                 RandomAccessFile(part, "rw").use { out ->

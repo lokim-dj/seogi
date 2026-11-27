@@ -77,6 +77,8 @@ object TextInsert {
 /** A text field in another app, as much of it as putting text in needs. */
 interface TextField {
     val editable: Boolean
+    /** A password field shows dots to accessibility, not its text, so it is never rewritten whole. */
+    val password: Boolean
     /** The text, or empty when the field only shows its hint. */
     val text: String
     val selectionStart: Int
@@ -91,10 +93,12 @@ object Inserter {
     /**
      * Puts [text] at the cursor of [field]. The whole new text first (most
      * fields); a paste when the field refuses that (some web pages and rich
-     * editors). False when the field takes neither; the caller copies.
+     * editors, and password fields, whose text accessibility sees only as
+     * dots). False when the field takes neither; the caller copies.
      */
     fun insert(field: TextField, text: String): Boolean {
         if (!field.editable) return false
+        if (field.password) return field.paste(text)
         val merged = TextInsert.merge(field.text, field.selectionStart, field.selectionEnd, text)
         if (field.setText(merged.text)) {
             field.setCursor(merged.cursor)

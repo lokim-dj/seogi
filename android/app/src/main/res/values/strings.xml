@@ -184,6 +184,8 @@
     <string name="dict_model_get">받기 · 850 MB</string>
     <string name="dict_model_progress">받는 중 %1$d%%</string>
     <string name="dict_model_waiting">인터넷을 기다리는 중</string>
+    <string name="dict_model_waiting_wifi">와이파이를 기다리는 중 · 와이파이에서 시작해 와이파이에서만 받아요</string>
+    <string name="dict_model_unavailable">모델을 받을 곳에 닿지 못했어요. 나중에 다시 받아 주세요. 계속 안 되면 GitHub 이슈로 알려 주세요.</string>
     <string name="dict_model_checking">받은 파일을 확인하는 중</string>
     <string name="dict_model_note">화면을 나가도 계속 받습니다. 끊기면 받은 곳부터 이어 받아요.</string>
     <string name="dict_model_stop">멈추기</string>

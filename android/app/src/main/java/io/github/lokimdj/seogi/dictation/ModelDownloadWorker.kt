@@ -48,9 +48,15 @@ class ModelDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
                     android.util.Log.w("Seogi", "model download: ${r.why}")
                     Result.failure(workDataOf(KEY_WRONG to true))
                 }
+                is ModelDownloader.Result.Unavailable -> {
+                    android.util.Log.w("Seogi", "model download: HTTP ${r.code}")
+                    Result.failure(workDataOf(KEY_UNAVAILABLE to true))
+                }
             }
         } catch (e: IOException) {
-            Result.retry()
+            // Interrupted (the network, the server busy): later, from where it stopped.
+            // After many tries in a row it stops and says so, rather than waiting for ever.
+            if (runAttemptCount >= MAX_ATTEMPTS) Result.failure(workDataOf(KEY_UNAVAILABLE to true)) else Result.retry()
         }
     }
 
@@ -58,10 +64,21 @@ class ModelDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
         const val NAME = "dictation-model"
         const val KEY_DONE = "done"
         const val KEY_WRONG = "wrong"
+        const val KEY_UNAVAILABLE = "unavailable"
+        /** Tag of a download that waits for Wi-Fi. */
+        const val TAG_UNMETERED = "unmetered"
+        private const val MAX_ATTEMPTS = 20
 
-        fun start(context: Context) {
+        /**
+         * Starts the download. Begun on Wi-Fi ([unmetered]) it continues only on
+         * Wi-Fi, so a dropped Wi-Fi never moves 850 MB onto mobile data; begun on
+         * mobile data (the screen said so first) it goes on any connection.
+         */
+        fun start(context: Context, unmetered: Boolean) {
+            val net = if (unmetered) NetworkType.UNMETERED else NetworkType.CONNECTED
             val req = OneTimeWorkRequestBuilder<ModelDownloadWorker>()
-                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(net).build())
+                .apply { if (unmetered) addTag(TAG_UNMETERED) }
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(NAME, ExistingWorkPolicy.KEEP, req)

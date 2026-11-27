@@ -41,6 +41,7 @@ class InsertService : AccessibilityService() {
     /** The focused field as [Inserter] sees it. */
     private inner class NodeField(private val node: AccessibilityNodeInfo) : TextField {
         override val editable get() = node.isEditable
+        override val password get() = node.isPassword
         override val text get() = if (node.isShowingHintText) "" else node.text?.toString().orEmpty()
         override val selectionStart get() = node.textSelectionStart
         override val selectionEnd get() = node.textSelectionEnd

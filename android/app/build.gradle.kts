@@ -33,8 +33,8 @@ android {
         val webClientId = localValue("seogi.googleWebClientId", "SEOGI_GOOGLE_WEB_CLIENT_ID") ?: ""
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$webClientId\"")
 
-        // Dictation's speech engine (transcribe.cpp) is built for arm64 phones only.
-        ndk { abiFilters += "arm64-v8a" }
+        // Dictation's speech engine (transcribe.cpp) is built for arm64 only
+        // (see src/main/cpp/CMakeLists.txt); the app itself installs everywhere.
         val tarball = localValue("seogi.transcribeTarball", "SEOGI_TRANSCRIBE_TARBALL") ?: ""
         externalNativeBuild {
             cmake {

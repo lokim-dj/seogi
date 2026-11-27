@@ -8,6 +8,7 @@ import io.github.lokimdj.seogi.dictation.DictationModel
 import io.github.lokimdj.seogi.dictation.Inserter
 import io.github.lokimdj.seogi.dictation.TextField
 import io.github.lokimdj.seogi.dictation.Loaded
+import io.github.lokimdj.seogi.dictation.MeetingCheck
 import io.github.lokimdj.seogi.dictation.SetupState
 import io.github.lokimdj.seogi.dictation.SetupStep
 import io.github.lokimdj.seogi.dictation.Speech
@@ -106,6 +107,7 @@ class DictationTest {
         override val selectionStart: Int,
         override val selectionEnd: Int = selectionStart,
         override val editable: Boolean = true,
+        override val password: Boolean = false,
         val takesText: Boolean = true,
         val takesPaste: Boolean = true,
     ) : TextField {
@@ -135,6 +137,26 @@ class DictationTest {
         assertTrue(Inserter.insert(f, "안녕하세요."))
         assertEquals("안녕하세요.", f.pasted)
         assertEquals("안녕하세요.", f.text)
+    }
+
+    @Test fun aPasswordFieldIsPastedIntoNeverRewritten() {
+        // Accessibility shows a password as dots: rewriting it whole would put the dots in.
+        val f = FakeField("•••", 3, password = true)
+        assertTrue(Inserter.insert(f, "abc"))
+        assertEquals("abc", f.pasted)
+        assertEquals("•••abc", f.text) // the fake's own text; the real field keeps its hidden letters
+    }
+
+    @Test fun aMeetingIsSeogisOwnFreshStreamWhileSomethingRecords() {
+        val dir = kotlin.io.path.createTempDirectory("rec").toFile()
+        val now = System.currentTimeMillis()
+        assertFalse("nothing recording", MeetingCheck.recording(dir, now, anyCapture = true))
+        val stream = File(dir, "20261127-1405.aac").apply { writeBytes(ByteArray(10)); setLastModified(now - 2_000) }
+        assertTrue(MeetingCheck.recording(dir, now, anyCapture = true))
+        assertFalse("no capture: a stream left by a crash", MeetingCheck.recording(dir, now, anyCapture = false))
+        stream.setLastModified(now - 60_000)
+        assertFalse("a stale stream and another app's call", MeetingCheck.recording(dir, now, anyCapture = true))
+        assertFalse(MeetingCheck.recording(File(dir, "missing"), now, anyCapture = true))
     }
 
     @Test fun noFieldToTakeItMeansCopy() {

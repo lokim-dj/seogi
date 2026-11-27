@@ -5,6 +5,13 @@
 cmake_minimum_required(VERSION 3.22)
 project(seogi_asr C CXX)
 
+# The engine is built for arm64 only. Other ABIs (32-bit phones, x86
+# emulators) still get the app, without dictation: SpeechEngine.available()
+# finds no library and the settings say this phone cannot use it.
+if(NOT ANDROID_ABI STREQUAL "arm64-v8a")
+    return()
+endif()
+
 include(FetchContent)
 set(TRANSCRIBE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(TRANSCRIBE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)

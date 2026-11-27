@@ -82,3 +82,20 @@ object Accessibility {
         ComponentName(context, InsertService::class.java),
     )
 }
+
+object MeetingCheck {
+    /** A stream written within this long is a recording under way, not one a crash left behind. */
+    const val FRESH_MS = 15_000L
+
+    /**
+     * True when Seogi is recording a meeting now: something on the phone is
+     * capturing sound ([anyCapture]; Android does not say which app) and
+     * Seogi's own recording stream in [sessionDir] was written moments ago.
+     * Another app's call or recorder alone is not a meeting.
+     */
+    fun recording(sessionDir: File, now: Long, anyCapture: Boolean): Boolean {
+        if (!anyCapture) return false
+        val streams = sessionDir.listFiles { f -> f.name.endsWith(".aac") }.orEmpty()
+        return streams.any { now - it.lastModified() in 0..FRESH_MS }
+    }
+}

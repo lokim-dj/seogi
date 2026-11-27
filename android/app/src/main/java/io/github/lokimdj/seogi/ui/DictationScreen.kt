@@ -26,9 +26,10 @@ import io.github.lokimdj.seogi.dictation.SetupStep
 /** Where the model's download stands, as the screen shows it. */
 sealed interface ModelDownload {
     data object Idle : ModelDownload
-    data object WaitingForNetwork : ModelDownload
+    data class WaitingForNetwork(val wifi: Boolean) : ModelDownload
     data class Running(val done: Long, val size: Long) : ModelDownload
     data object Wrong : ModelDownload
+    data object Unavailable : ModelDownload
 }
 
 /**
@@ -140,14 +141,15 @@ private fun ModelPart(download: ModelDownload, metered: Boolean, shortOfSpaceMb:
             Quiet(stringResource(R.string.dict_model_note))
             if (!checking) Keys { StopKey(onStop) }
         }
-        ModelDownload.WaitingForNetwork -> {
+        is ModelDownload.WaitingForNetwork -> {
             Spacer(Modifier.height(18.dp))
-            T(stringResource(R.string.dict_model_waiting), size = 14.sp)
+            T(stringResource(if (download.wifi) R.string.dict_model_waiting_wifi else R.string.dict_model_waiting), size = 14.sp)
             Quiet(stringResource(R.string.dict_model_note))
             Keys { StopKey(onStop) }
         }
-        ModelDownload.Idle, ModelDownload.Wrong -> {
+        ModelDownload.Idle, ModelDownload.Wrong, ModelDownload.Unavailable -> {
             if (download == ModelDownload.Wrong) Quiet(stringResource(R.string.dict_model_wrong), pal.rt)
+            if (download == ModelDownload.Unavailable) Quiet(stringResource(R.string.dict_model_unavailable), pal.rt)
             if (metered) Quiet(stringResource(R.string.dict_model_metered), pal.rt)
             if (shortOfSpaceMb > 0) Quiet(stringResource(R.string.dict_model_space, shortOfSpaceMb), pal.rt)
             Keys {
