@@ -500,14 +500,18 @@ await flow(
     expect(await called("seogi_talk"), "the talking was not measured");
     // The talking is measured from the made-up transcript (three speakers,
     // none under 1%), so each one has their own share and nobody is "기타".
-    const shares = await page
-      .getByRole("region", { name: "상담 피드백" })
+    const region = page.getByRole("region", { name: "상담 피드백" });
+    const shares = await region
       .getByRole("img")
       .first()
       .getAttribute("aria-label");
     expect(
-      (shares ?? "").split(", ").length === 3 && !shares?.includes("기타"),
+      (shares ?? "").split(", ").length === 3,
       `the talking is not shown per speaker: ${shares}`,
+    );
+    expect(
+      (await region.getByText(/^기타 \d+명/).count()) === 0,
+      "someone who talked is counted as one of the others",
     );
     expect(
       (await page.getByText("잘한 점", { exact: true }).count()) === 1,
