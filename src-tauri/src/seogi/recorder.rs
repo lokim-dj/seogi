@@ -418,6 +418,13 @@ impl Inner {
                 *lock(&self.live) = Live::Waiting(sink);
                 return false;
             }
+            // Tried before the time is looked at: a lid shut longer than the
+            // limit wakes with the wall clock past it, and the microphone
+            // that is back by then is to be used, not given up on.
+            match self.reopen(sink) {
+                Ok(()) => return true,
+                Err(back) => sink = back,
+            }
             if self.shared.clock.since(since) >= self.timing.give_up_after {
                 *lock(&self.live) = Live::Waiting(sink);
                 log::warn!(
@@ -426,10 +433,6 @@ impl Inner {
                 );
                 (self.events)(Event::GaveUp { reason });
                 return false;
-            }
-            match self.reopen(sink) {
-                Ok(()) => return true,
-                Err(back) => sink = back,
             }
             self.pause(self.timing.retry_every);
         }
@@ -1280,6 +1283,43 @@ mod tests {
             gap.gap_ms
         );
         stop(&rig.mic, rig.session);
+    }
+
+    #[test]
+    fn a_lid_shut_past_the_limit_still_uses_the_microphone_that_is_back() {
+        // The lid shut for eleven minutes of sleep: on waking the wall clock
+        // is past the ten-minute limit, and the microphone is back.
+        let hand = HandClock::new();
+        let rig = rig_with_clock(
+            None,
+            Reconnect {
+                retry_every: Duration::from_millis(500),
+                give_up_after: Duration::from_secs(600),
+            },
+            hand.clock(),
+        );
+        rig.talk(10, 0.5);
+        rig.wait_for_frames(10 * CHUNK_FRAMES as u64);
+        let before = rig.which();
+        rig.lid_closed();
+        assert!(matches!(rig.next(), Event::Lost { .. }));
+        // One try fails while the lid is shut; then the computer sleeps.
+        let until = Instant::now() + Duration::from_secs(5);
+        while rig.opens.load(Ordering::Acquire) < 2 {
+            assert!(Instant::now() < until);
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        rig.lid_open();
+        hand.advance(Duration::from_secs(11 * 60));
+        rig.wait_until_reopened(before);
+        rig.talk(1, 0.5);
+        let Event::Back { gap, .. } = rig.next() else {
+            panic!("the microphone that is back is used, not given up on");
+        };
+        assert!(gap.gap_ms >= 660_000);
+        let finished = stop(&rig.mic, rig.session);
+        assert_eq!(finished.trouble, None);
+        assert_eq!(finished.gaps.len(), 1);
     }
 
     #[test]
