@@ -111,22 +111,21 @@ Inside `src-tauri/src/seogi/`:
 | `cli.rs`                                                                                   | Headless runs for checking and for `eval/`                                                                                                                                                                                                                                                                                  |
 | `calendar.rs`, `mac_calendar.rs`                                                           | The user's calendar from secret iCal addresses or macOS's Calendar app: repeating events, title rules, which event a recording belongs to                                                                                                                                                                                   |
 | `banner.rs`                                                                                | The always-on-top banner window (a panel on macOS, so it never takes the keyboard)                                                                                                                                                                                                                                          |
-| `dictation.rs`, `mic_button.rs`                                                            | Dictation: on/off, the shortcut and model, keeping out of a meeting's way, tidying with the user's model; the floating microphone key                                                                                                                                                                                       |
+| `dictation.rs`                                                                             | Dictation: on/off, the shortcut and model, keeping out of a meeting's way, tidying with the user's model                                                                                                                                                                                                                    |
 | `phone.rs`, `google.rs`                                                                    | The phone's recordings: signing in to Google (`drive.file`, loopback and PKCE, client put in at build time), pairing each recording with its JSON in the Drive folder, the ledger, bringing them in                                                                                                                         |
 | `snippet.rs`, `secrets.rs`, `power.rs`                                                     | A few seconds of a recording for checking by ear; API keys in the OS keychain; keeping the computer awake                                                                                                                                                                                                                   |
 
 The frontend in `src/seogi/`:
 
-| Path                  | What it holds                                                                             |
-| --------------------- | ----------------------------------------------------------------------------------------- |
-| `App.tsx`, `store.ts` | Which screen shows, and the state the screens share (all of it from the backend)          |
-| `screens/`            | Home (the record key and the meetings), Minutes, Recording, Onboarding, Settings          |
-| `banner/`             | The small always-on-top window: a meeting is starting, minutes are ready                  |
-| `mic/`                | The floating microphone key's window: press to dictate, drag to move, right-click to hide |
-| `components/`, `lib/` | Shared pieces: the timestamp key, the player, formats                                     |
-| `i18n/`               | Every text of these screens, `ko.ts` (the original) and `en.ts`                           |
-| `seogi.css`           | The design tokens and the few classes every sheet repeats                                 |
-| `preview/`            | Every screen in a plain browser on made-up data, without the backend                      |
+| Path                  | What it holds                                                                    |
+| --------------------- | -------------------------------------------------------------------------------- |
+| `App.tsx`, `store.ts` | Which screen shows, and the state the screens share (all of it from the backend) |
+| `screens/`            | Home (the record key and the meetings), Minutes, Recording, Onboarding, Settings |
+| `banner/`             | The small always-on-top window: a meeting is starting, minutes are ready         |
+| `components/`, `lib/` | Shared pieces: the timestamp key, the player, formats                            |
+| `i18n/`               | Every text of these screens, `ko.ts` (the original) and `en.ts`                  |
+| `seogi.css`           | The design tokens and the few classes every sheet repeats                        |
+| `preview/`            | Every screen in a plain browser on made-up data, without the backend             |
 
 The look is fixed by the chosen design ("A안 한 줄로 비운 화면"): one quiet column on a warm ink black that is the first impression (a light system gets the same layout on paper), small type, thin lines, red only for recording and for what needs a look; the record key and the meetings on the home, finding, importing and settings behind three icons; the minutes as tasks, then the story, then everything else folded under "자세히", with a thin playing line at the bottom; timestamp keys on every line, quotes in 「 」. No cards, pills, glows, emoji or heavy boxes. The tokens and shared classes are in `seogi.css`.
 

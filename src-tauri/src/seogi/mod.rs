@@ -27,7 +27,6 @@ pub mod focus;
 pub mod google;
 pub mod llm;
 pub mod mac_calendar;
-pub mod mic_button;
 pub mod minutes;
 pub mod numbers;
 pub mod phone;

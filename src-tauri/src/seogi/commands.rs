@@ -17,7 +17,6 @@ use super::config::{self, Config};
 use super::dictation::{self, Dictation, DictationStatus};
 use super::llm::{self, Provider};
 use super::mac_calendar::{self, MacCalendar};
-use super::mic_button;
 use super::phone::PhoneStatus;
 use super::recorder::{self, Microphone};
 use super::sign_in::{self, SignIn, SignIns, Tool};
@@ -1256,13 +1255,6 @@ pub async fn seogi_dictation_status(app: AppHandle) -> Result<DictationStatus, S
     off_screen(move || Ok(dictation::status(&app))).await
 }
 
-/// The floating key was pressed: starts or ends a dictation.
-#[tauri::command]
-#[specta::specta]
-pub fn seogi_dictation_toggle(app: AppHandle) {
-    dictation::toggle(&app);
-}
-
 /// Copies the last dictation's words, from the note that says they could
 /// not be typed.
 #[tauri::command]
@@ -1285,13 +1277,6 @@ pub fn seogi_download_dictation_model(app: AppHandle) {
 #[specta::specta]
 pub async fn seogi_forget_dictations(app: AppHandle, ids: Option<Vec<i64>>) -> Result<u32, String> {
     dictation::forget(&app, ids).await.map(|n| n as u32)
-}
-
-/// The floating key's menu, with its two lines in the user's language.
-#[tauri::command]
-#[specta::specta]
-pub fn seogi_mic_menu(app: AppHandle, hide: String, settings: String) -> Result<(), String> {
-    mic_button::show_menu(&app, &hide, &settings).map_err(text)
 }
 
 /// Opens the system's page where Seogi is allowed to type into other apps.

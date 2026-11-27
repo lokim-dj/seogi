@@ -57,11 +57,11 @@ A kind of meeting and the shape of its minutes. Data, not code.
 The small always-on-top window: a meeting is starting, minutes are ready.
 
 **말로 입력** (`dictation`):
-Seogi's second job: a shortcut or the 마이크 단추, a few words spoken, and the words typed where the cursor is. Nothing of it goes to the 회의함. Turning a recording into text keeps 받아쓰기.
+Seogi's second job: a shortcut, a few words spoken, and the words typed where the cursor is. Nothing of it goes to the 회의함. Turning a recording into text keeps 받아쓰기.
 _Avoid_: 받아쓰기, 음성 입력 (for this feature)
 
-**마이크 단추** (`mic_button`):
-The floating key for 말로 입력.
+**마이크 단추**:
+The phone app's floating key for 말로 입력 (planned). The computer has none: the shortcut is enough there.
 
 ## Words still to settle
 

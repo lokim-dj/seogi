@@ -5,8 +5,8 @@
 //!
 //! The dot is on the menu bar icon (blinking), on the Dock icon on macOS
 //! (steady: a blinking Dock icon would pull the eye all meeting long), and on
-//! the taskbar button on Windows (an overlay icon). The floating key and the
-//! indicator draw their own from the same events.
+//! the taskbar button on Windows (an overlay icon). The indicator draws its
+//! own from the same events.
 //!
 //! The pictures and timings come from `docs/icon/README.md`.
 

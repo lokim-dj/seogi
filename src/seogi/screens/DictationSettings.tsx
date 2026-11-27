@@ -529,25 +529,6 @@ export default function DictationSettings({
 
           <div className="srow">
             <div>
-              <div className="l">{t("dictation.button")}</div>
-              <div className="h">{t("dictation.buttonHint")}</div>
-            </div>
-            <div className="v">
-              <input
-                type="checkbox"
-                role="switch"
-                className="tg"
-                checked={dictation.button}
-                aria-label={t("dictation.button")}
-                onChange={(event) =>
-                  void save({ ...dictation, button: event.target.checked })
-                }
-              />
-            </div>
-          </div>
-
-          <div className="srow">
-            <div>
               <div className="l">{t("dictation.keep")}</div>
               <div className="h">
                 {t("dictation.keepHint", { n: dictation.keep })}

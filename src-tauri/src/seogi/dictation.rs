@@ -1,5 +1,5 @@
-//! Dictation, Seogi's second job: a shortcut or the floating key, a few words
-//! spoken, and the words typed where the cursor is.
+//! Dictation, Seogi's second job: a shortcut, a few words spoken, and the
+//! words typed where the cursor is.
 //!
 //! The engine does the work (`actions.rs`, `transcription_coordinator.rs`,
 //! `shortcut/`). This module is Seogi's side of it: whether it is on, the few
@@ -44,13 +44,6 @@ use crate::settings::{self, AppSettings, ClipboardHandling, PasteMethod, Shortcu
 pub const DEFAULT_DICTATION_MODEL: &str =
     "handy-computer/Fun-ASR-MLT-Nano-2512-gguf/Fun-ASR-MLT-Nano-2512-Q8_0.gguf";
 
-/// A place on the screen, in logical pixels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-pub struct Spot {
-    pub x: i32,
-    pub y: i32,
-}
-
 /// Seogi's own dictation settings, kept in `seogi.json` and changed only
 /// through `Secretary::update_dictation`. Each dictation setting has one
 /// home: these, which only Seogi reads, live here; the ones the inherited
@@ -63,7 +56,7 @@ pub struct Spot {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(default)]
 pub struct DictationConfig {
-    /// Dictation answers its shortcut and its key. On for a new install;
+    /// Dictation answers its shortcut. On for a new install;
     /// a `seogi.json` that already says either way keeps what it says.
     pub enabled: bool,
     /// Tidy the words before they are typed.
@@ -73,10 +66,6 @@ pub struct DictationConfig {
     /// Write spoken numbers before a unit as digits ("이십 초" → "20초").
     /// On unless turned off; a rule, not a model, so it costs nothing.
     pub numbers: bool,
-    /// Show the floating microphone key above other apps.
-    pub button: bool,
-    /// Where the user left the key; `None` for the bottom right corner.
-    pub button_at: Option<Spot>,
 }
 
 impl Default for DictationConfig {
@@ -89,8 +78,6 @@ impl Default for DictationConfig {
                 model: "gemma3:4b".to_string(),
             },
             numbers: true,
-            button: false,
-            button_at: None,
         }
     }
 }
@@ -138,7 +125,6 @@ pub struct Dictation {
     pub tidy_with: Provider,
     /// Spoken numbers before a unit written as digits.
     pub numbers: bool,
-    pub button: bool,
     /// How many recent dictations are kept (only on this computer, never in
     /// the meetings).
     pub keep: u32,
@@ -257,7 +243,6 @@ fn choices(s: &AppSettings, config: &DictationConfig) -> Dictation {
         tidy: config.tidy,
         tidy_with: config.tidy_with.clone(),
         numbers: config.numbers,
-        button: config.button,
         keep: s.history_limit as u32,
     }
 }
@@ -334,14 +319,12 @@ fn put_engine_choices(s: &mut AppSettings, wanted: &Dictation) {
     s.history_limit = wanted.keep.clamp(1, 50) as usize;
 }
 
-/// Seogi's part of the choices. Where the floating key was left is not a
-/// choice on the screen and stays as it is.
+/// Seogi's part of the choices.
 fn put_seogi_choices(dictation: &mut DictationConfig, wanted: &Dictation) {
     dictation.enabled = wanted.enabled;
     dictation.tidy = wanted.tidy;
     dictation.tidy_with = wanted.tidy_with.clone();
     dictation.numbers = wanted.numbers;
-    dictation.button = wanted.button;
 }
 
 /// The shortcut, re-registered at once when dictation is listening.
@@ -518,8 +501,8 @@ pub fn download_default_model(app: &AppHandle) {
 
 // ----- turning it on and off -------------------------------------------------
 
-/// Puts the saved settings into effect: listens for the shortcut or stops,
-/// shows or hides the floating key. Called at start and after each change.
+/// Puts the saved settings into effect: listens for the shortcut or stops.
+/// Called at start and after each change.
 pub fn apply(app: &AppHandle) {
     let Some(secretary) = Secretary::of(app) else {
         return;
@@ -536,7 +519,6 @@ pub fn apply(app: &AppHandle) {
     } else {
         stop_listening(app);
     }
-    super::mic_button::set_shown(app, dictation.enabled && dictation.button);
 }
 
 /// Whether dictated words came out in a script the user's language does not
@@ -575,7 +557,6 @@ pub fn start(app: &AppHandle) {
         if let Some(secretary) = Secretary::of(&app) {
             move_old_default_key(&app, &secretary);
         }
-        super::mic_button::prepare(&app);
         apply(&app);
         if cfg!(target_os = "macos") {
             watch_permission(&app);
@@ -960,11 +941,6 @@ pub fn nowhere_to_type(app: &AppHandle) -> bool {
         PasteMethod::None | PasteMethod::ExternalScript
     );
     typed && super::focus::takes_text() == Some(false)
-}
-
-/// The floating key was pressed: start or stop a take.
-pub fn toggle(app: &AppHandle) {
-    crate::signal_handle::send_transcription_input(app, "transcribe", "button");
 }
 
 // ----- what the screen is told --------------------------------------------
@@ -2150,7 +2126,6 @@ mod tests {
                 Box::new(move |d| d.tidy_with = tidy_with.clone()),
             ),
             ("numbers", Box::new(|d| d.numbers = !d.numbers)),
-            ("button", Box::new(|d| d.button = !d.button)),
         ];
         for (name, change) in changes {
             let mut wanted = choices(&s, &seogi);
@@ -2268,12 +2243,14 @@ mod tests {
         assert_eq!(loaded.language, "ko");
         assert_eq!(loaded.record_shortcut, "Ctrl+Alt+R");
         assert!(!loaded.dictation.enabled);
-        assert!(loaded.dictation.button);
-        assert_eq!(loaded.dictation.button_at, Some(Spot { x: 1200, y: 700 }));
         assert_eq!(loaded.watched.len(), 1);
         loaded.save(dir.path()).unwrap();
         let saved = super::super::config::Config::raw(dir.path()).unwrap();
         assert!(!has_old_marks(&saved));
+        // The floating key's two values (the key is gone from the computer)
+        // are read past and not written again.
+        assert!(saved["dictation"].get("button").is_none());
+        assert!(saved["dictation"].get("button_at").is_none());
         assert_eq!(super::super::config::Config::load(dir.path()), loaded);
     }
 

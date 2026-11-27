@@ -127,13 +127,10 @@ export default function SeogiApp() {
     };
   }, [refreshSetup]);
 
-  // The floating microphone key's menu asks for the dictation settings.
+  // The menu bar's items that move about the app (macOS).
   useEffect(() => {
-    const opened = listen("seogi-open-dictation", () => moveTo("dictation"));
-    // The menu bar's items that move about the app (macOS).
     const menu = listen<string>("seogi-menu", (event) => moveTo(event.payload));
     return () => {
-      void opened.then((off) => off());
       void menu.then((off) => off());
     };
   }, []);
