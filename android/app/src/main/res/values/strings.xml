@@ -159,7 +159,7 @@
     <string name="dict_err_mic_silenced">마이크 소리가 들어오지 않아요. 서기를 한 번 열었다가 다시 해 보세요.</string>
 
     <!-- dictation: the accessibility service, as Android's settings show it -->
-    <string name="a11y_label">서기 말로 입력</string>
+    <string name="a11y_label">서기</string>
     <string name="a11y_summary">말한 글자를 지금 쓰는 칸에 넣습니다</string>
     <string name="a11y_description">서기의 떠 있는 서기 단추로 말한 글자를, 지금 커서가 있는 글자 칸에 넣는 데만 씁니다.\n\n켜면 서기가 화면에서 커서가 있는 칸을 찾아 글자를 넣을 수 있습니다. 자판이 열리거나 글자 칸에 커서가 오면 단추를 띄우려고 그것만 살피고, 글자는 단추로 말했을 때만 넣습니다. 화면 내용을 저장하거나 밖으로 보내지 않습니다. 소리는 폰 안에서만 글자로 바뀝니다.</string>
 
@@ -175,7 +175,7 @@
     <string name="dict_a11y_title">말한 글자를\n칸에 바로 넣을게요</string>
     <string name="dict_a11y_body">이 단계는 안드로이드의 \'접근성\' 기능을 씁니다. 켜면 서기가 지금 커서가 있는 글자 칸을 찾아 말한 글자를 넣고, 자판이 열릴 때만 단추를 띄웁니다.</string>
     <string name="dict_a11y_promise">· 자판이 열렸는지와 커서가 있는 칸이 글자 칸인지만 보고 단추를 띄우고, 글자는 단추로 말했을 때만 넣습니다.\n· 화면 내용을 저장하거나 밖으로 보내지 않습니다.\n· 언제든 같은 곳에서 끌 수 있습니다.</string>
-    <string name="dict_a11y_how">설정 › 접근성 › 설치된 앱 › 서기 말로 입력 › 켜기</string>
+    <string name="dict_a11y_how">설정 › 접근성 › 설치된 앱 › 서기 › 켜기</string>
     <string name="dict_a11y_agree">동의하고 설정 열기</string>
     <string name="dict_a11y_skip">켜지 않고 쓰기 · 글자는 복사만</string>
     <string name="dict_model_title">글자로 바꾸는 모델을\n받을게요</string>

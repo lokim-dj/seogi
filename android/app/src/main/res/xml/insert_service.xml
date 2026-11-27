@@ -3,12 +3,14 @@
     Dictation's accessibility service: it puts the spoken text into the focused
     text field, and it listens to focus and window changes only to know whether
     a field has the cursor or the keyboard is up, so the floating key shows
-    only while the user types. It does not read what is written or shown.
+    only while the user types, and to know that a key was just pressed, so it
+    steps back (smaller, fainter) while the user types by hand. It does not
+    read what is written or shown.
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/a11y_description"
     android:summary="@string/a11y_summary"
-    android:accessibilityEventTypes="typeViewFocused|typeViewTextSelectionChanged|typeWindowsChanged|typeWindowStateChanged"
+    android:accessibilityEventTypes="typeViewFocused|typeViewTextChanged|typeViewTextSelectionChanged|typeWindowsChanged|typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagRetrieveInteractiveWindows"
     android:canRetrieveWindowContent="true"

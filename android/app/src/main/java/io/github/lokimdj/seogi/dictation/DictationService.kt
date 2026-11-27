@@ -86,6 +86,7 @@ class DictationService : Service() {
         super.onCreate()
         running = true
         InsertService.listener = { refresh() }
+        InsertService.keystroke = { typedByHand() }
         // A meeting starting or ending changes whether the key may show.
         getSystemService(AudioManager::class.java).registerAudioRecordingCallback(recordings, main)
     }
@@ -236,7 +237,24 @@ class DictationService : Service() {
         placeAt(DictationPrefs.place(this))
     }
 
+    /** While the user types by hand the key steps back, and comes back [COME_BACK_MS] after the last key. */
+    private val comeBack = Runnable { view?.stepBack(false) }
+
+    private fun typedByHand() {
+        if (mode != BubbleGesture.Mode.IDLE) return
+        view?.stepBack(true)
+        main.removeCallbacks(comeBack)
+        main.postDelayed(comeBack, COME_BACK_MS)
+    }
+
     private fun onTouch(e: MotionEvent) {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                main.removeCallbacks(comeBack)
+                view?.press()
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> view?.release()
+        }
         val acts = when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 params?.let { dragFromX = it.x; dragFromY = it.y }
@@ -442,7 +460,9 @@ class DictationService : Service() {
         running = false
         main.removeCallbacks(warm)
         main.removeCallbacks(settle)
+        main.removeCallbacks(comeBack)
         InsertService.listener = null
+        InsertService.keystroke = null
         try { getSystemService(AudioManager::class.java).unregisterAudioRecordingCallback(recordings) } catch (_: Exception) {}
         mic?.cancel()
         mic = null
@@ -459,7 +479,9 @@ class DictationService : Service() {
         private const val TAG = "SeogiDictation"
         private const val CHANNEL = "dictation"
         private const val ID_NOTIFICATION = 11
-        private const val SIZE_DP = 56
+        /** The window; the face inside is a little smaller ([BubbleView]), so the spring has room. */
+        private const val SIZE_DP = 64
+        private const val COME_BACK_MS = 1_500L
         /** The least room at each side, wider than the back gesture strips of common phones. */
         private const val EDGE_DP = 28
         private const val WARM_AFTER_MS = 250L

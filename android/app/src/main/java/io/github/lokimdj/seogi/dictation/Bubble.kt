@@ -160,7 +160,7 @@ object KeyRule {
  * [hideAfterMs], so moving the cursor from one field to the next, or the
  * keyboard closing and opening again, leaves it where it is.
  */
-class KeyPresence(private val showAfterMs: Long = 120, private val hideAfterMs: Long = 900) {
+class KeyPresence(private val showAfterMs: Long = 120, private val hideAfterMs: Long = 300) {
     /** Whether the key is (to be) on screen. */
     var shown = false
         private set

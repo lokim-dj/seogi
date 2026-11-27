@@ -29,6 +29,7 @@ class InsertService : AccessibilityService() {
      */
     private var last: AccessibilityNodeInfo? = null
     private var lastResume = 0L
+    private var wroteAt = 0L
 
     override fun onServiceConnected() {
         instance = this
@@ -46,6 +47,9 @@ class InsertService : AccessibilityService() {
                 check()
             }
             AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED -> remember(event.source)
+            // Only that a field changed is used, never what it holds; Seogi's own writing is not typing.
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED ->
+                if (SystemClock.uptimeMillis() - wroteAt > OWN_WRITE_MS) keystroke?.invoke()
             AccessibilityEvent.TYPE_WINDOWS_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> check()
         }
@@ -134,6 +138,7 @@ class InsertService : AccessibilityService() {
      * has the cursor or the app would not take it; the caller then copies.
      */
     fun insert(text: String): Boolean {
+        wroteAt = SystemClock.uptimeMillis()
         val shown = try { windows.map { it.id }.toSet() } catch (e: Exception) { emptySet() }
         val choice = InsertTarget.pick(
             focused(), last,
@@ -183,6 +188,8 @@ class InsertService : AccessibilityService() {
     companion object {
         private const val TAG = "SeogiDictation"
         private const val RESUME_EVERY_MS = 30_000L
+        /** Text changes this soon after Seogi wrote are its own, not the user's typing. */
+        private const val OWN_WRITE_MS = 1_500L
 
         /** The running service, when the user has switched it on. Read and set on the main thread. */
         @Volatile
@@ -195,5 +202,8 @@ class InsertService : AccessibilityService() {
 
         /** Told (on the main thread) when [instance] or [typing] changes; set by [DictationService]. */
         var listener: (() -> Unit)? = null
+
+        /** Told (on the main thread) when the user changed a field by hand; set by [DictationService]. */
+        var keystroke: (() -> Unit)? = null
     }
 }
