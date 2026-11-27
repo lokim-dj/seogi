@@ -95,10 +95,20 @@ export default function Recording() {
 
       <main className="a-recbig">
         <span role="status" className="state">
-          <span className="live" aria-hidden="true" />
-          {t("recording.on")}
+          {/* No blinking dot while nothing is being heard. */}
+          {recording.reconnecting ? null : (
+            <span className="live" aria-hidden="true" />
+          )}
+          {recording.reconnecting
+            ? t("recording.reconnecting")
+            : t("recording.on")}
         </span>
         <div className="a-timer">{clock(elapsed)}</div>
+        {recording.reconnecting ? (
+          <div className="t3 font-normal text-[13px] max-w-[420px] mb-2">
+            {t("recording.reconnectingHint")}
+          </div>
+        ) : null}
         <input
           type="text"
           key={`title-${meeting?.title ?? ""}`}

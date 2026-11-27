@@ -36,6 +36,8 @@ pub struct Header {
     /// `app_stopped`, `microphone_lost` or `file_incomplete`. Empty when the
     /// recording went as it should.
     pub capture_note: String,
+    /// Where the microphone was away while recording and came back.
+    pub gaps: Vec<super::store::Gap>,
 }
 
 /// Seconds before and after a mark whose words are shown with it.
@@ -100,6 +102,19 @@ pub fn minutes_markdown(
         facts.push(
             "- 녹음: 대화 중간부터 시작된 것 같아요. 그 앞의 이야기는 회의록에 없어요.".to_string(),
         );
+    }
+    // Talk the microphone did not hear is not in the minutes either.
+    if !header.gaps.is_empty() {
+        let mut gaps = header.gaps.clone();
+        gaps.sort_by_key(|gap| gap.at_ms);
+        let places: Vec<String> = gaps
+            .iter()
+            .map(|gap| format!("`{}` ({} 끊김)", clock(gap.at_ms), gap.words()))
+            .collect();
+        facts.push(format!(
+            "- 녹음: 마이크가 끊겼던 곳 {}. 그동안의 이야기는 회의록에 없어요.",
+            places.join(", ")
+        ));
     }
     out.push_str(&facts.join("\n"));
     out.push_str("\n\n");
@@ -1063,5 +1078,24 @@ mod tests {
             ..Default::default()
         };
         assert!(minutes_markdown(&minutes, &transcript, &mid, &[]).contains("대화 중간부터"));
+    }
+
+    #[test]
+    fn the_head_says_where_the_microphone_was_away() {
+        let (minutes, transcript) = sample();
+        let header = Header {
+            gaps: vec![super::super::store::Gap {
+                at_ms: 2_633_000,
+                gap_ms: 17_000,
+            }],
+            ..Default::default()
+        };
+        let markdown = minutes_markdown(&minutes, &transcript, &header, &[]);
+        assert!(markdown.contains(
+            "- 녹음: 마이크가 끊겼던 곳 `00:43:53` (17초 끊김). 그동안의 이야기는 회의록에 없어요."
+        ));
+        assert!(
+            !minutes_markdown(&minutes, &transcript, &Header::default(), &[]).contains("끊겼던 곳")
+        );
     }
 }

@@ -932,6 +932,7 @@
   "errors": {
     "loadDirectory": "फ़ोल्डर लोड करने में गड़बड़ी: {{error}}",
     "calendarPermissionLostTitle": "Allow Seogi again in Calendars to read your events",
+    "microphoneReconnectingTitle": "Microphone lost, reconnecting",
     "typingPermissionLostTitle": "Allow Seogi again in Accessibility to use dictation",
     "micPermissionDeniedTitle": "माइक्रोफ़ोन का ऐक्सेस नहीं दिया गया",
     "micPermissionDenied": {

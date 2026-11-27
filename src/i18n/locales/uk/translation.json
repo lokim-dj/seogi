@@ -932,6 +932,7 @@
   "errors": {
     "loadDirectory": "Помилка завантаження папки: {{error}}",
     "calendarPermissionLostTitle": "Allow Seogi again in Calendars to read your events",
+    "microphoneReconnectingTitle": "Microphone lost, reconnecting",
     "typingPermissionLostTitle": "Allow Seogi again in Accessibility to use dictation",
     "micPermissionDeniedTitle": "Доступ до мікрофона заборонено",
     "micPermissionDenied": {

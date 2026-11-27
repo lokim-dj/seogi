@@ -220,6 +220,9 @@ tempfile = "3"
 # Test-only tokio features for the local socket servers exercising the
 # resumable HTTP downloader; normal builds keep the leaner feature set.
 tokio = { version = "1.43.0", features = ["macros", "net", "io-util", "sync", "time", "rt-multi-thread"] }
+# The recorder's fake microphone, so a recording's lost and found microphone
+# can be played out in tests.
+handy-recorder = { version = "0.1.1", features = ["test-backend"] }
 
 [profile.release]
 lto = true

@@ -91,6 +91,35 @@ pub struct EventRef {
     pub end_ms: i64,
 }
 
+/// A stretch of a meeting the microphone did not hear: it went away
+/// `at_ms` into the recording and came back `gap_ms` later. Nothing was
+/// written for it, so the recording goes straight on from that moment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct Gap {
+    pub at_ms: u64,
+    pub gap_ms: u64,
+}
+
+impl Gap {
+    /// How long, as the transcript and the minutes say it: `12초`,
+    /// `3분 5초`, `1시간 2분`.
+    pub fn words(&self) -> String {
+        let seconds = self.gap_ms.div_ceil(1_000).max(1);
+        let (h, m, s) = (seconds / 3_600, seconds / 60 % 60, seconds % 60);
+        let mut parts: Vec<String> = Vec::new();
+        if h > 0 {
+            parts.push(format!("{h}시간"));
+        }
+        if m > 0 {
+            parts.push(format!("{m}분"));
+        }
+        if s > 0 && h == 0 {
+            parts.push(format!("{s}초"));
+        }
+        parts.join(" ")
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 pub struct Meeting {
     pub id: String,
@@ -176,6 +205,11 @@ pub struct Meeting {
     /// The microphone, for a recording made in the app.
     #[serde(default)]
     pub device: String,
+    /// Where the microphone went away while this was being recorded (a
+    /// laptop's lid closed, a headset dropped) and came back, in the order
+    /// they happened. The recording itself holds only what was heard.
+    #[serde(default)]
+    pub gaps: Vec<Gap>,
     /// Set when a recording made here did not end as it should have:
     /// `app_stopped`, `microphone_lost` or `file_incomplete`. It stays with
     /// the meeting and is stated in the minutes and the evidence record.
@@ -308,6 +342,7 @@ impl Meeting {
             mark_notes: Vec::new(),
             event: None,
             device: String::new(),
+            gaps: Vec::new(),
             capture_note: String::new(),
             transcript: None,
             stats: None,
@@ -766,7 +801,7 @@ impl Library {
         if let Some(transcript) = &meeting.transcript {
             write_atomically(
                 &folder.join(TRANSCRIPT_NAME),
-                transcript.to_text().as_bytes(),
+                transcript.to_text_with_gaps(&meeting.gaps).as_bytes(),
             )?;
             if let Some(minutes) = meeting.minutes.first() {
                 let markdown = render::minutes_markdown(
@@ -808,6 +843,7 @@ impl Meeting {
                 .map_or(String::new(), |t| short_model_name(&t.model)),
             app_version: env!("CARGO_PKG_VERSION").to_string(),
             capture_note: self.capture_note.clone(),
+            gaps: self.gaps.clone(),
         }
     }
 }

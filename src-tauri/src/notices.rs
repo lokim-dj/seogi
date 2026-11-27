@@ -41,6 +41,8 @@ pub enum NoticeSource {
     /// Whether the system lets dictation type. Its own slot, so a take's
     /// notice neither replaces nor clears it.
     Typing,
+    /// A meeting being recorded.
+    Recording,
 }
 
 /// The frontend maps each code to its text in `src/lib/notices.ts`.
@@ -66,6 +68,10 @@ pub enum NoticeCode {
     /// as `mac_calendar::access` says it: `not_determined` (macOS no longer
     /// knows Seogi, so it is asked again) or `denied`.
     CalendarPermissionLost,
+    /// The microphone went away while a meeting is being recorded (a
+    /// laptop's lid closed, a headset dropped). The meeting stays open and
+    /// the microphone is opened again as soon as it is back.
+    MicrophoneReconnecting,
 }
 
 impl NoticeCode {
@@ -82,7 +88,8 @@ impl NoticeCode {
             | Self::NoModelSelected
             | Self::FileTranscriptionFailed
             | Self::TypingPermissionLost
-            | Self::CalendarPermissionLost => NoticeLevel::Error,
+            | Self::CalendarPermissionLost
+            | Self::MicrophoneReconnecting => NoticeLevel::Error,
             Self::PostProcessFailed | Self::FilePostProcessFailed => NoticeLevel::Warning,
         }
     }
@@ -104,6 +111,7 @@ impl NoticeCode {
             Self::FilePostProcessFailed => &strings.file_post_process_failed_title,
             Self::TypingPermissionLost => &strings.typing_permission_lost_title,
             Self::CalendarPermissionLost => &strings.calendar_permission_lost_title,
+            Self::MicrophoneReconnecting => &strings.microphone_reconnecting_title,
         }
     }
 }
