@@ -95,6 +95,7 @@ import { taskLine, titleNeeded } from "../lib/tasks";
 import { lateMinutes, startsMidTalk } from "../lib/opening";
 import { isGibberish, koreanMeeting } from "../lib/gibberish";
 import { Mark } from "../components/Mark";
+import { OtherEdits } from "../components/OtherEdits";
 import { useSeogi, type Jump } from "../store";
 
 const bare = (text: string) => text.replace(/[\s.,!?'"「」…·]/g, "");
@@ -750,6 +751,7 @@ function Sheet({
         </p>
       ) : (
         <>
+          <OtherEdits meeting={meeting} onChanged={refreshDetail} />
           {taskCount > 0 ||
           actionSections.some((s) => (s.removed ?? []).length > 0) ? (
             <section className="a-sec" aria-labelledby="tasks-h">

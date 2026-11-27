@@ -20,6 +20,7 @@ pub mod diarize;
 pub mod dictation;
 pub mod disk;
 pub mod documents;
+pub mod edits;
 pub mod evidence;
 pub mod facts;
 pub mod feedback;

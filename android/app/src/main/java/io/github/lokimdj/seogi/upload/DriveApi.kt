@@ -123,6 +123,10 @@ interface DriveReader {
      * [onProgress] gets the bytes so far and the whole size (0 when unknown).
      */
     fun download(token: String, fileId: String, to: java.io.File, onProgress: (Long, Long) -> Unit)
+    /** Makes a small JSON file in [folderId]; returns its id. */
+    fun writeJson(token: String, folderId: String, name: String, text: String): String
+    /** Replaces a small JSON file's content. */
+    fun rewriteJson(token: String, fileId: String, text: String)
 }
 
 /** [Drive] over the Drive REST API v3. */
@@ -274,6 +278,12 @@ class DriveApi(private val http: Http = OkHttpHttp) : Drive, DriveReader {
         val code = http.download("$API/files/${enc(fileId)}?alt=media", auth(token), to, onProgress)
         if (code !in 200..299) throw DriveHttpException(code, "download")
     }
+
+    override fun writeJson(token: String, folderId: String, name: String, text: String): String =
+        uploadSmall(token, folderId, name, JSON_UTF8, text.toByteArray())
+
+    override fun rewriteJson(token: String, fileId: String, text: String) =
+        updateSmall(token, fileId, JSON_UTF8, text.toByteArray())
 
     /** Every file a search finds, page after page. */
     private fun pages(token: String, q: String, fields: String): List<JsonObject> {

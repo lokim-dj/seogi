@@ -211,6 +211,9 @@
             요약(<code>회의.json</code>: 할 일, 이야기, 받아쓴 글, 말한 사람)을
             폰 안 앱 저장소로 내려받아 보여 줍니다. 녹음은 내가 듣기를 누를 때만
             폰 안 앱 임시 저장소로 내려받고, 드라이브의 녹음은 읽기만 합니다.
+            폰에서 할 일을 끝냄으로 표시하거나 줄이나 말한 사람 이름을 고치면,
+            그 고친 것과 고친 시각을 그 회의 폴더의 <code>고친것-폰.json</code>
+            에 올려 컴퓨터의 서기가 같은 것을 보게 합니다.
           </li>
           <li>
             <strong>구글 계정 이메일 주소</strong>: 어느 계정으로 올리는지 보여
@@ -255,7 +258,10 @@
             회의의 폴더를 <code>서기</code> 폴더 안에 만들어 받아쓴 글
             (<code>전사.txt</code>), 회의록(<code>회의록.md</code>), 앱이 읽는
             요약(<code>회의.json</code>: 할 일, 시각, 말한 사람)을 올리고, 폰
-            녹음과 그 설명 파일은 그 폴더로 옮깁니다(복사하지 않음). '이
+            녹음과 그 설명 파일은 그 폴더로 옮깁니다(복사하지 않음). 컴퓨터에서
+            할 일 끝냄 · 고친 줄 · 말한 사람 이름을 고치면 그 고친 것과 시각을
+            <code>고친것-컴퓨터.json</code>으로 올리고, 폰이 올린
+            <code>고친것-폰.json</code>을 읽어 같은 것을 보여 줍니다. '이
             컴퓨터에서 녹음한 회의도 올리기'(처음엔 켜짐)가 켜져 있으면
             컴퓨터에서 녹음한 회의도 같은 방법으로 올리고, '녹음 파일도
             올리기'(처음엔 켜짐)가 켜져 있으면 원본 녹음도 그대로 올립니다.
@@ -492,7 +498,10 @@
             tasks, story, transcript, speakers) into the app's own storage on
             the phone, to show it. A recording is downloaded, into the app's
             temporary storage, only when you press play; the recording in Drive
-            is only read.
+            is only read. When you tick a task, fix a line or name a speaker on
+            the phone, that change and its time go into
+            <code>고친것-폰.json</code> in the meeting's folder, so Seogi on
+            your computer shows the same.
           </li>
           <li>
             <strong>Your Google account's email address</strong> is kept in the
@@ -547,8 +556,11 @@
             the minutes (<code>회의록.md</code>) and a summary the apps read
             (<code>회의.json</code>: tasks, times, speakers), and moves (does
             not copy) the phone's recording and its description file into it.
-            With "Also put up meetings recorded on this computer" on (it is on
-            at first), meetings recorded on the computer go up the same way, and
+            Ticks, fixed lines and speaker names changed on the computer go up
+            with their times as <code>고친것-컴퓨터.json</code>, and the phone's
+            <code>고친것-폰.json</code> is read so both show the same. With
+            "Also put up meetings recorded on this computer" on (it is on at
+            first), meetings recorded on the computer go up the same way, and
             with "Put up recordings too" (on at first) their original recording
             goes up as it is. A recording that would leave less than 1 GB free
             in Drive is not uploaded, and you are told once. "Take out of Drive"

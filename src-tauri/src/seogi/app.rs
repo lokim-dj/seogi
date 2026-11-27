@@ -23,6 +23,7 @@ use super::audio_in;
 use super::calendar;
 use super::chunks::RATE;
 use super::config::{Config, SpeechModelNow, WatchedFolder};
+use super::edits;
 use super::evidence::{self, Evidence};
 use super::google::Google;
 use super::llm::{self, Provider, Ways};
@@ -790,6 +791,55 @@ impl Secretary {
         Ok(())
     }
 
+    /// [`save`] for a change the user made: what it changed of the things
+    /// the phone can change too (a task's tick, a line, a speaker's name)
+    /// is noted with the time, and a meeting in Drive goes up again so the
+    /// phone sees it (issue #67).
+    ///
+    /// [`save`]: Secretary::save
+    fn save_edit(&self, meeting: &Meeting, folder: &Path) -> Result<()> {
+        let before = Library::read(folder)
+            .map(|old| edits::values(&old))
+            .unwrap_or_default();
+        self.save(meeting, folder)?;
+        let changes = edits::changed(&before, &edits::values(meeting));
+        self.uploads.edited(&meeting.id, changes, now_ms());
+        Ok(())
+    }
+
+    /// The things changed on both this computer and the phone that say
+    /// different things: the change that stands is in the meeting, the
+    /// other is kept as a faint line (issue #67).
+    pub fn edit_conflicts(&self, id: &str) -> Vec<edits::Conflict> {
+        self.uploads.conflicts(id)
+    }
+
+    /// Takes the change of `key` that did not stand instead of the one that
+    /// did; it is noted as made now, so it stands on both sides.
+    pub fn take_other_edit(&self, id: &str, key: &str) -> Result<()> {
+        let other = self
+            .uploads
+            .losing_edit(id, key)
+            .ok_or_else(|| anyhow!("there is nothing else to take"))?;
+        let (mut meeting, folder) = self.editable(id)?;
+        let old = key
+            .strip_prefix("speaker:")
+            .and_then(|n| n.parse::<u32>().ok())
+            .and_then(|n| meeting.transcript.as_ref().map(|t| t.speaker_name(n)));
+        if edits::apply(&mut meeting, key, &other.value) {
+            if let (Some(old), Some(name)) = (old, other.value.as_str()) {
+                owners_follow(&mut meeting, &old, name.trim(), 0, u64::MAX);
+            }
+            self.save_edit(&meeting, &folder)
+        } else {
+            // Already so here (the phone's change stands): note it as made now.
+            self.uploads
+                .edited(id, vec![(key.to_string(), other.value)], now_ms());
+            self.changed(id);
+            Ok(())
+        }
+    }
+
     fn changed(&self, id: &str) {
         let _ = MeetingChanged { id: id.to_string() }.emit(&self.app);
     }
@@ -837,7 +887,7 @@ impl Secretary {
             .name_speaker(speaker, name, scope, from_ms, to_ms)
             .ok_or_else(|| anyhow!("there is no speaker {speaker}, or no name"))?;
         owners_follow(&mut meeting, &old, name.trim(), from, to);
-        self.save(&meeting, &folder)
+        self.save_edit(&meeting, &folder)
     }
 
     /// Puts a naming back: the speakers, who said each line and who was
@@ -848,7 +898,7 @@ impl Secretary {
     pub fn restore_naming(&self, id: &str, kept: &Naming, now: &Naming) -> Result<()> {
         let (mut meeting, folder) = self.editable(id)?;
         put_back_naming(&mut meeting, kept, now)?;
-        self.save(&meeting, &folder)
+        self.save_edit(&meeting, &folder)
     }
 
     // ----- arriving ---------------------------------------------------------
@@ -2760,7 +2810,7 @@ impl Secretary {
         if let Some(terms) = info.terms {
             meeting.terms = tidy(terms);
         }
-        self.save(&meeting, &folder)
+        self.save_edit(&meeting, &folder)
     }
 
     /// Candidate words for a meeting from its documents, without those it
@@ -2819,7 +2869,7 @@ impl Secretary {
             .and_then(|section| section.entries.get_mut(index))
             .ok_or_else(|| anyhow!("there is no such task"))?;
         entry.done = done;
-        self.save(&meeting, &folder)
+        self.save_edit(&meeting, &folder)
     }
 
     /// The task section `section` of a meeting's minutes, to change.
@@ -2846,7 +2896,7 @@ impl Secretary {
             .get_mut(index)
             .ok_or_else(|| anyhow!("there is no such task"))?
             .rewrite(text);
-        self.save(&meeting, &folder)
+        self.save_edit(&meeting, &folder)
     }
 
     /// Takes a task out of the minutes; it is kept so it can be put back.
@@ -2864,7 +2914,7 @@ impl Secretary {
         if let Some(minutes) = meeting.minutes.first_mut() {
             minutes.recount();
         }
-        self.save(&meeting, &folder)
+        self.save_edit(&meeting, &folder)
     }
 
     /// Puts a task taken out back where it was; `removed` is its place
@@ -2881,7 +2931,7 @@ impl Secretary {
         if let Some(minutes) = meeting.minutes.first_mut() {
             minutes.recount();
         }
-        self.save(&meeting, &folder)
+        self.save_edit(&meeting, &folder)
     }
 
     /// Adds a task the user writes to the end of a task section. With no
@@ -2944,7 +2994,7 @@ impl Secretary {
             .entries
             .push(minutes::Entry::added(text));
         minutes.recount();
-        self.save(&meeting, &folder)
+        self.save_edit(&meeting, &folder)
     }
 
     /// Gives a stretch of the transcript (one paragraph on the screen, from
@@ -2958,7 +3008,7 @@ impl Secretary {
             .ok_or_else(|| anyhow!("there is no transcript"))?
             .edit_lines(from_ms, to_ms, text)
             .map_err(|e| anyhow!(e))?;
-        self.save(&meeting, &folder)
+        self.save_edit(&meeting, &folder)
     }
 
     /// How many places in a meeting fixing the misheard words `from`,
@@ -3010,7 +3060,7 @@ impl Secretary {
             .ok_or_else(|| anyhow!("there is no transcript"))?
             .fix_word(at_ms, at, from, to, &elsewhere)
             .map_err(|e| anyhow!(e))?;
-        self.save(&meeting, &folder)?;
+        self.save_edit(&meeting, &folder)?;
         let remembered = remember
             && super::vocab::add_misheard(
                 &path,
@@ -3048,7 +3098,7 @@ impl Secretary {
             .ok_or_else(|| anyhow!("there is no transcript"))?
             .put_back_lines(before)
             .map_err(|e| anyhow!(e))?;
-        self.save(&meeting, &folder)?;
+        self.save_edit(&meeting, &folder)?;
         if forget {
             super::vocab::remove_misheard(&self.config().vocabulary(&self.data_dir), to, from)?;
         }
@@ -3075,7 +3125,7 @@ impl Secretary {
         if undone == 0 {
             bail!("there is no such fix there");
         }
-        self.save(&meeting, &folder)
+        self.save_edit(&meeting, &folder)
     }
 
     /// The user's vocabulary as one list, for the settings.
@@ -3293,6 +3343,45 @@ impl upload::Library for Secretary {
 
     fn lost_sign_in(&self) {
         phone::Host::lost_sign_in(self);
+    }
+
+    fn phone_edits_arrived(
+        &self,
+        id: &str,
+        winning: &[(String, serde_json::Value)],
+    ) -> Result<bool> {
+        let Ok(folder) = self.folder(id) else {
+            return Ok(false);
+        };
+        let mut meeting = Library::read(&folder)?;
+        if meeting.status == Status::Working {
+            bail!("it is being worked on right now");
+        }
+        let mut changed = false;
+        for (key, value) in winning {
+            if key.starts_with("speaker:") {
+                // A name follows the person into the tasks, as naming here does.
+                let old = key
+                    .strip_prefix("speaker:")
+                    .and_then(|n| n.parse::<u32>().ok())
+                    .and_then(|n| meeting.transcript.as_ref().map(|t| t.speaker_name(n)));
+                if edits::apply(&mut meeting, key, value) {
+                    if let (Some(old), Some(name)) = (old, value.as_str()) {
+                        owners_follow(&mut meeting, &old, name.trim(), 0, u64::MAX);
+                    }
+                    changed = true;
+                }
+            } else {
+                changed |= edits::apply(&mut meeting, key, value);
+            }
+        }
+        if changed {
+            self.save(&meeting, &folder)?;
+        } else {
+            // A change that did not stand shows as a faint line: the screen looks again.
+            self.changed(id);
+        }
+        Ok(changed)
     }
 }
 

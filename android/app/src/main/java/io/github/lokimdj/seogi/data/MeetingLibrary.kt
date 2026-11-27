@@ -42,7 +42,16 @@ data class DriveMeeting(
     val audioSize: Long? = null,
     /** For a meeting recorded on this phone: the recording's id here. */
     val phoneRecordingId: String? = null,
+    /** `고친것-컴퓨터.json`: the computer's changes, and Drive's version of it when read. */
+    val computerEditsFileId: String? = null,
+    val computerEditsVersion: Long? = null,
+    /** `고친것-폰.json` in the meeting's folder, once this phone wrote it. */
+    val phoneEditsFileId: String? = null,
 )
+
+/** One meeting's changes on this phone, kept until Drive has them. */
+@Serializable
+data class PhoneEdits(val edits: Map<String, Edit> = emptyMap(), val pending: Boolean = false)
 
 /**
  * The meetings in the shared Drive folder (issue #67): every meeting folder
@@ -67,6 +76,7 @@ class MeetingLibrary(
     private val lock = Mutex()
     private val docs = HashMap<String, MeetingDoc>()
     private val downloading = HashMap<String, Mutex>()
+    private val phoneLock = Any()
 
     private val state = MutableStateFlow(load())
 
@@ -89,6 +99,92 @@ class MeetingLibrary(
     }
 
     private fun docFile(id: String) = File(dir, "${safe(id)}.json")
+    private fun computerFile(id: String) = File(dir, "${safe(id)}.computer-edits.json")
+    private fun phoneFile(id: String) = File(dir, "${safe(id)}.phone-edits.json")
+
+    /** Bumped whenever a meeting's changes change, so the screen reads them again. */
+    private val editsState = MutableStateFlow(0)
+    val editsChanged: StateFlow<Int> = editsState.asStateFlow()
+
+    /** The computer's changes, as last read. */
+    fun computerEdits(id: String): Map<String, Edit> =
+        computerFile(id).takeIf { it.exists() }?.let { EditsFile.parse(it.readText())?.byKey() } ?: emptyMap()
+
+    /** This phone's changes. */
+    fun phoneEdits(id: String): PhoneEdits = synchronized(phoneLock) {
+        phoneFile(id).takeIf { it.exists() }?.let {
+            runCatching { json.decodeFromString(PhoneEdits.serializer(), it.readText()) }.getOrNull()
+        } ?: PhoneEdits()
+    }
+
+    /**
+     * The minutes as they stand with every change from either side, and the
+     * changes that did not stand but say something else (faint lines).
+     */
+    fun view(id: String): Pair<MeetingDoc, List<OtherEdit>>? {
+        val doc = doc(id) ?: return null
+        val (winners, others) = Edits.merge(computerEdits(id), phoneEdits(id).edits)
+        return Edits.overlay(doc, winners) to others
+    }
+
+    /**
+     * The user changed [key] to [value] on this phone, now: kept here at
+     * once, and sent to the meeting's Drive folder by [pushEdits].
+     */
+    fun edit(id: String, key: String, value: kotlinx.serialization.json.JsonElement, nowMs: Long = System.currentTimeMillis()) {
+        synchronized(phoneLock) {
+            val before = phoneEdits(id)
+            val after = PhoneEdits(before.edits + (key to Edit(key, value, nowMs)), pending = true)
+            writeAtomically(phoneFile(id), json.encodeToString(PhoneEdits.serializer(), after))
+        }
+        editsState.value += 1
+    }
+
+    /** Sends this phone's changes that Drive does not have yet. Never throws. */
+    suspend fun pushEdits(): Outcome = lock.withLock {
+        val waiting = state.value.filter { phoneEdits(it.id).pending }
+        if (waiting.isEmpty()) return@withLock Outcome.DONE
+        val token = when (val t = tokens()) {
+            is TokenResult.Ok -> t.token
+            TokenResult.NeedLogin -> return@withLock Outcome.NEED_LOGIN
+        }
+        var outcome = Outcome.DONE
+        for (m in waiting) {
+            try {
+                push(token, m)
+            } catch (e: IOException) {
+                return@withLock Outcome.OFFLINE
+            } catch (e: DriveHttpException) {
+                if (needsLogin(e)) return@withLock Outcome.NEED_LOGIN
+                outcome = Outcome.FAILED
+            }
+        }
+        outcome
+    }
+
+    private fun push(token: String, m: DriveMeeting) {
+        val mine = phoneEdits(m.id)
+        val text = EditsFile.phone(m.id, mine.edits.values)
+        var fileId = m.phoneEditsFileId
+        if (fileId != null) {
+            try {
+                reader.rewriteJson(token, fileId, text)
+            } catch (e: DriveHttpException) {
+                if (e.code != 404) throw e
+                fileId = null // gone (trashed by hand): made again
+            }
+        }
+        if (fileId == null) fileId = reader.writeJson(token, m.folderId, Edits.PHONE_FILE, text)
+        synchronized(phoneLock) {
+            // A change made while this one was on its way stays waiting.
+            val now = phoneEdits(m.id)
+            if (now.edits == mine.edits) {
+                writeAtomically(phoneFile(m.id), json.encodeToString(PhoneEdits.serializer(), now.copy(pending = false)))
+            }
+        }
+        val id = fileId
+        save(state.value.map { if (it.id == m.id) it.copy(phoneEditsFileId = id) else it })
+    }
 
     /** Lists the shared folder and reads what changed. Never throws. */
     suspend fun refresh(): Outcome = lock.withLock {
@@ -129,6 +225,16 @@ class MeetingLibrary(
             } ?: read(token, record) ?: continue
             if (doc.id != f.meetingId) continue
             val audio = audioIn(files, doc)
+            val computer = files.firstOrNull { it.name == Edits.COMPUTER_FILE }
+            if (computer != null && (known?.computerEditsFileId != computer.id || known.computerEditsVersion != computer.version ||
+                    computer.version == null || !computerFile(doc.id).exists())
+            ) {
+                writeAtomically(computerFile(doc.id), reader.readText(token, computer.id))
+                editsState.value += 1
+            } else if (computer == null && computerFile(doc.id).exists()) {
+                computerFile(doc.id).delete()
+                editsState.value += 1
+            }
             found += DriveMeeting(
                 id = doc.id,
                 folderId = f.id,
@@ -145,6 +251,9 @@ class MeetingLibrary(
                 audioName = audio?.name,
                 audioSize = audio?.size,
                 phoneRecordingId = audio?.recordingId ?: files.firstNotNullOfOrNull { it.recordingId },
+                computerEditsFileId = computer?.id,
+                computerEditsVersion = computer?.version,
+                phoneEditsFileId = files.firstOrNull { it.name == Edits.PHONE_FILE }?.id ?: known?.phoneEditsFileId,
             )
         }
         val list = found.distinctBy { it.id }.sortedByDescending { it.startedAtMs }
@@ -152,6 +261,8 @@ class MeetingLibrary(
         val gone = before.keys - list.map { it.id }.toSet()
         gone.forEach { id ->
             docFile(id).delete()
+            computerFile(id).delete()
+            phoneFile(id).delete()
             synchronized(docs) { docs.remove(id) }
         }
         save(list)

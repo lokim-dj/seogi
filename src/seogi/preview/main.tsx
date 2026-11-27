@@ -75,6 +75,12 @@ const today = (hours: number, minutes: number) => {
 };
 
 const done = consultMeeting as unknown as Meeting;
+// Every task has its id, as a meeting in Drive does (issue #67).
+(done.minutes?.[0]?.sections ?? []).forEach((section, s) =>
+  section.entries.forEach((entry, e) => {
+    if (!entry.id) entry.id = `preview-${s}-${e}`;
+  }),
+);
 done.started_at_ms = today(10, 30);
 if (new URLSearchParams(window.location.search).get("mic") === "lost") {
   // `?screen=minutes&mic=lost`: the lid closed for a moment mid-meeting.
@@ -1196,6 +1202,20 @@ mockIPC(
           line.fixes = [];
         });
         return null;
+      }
+      case "seogi_edit_conflicts": {
+        // One task ticked on the computer and later taken back on the phone.
+        const entry = done.minutes?.[0]?.sections[0]?.entries[0];
+        return entry
+          ? [
+              {
+                key: `done:${entry.id}`,
+                other: "true",
+                other_side: "computer",
+                other_at_ms: 0,
+              },
+            ]
+          : [];
       }
       case "seogi_set_action_done": {
         const section = done.minutes?.[0]?.sections.find(

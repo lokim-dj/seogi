@@ -45,6 +45,16 @@ class MeetingLibraryTest {
         }
         override fun filesIn(token: String, parents: List<String>) = files.filter { it.parent in parents }
         override fun readText(token: String, fileId: String): String { reads += fileId; return text.getValue(fileId) }
+        val written = mutableMapOf<String, String>()
+        override fun writeJson(token: String, folderId: String, name: String, text: String): String {
+            val id = "W${written.size + 1}"
+            written[id] = text
+            files += DriveItem(id, name, folderId, text.length.toLong(), "application/json", 1, null)
+            return id
+        }
+        override fun rewriteJson(token: String, fileId: String, text: String) {
+            written[fileId] = text
+        }
         override fun download(token: String, fileId: String, to: File, onProgress: (Long, Long) -> Unit) {
             downloads++
             val b = bytes.getValue(fileId)

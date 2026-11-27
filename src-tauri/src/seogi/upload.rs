@@ -35,7 +35,8 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use specta::Type;
 
-use super::google::{self, FileInfo, Google, Standing, Upload};
+use super::edits::{self, Conflict, Edit, EditsFile, Side};
+use super::google::{self, FileInfo, Google, Standing, Upload, Versioned};
 use super::minutes::Entry;
 use super::store::{self, Meeting, Origin, Status};
 use super::templates::SectionKind;
@@ -45,6 +46,8 @@ const STATE_NAME: &str = "drive-uploads.json";
 pub const MEETING_JSON: &str = "회의.json";
 /// Below this much room left in the account, recordings wait.
 pub const KEEP_FREE: u64 = 1024 * 1024 * 1024;
+/// The most a file of changes may be: far more than a meeting's changes.
+const EDITS_LIMIT: usize = 4 * 1024 * 1024;
 /// How often the queue is looked at when nothing wakes it.
 const LOOK_EVERY: Duration = Duration::from_secs(10 * 60);
 
@@ -101,6 +104,16 @@ struct Up {
     /// asked for.
     #[serde(default)]
     asks: u64,
+    /// This computer's changes the phone can make too, by key (see
+    /// [`edits`]): written to `고친것-컴퓨터.json` in the meeting's folder.
+    #[serde(default)]
+    edits: BTreeMap<String, Edit>,
+    /// The phone's changes, as last read from its `고친것-폰.json`.
+    #[serde(default)]
+    phone_edits: BTreeMap<String, Edit>,
+    /// Drive's version of the phone's file when it was last read.
+    #[serde(default)]
+    phone_edits_version: Option<u64>,
 }
 
 impl Up {
@@ -175,6 +188,14 @@ pub trait Library {
     fn low_space(&self);
     /// Tells the user, once, that Google has to be connected again.
     fn lost_sign_in(&self);
+    /// The phone's file of changes came (or changed): `winning` holds the
+    /// phone's changes that stand, to be made to the meeting here. Returns
+    /// whether the meeting changed.
+    fn phone_edits_arrived(
+        &self,
+        id: &str,
+        winning: &[(String, serde_json::Value)],
+    ) -> Result<bool>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -203,6 +224,10 @@ pub trait Remote {
     fn start_upload(&self, parent: &str, name: &str, mime: &str, size: u64) -> Result<String>;
     fn upload_offset(&self, session: &str, size: u64) -> Result<Upload>;
     fn upload_chunk(&self, session: &str, file: &Path, offset: u64, size: u64) -> Result<Upload>;
+    /// Every file called `name` the app may see, with its Drive version.
+    fn find_everywhere(&self, name: &str) -> Result<Vec<Versioned>>;
+    /// A small file's content.
+    fn read(&self, id: &str) -> Result<Vec<u8>>;
 }
 
 /// [`Remote`] through the user's Google sign-in.
@@ -260,6 +285,13 @@ impl Remote for Live<'_> {
     fn upload_chunk(&self, session: &str, file: &Path, offset: u64, size: u64) -> Result<Upload> {
         self.0
             .call(|token| google::upload_chunk(token, session, file, offset, size))
+    }
+    fn find_everywhere(&self, name: &str) -> Result<Vec<Versioned>> {
+        self.0.call(|token| google::find_everywhere(token, name))
+    }
+    fn read(&self, id: &str) -> Result<Vec<u8>> {
+        self.0
+            .call(|token| google::read_small(token, id, EDITS_LIMIT))
     }
 }
 
@@ -433,6 +465,49 @@ impl Uploads {
         self.wake_up();
     }
 
+    /// The user changed a meeting here: `changes` (things the phone can
+    /// change too) are noted with `at_ms`, and a meeting in Drive goes up
+    /// again so the phone sees what changed.
+    pub fn edited(&self, id: &str, changes: Vec<(String, serde_json::Value)>, at_ms: i64) {
+        let mut again = false;
+        self.change(|saved| {
+            if changes.is_empty() && !saved.meetings.contains_key(id) {
+                return;
+            }
+            let up = saved.meetings.entry(id.to_string()).or_default();
+            for (key, value) in changes {
+                up.edits.insert(key.clone(), Edit { key, value, at_ms });
+            }
+            if up.uploaded() && !up.excluded {
+                up.wanted = true;
+                up.asks += 1;
+                again = true;
+            }
+        });
+        if again {
+            self.wake_up();
+        }
+    }
+
+    /// The changes of a meeting made on both sides that say different
+    /// things: the one that stands is in the meeting, the other is here.
+    pub fn conflicts(&self, id: &str) -> Vec<Conflict> {
+        let up = self.up(id);
+        edits::merge(&up.edits, &up.phone_edits).1
+    }
+
+    /// The change of `key` that did not stand, to take instead.
+    pub fn losing_edit(&self, id: &str, key: &str) -> Option<Edit> {
+        let up = self.up(id);
+        let (winners, _) = edits::merge(&up.edits, &up.phone_edits);
+        let (_, side) = winners.get(key)?;
+        let other = match side {
+            Side::Computer => up.phone_edits.get(key),
+            Side::Phone => up.edits.get(key),
+        }?;
+        (other.value != winners[key].0.value).then(|| other.clone())
+    }
+
     pub fn wake_up(&self) {
         let (flag, signal) = &self.wake;
         *lock(flag) = true;
@@ -459,7 +534,11 @@ impl Uploads {
         }
         let busy = {
             let saved = lock(&self.saved);
-            saved.meetings.values().any(|up| up.wanted || up.to_trash)
+            // A meeting in Drive may have changes from the phone to read.
+            saved
+                .meetings
+                .values()
+                .any(|up| up.wanted || up.to_trash || (up.uploaded() && !up.excluded))
         };
         if !busy || self.uploading.swap(true, Ordering::SeqCst) {
             return;
@@ -510,6 +589,14 @@ impl Uploads {
                 }
             }
         }
+        match self.pull_phone_edits(remote, library) {
+            Ok(()) => {}
+            Err(e) if stops_the_turn(&e) => return Err(e),
+            Err(e) => {
+                warn!("The phone's changes could not be read yet: {e:#}");
+                local_trouble = Some(e);
+            }
+        }
         let wanted: Vec<String> = lock(&self.saved)
             .meetings
             .iter()
@@ -536,6 +623,70 @@ impl Uploads {
             Some(e) => Err(e),
             None => Ok(()),
         }
+    }
+
+    /// Reads the phone's files of changes that are new or changed since the
+    /// last turn (one search for all meetings) and makes the phone's
+    /// changes that stand here. A meeting that changed goes up again.
+    fn pull_phone_edits(&self, remote: &dyn Remote, library: &dyn Library) -> Result<()> {
+        let folders: BTreeMap<String, String> = lock(&self.saved)
+            .meetings
+            .iter()
+            .filter(|(_, up)| up.uploaded() && !up.excluded && !up.folder.is_empty())
+            .map(|(id, up)| (up.folder.clone(), id.clone()))
+            .collect();
+        if folders.is_empty() {
+            return Ok(());
+        }
+        let mut trouble = None;
+        for found in remote.find_everywhere(edits::PHONE_FILE)? {
+            let Some(id) = found.parents.iter().find_map(|p| folders.get(p)).cloned() else {
+                continue;
+            };
+            let up = self.up(&id);
+            if found.version.is_some() && up.phone_edits_version == found.version {
+                continue;
+            }
+            match self.take_phone_edits(remote, library, &id, &found, &up) {
+                Ok(()) => {}
+                Err(e) if stops_the_turn(&e) => return Err(e),
+                Err(e) => {
+                    warn!("Meeting {id}'s changes from the phone could not be taken yet: {e:#}");
+                    trouble = Some(e);
+                }
+            }
+        }
+        trouble.map_or(Ok(()), Err)
+    }
+
+    fn take_phone_edits(
+        &self,
+        remote: &dyn Remote,
+        library: &dyn Library,
+        id: &str,
+        found: &Versioned,
+        up: &Up,
+    ) -> Result<()> {
+        let bytes = remote.read(&found.id)?;
+        let theirs = EditsFile::parse(&bytes)
+            .filter(|file| file.meeting.is_empty() || file.meeting == id)
+            .map(|file| file.by_key())
+            .unwrap_or_default();
+        let (winners, _) = edits::merge(&up.edits, &theirs);
+        let winning: Vec<(String, serde_json::Value)> = winners
+            .into_iter()
+            .filter(|(_, (_, side))| *side == Side::Phone)
+            .map(|(key, (edit, _))| (key, edit.value))
+            .collect();
+        // Kept first, so the faint lines are there when the screen hears of it.
+        self.put_up(id, |up| up.phone_edits = theirs);
+        let changed = library.phone_edits_arrived(id, &winning)?;
+        self.put_up(id, |up| up.phone_edits_version = found.version);
+        if changed {
+            info!("Meeting {id} took changes made on the phone");
+            self.want(id);
+        }
+        Ok(())
     }
 
     fn up(&self, id: &str) -> Up {
@@ -656,13 +807,22 @@ impl Uploads {
         let transcript = std::fs::read(folder.join(store::TRANSCRIPT_NAME)).ok();
         let minutes = std::fs::read(folder.join(store::MINUTES_NAME)).ok();
         let record = meeting_json(&meeting, audio_in_folder);
-        let files: [(&str, &str, Option<Vec<u8>>); 3] = [
+        let mine = self.up(id).edits;
+        let computer_edits = (!mine.is_empty()).then(|| {
+            serde_json::to_vec_pretty(&EditsFile::computer(id, &mine)).unwrap_or_default()
+        });
+        let files: [(&str, &str, Option<Vec<u8>>); 4] = [
             (
                 store::TRANSCRIPT_NAME,
                 "text/plain; charset=utf-8",
                 transcript,
             ),
             (store::MINUTES_NAME, "text/markdown; charset=utf-8", minutes),
+            (
+                edits::COMPUTER_FILE,
+                "application/json; charset=utf-8",
+                computer_edits,
+            ),
             // Last: the phone takes the meeting as ready when it is there.
             (
                 MEETING_JSON,
@@ -1040,6 +1200,8 @@ mod tests {
         sessions: Mutex<HashMap<String, FakeSession>>,
         calls: Mutex<Vec<String>>,
         next: Mutex<u32>,
+        /// Drive's version of each file: it goes up with every change.
+        versions: Mutex<HashMap<String, u64>>,
     }
 
     impl FakeDrive {
@@ -1060,6 +1222,7 @@ mod tests {
                 },
             );
             lock(&self.content).insert(id.into(), bytes.to_vec());
+            *lock(&self.versions).entry(id.into()).or_default() += 1;
         }
         fn in_folder(&self, folder: &str) -> Vec<String> {
             let mut names: Vec<String> = lock(&self.files)
@@ -1143,7 +1306,24 @@ mod tests {
         fn update(&self, id: &str, _mime: &str, bytes: &[u8]) -> Result<()> {
             self.note("update");
             lock(&self.content).insert(id.into(), bytes.to_vec());
+            *lock(&self.versions).entry(id.into()).or_default() += 1;
             Ok(())
+        }
+        fn find_everywhere(&self, name: &str) -> Result<Vec<Versioned>> {
+            let versions = lock(&self.versions);
+            Ok(lock(&self.files)
+                .values()
+                .filter(|f| f.name == name && !f.trashed)
+                .map(|f| Versioned {
+                    id: f.id.clone(),
+                    parents: f.parents.clone(),
+                    version: versions.get(&f.id).copied(),
+                })
+                .collect())
+        }
+        fn read(&self, id: &str) -> Result<Vec<u8>> {
+            self.note("read");
+            Ok(lock(&self.content).get(id).cloned().unwrap_or_default())
         }
         fn free_space(&self) -> Result<Option<u64>> {
             Ok(self.free)
@@ -1235,6 +1415,21 @@ mod tests {
             *lock(&self.told_low) += 1;
         }
         fn lost_sign_in(&self) {}
+        fn phone_edits_arrived(
+            &self,
+            id: &str,
+            winning: &[(String, serde_json::Value)],
+        ) -> Result<bool> {
+            let mut meetings = lock(&self.meetings);
+            let Some((meeting, _)) = meetings.get_mut(id) else {
+                return Ok(false);
+            };
+            let mut changed = false;
+            for (key, value) in winning {
+                changed |= edits::apply(meeting, key, value);
+            }
+            Ok(changed)
+        }
     }
 
     /// A done meeting in its own folder under `library`.
@@ -1495,6 +1690,13 @@ mod tests {
         }
         fn low_space(&self) {}
         fn lost_sign_in(&self) {}
+        fn phone_edits_arrived(
+            &self,
+            id: &str,
+            winning: &[(String, serde_json::Value)],
+        ) -> Result<bool> {
+            self.inner.phone_edits_arrived(id, winning)
+        }
     }
 
     #[test]
@@ -1541,6 +1743,12 @@ mod tests {
             }
             fn rename(&self, id: &str, n: &str) -> Result<()> {
                 self.0.rename(id, n)
+            }
+            fn find_everywhere(&self, n: &str) -> Result<Vec<Versioned>> {
+                self.0.find_everywhere(n)
+            }
+            fn read(&self, id: &str) -> Result<Vec<u8>> {
+                self.0.read(id)
             }
             fn move_into(&self, id: &str, t: &str, f: &[String]) -> Result<()> {
                 self.0.move_into(id, t, f)
@@ -1651,5 +1859,74 @@ mod tests {
         assert_eq!(backlog.bytes, text + 10);
         uploads.exclude("m1");
         assert!(uploads.backlog_of(all.iter(), settings).0.is_empty());
+    }
+
+    /// Truth 5: a task ticked on the phone is ticked here; one changed on
+    /// both sides keeps the later change and the other stays, to be taken.
+    #[test]
+    fn changes_from_the_phone_come_here_and_nothing_is_lost() {
+        let dir = tempfile::tempdir().unwrap();
+        let uploads = uploads(&dir.path().join("data"));
+        let drive = FakeDrive::default();
+        let library = FakeLibrary::new();
+        let (m, folder) = meeting(dir.path(), "m1", Origin::Recorded, b"audio");
+        lock(&library.meetings).insert("m1".into(), (m, folder));
+        uploads.want("m1");
+        uploads.run_once(&drive, &library).unwrap();
+        let drive_folder = uploads.up("m1").folder;
+
+        // Ticked here at 100: noted, and the computer's file goes up.
+        uploads.edited("m1", vec![("done:t1".into(), json!(true))], 100);
+        assert!(uploads.up("m1").wanted);
+        uploads.run_once(&drive, &library).unwrap();
+        assert!(drive
+            .in_folder(&drive_folder)
+            .contains(&edits::COMPUTER_FILE.to_string()));
+
+        // The phone took the tick back later, at 200.
+        let phone = json!({"format": 1, "device": "phone", "meeting": "m1",
+            "edits": [{"key": "done:t1", "value": false, "at_ms": 200}]});
+        drive.put_file(
+            "P1",
+            edits::PHONE_FILE,
+            &drive_folder,
+            phone.to_string().as_bytes(),
+        );
+        uploads.run_once(&drive, &library).unwrap();
+        let done = |library: &FakeLibrary| {
+            lock(&library.meetings)["m1"].0.minutes[0].sections[0].entries[0].done
+        };
+        assert!(!done(&library));
+        let conflicts = uploads.conflicts("m1");
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(
+            (conflicts[0].other.as_str(), conflicts[0].other_side),
+            ("true", Side::Computer)
+        );
+        assert_eq!(
+            uploads.losing_edit("m1", "done:t1").unwrap().value,
+            json!(true)
+        );
+
+        // The same file is not read again.
+        let reads = drive.called("read");
+        uploads.run_once(&drive, &library).unwrap();
+        assert_eq!(drive.called("read"), reads);
+
+        // Taken here again, later still: the computer's change stands.
+        uploads.edited("m1", vec![("done:t1".into(), json!(true))], 300);
+        assert_eq!(uploads.conflicts("m1")[0].other_side, Side::Phone);
+    }
+
+    /// A change made here before the meeting was ever in Drive waits
+    /// quietly: nothing is asked of Drive.
+    #[test]
+    fn a_change_to_a_meeting_not_in_drive_asks_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let uploads = uploads(&dir.path().join("data"));
+        uploads.edited("m9", vec![], 1);
+        assert!(!uploads.status().uploaded.contains(&"m9".to_string()));
+        uploads.edited("m9", vec![("done:x".into(), json!(true))], 1);
+        assert!(!uploads.up("m9").wanted);
     }
 }
