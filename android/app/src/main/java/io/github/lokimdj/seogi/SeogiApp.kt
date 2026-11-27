@@ -40,6 +40,9 @@ class SeogiApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // The floating key's process (`:dictation`) shares this class but none
+        // of the recording and upload work: only the main process touches them.
+        if (getProcessName() != packageName) return
         store = RecordingStore(File(filesDir, "recordings.json"))
         settings = Settings(this)
         Notifications.createChannels(this)

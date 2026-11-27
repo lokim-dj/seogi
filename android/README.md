@@ -5,14 +5,21 @@ Google Drive, into a folder `서기` (once `서기 폰 녹음`) that the app mak
 computer's Seogi watches that folder, writes the minutes and puts each meeting
 back in it, its own recordings' too; the phone lists them and opens the
 minutes, tasks first, and downloads a recording only when it is played
-([`docs/drive-folder.md`](../docs/drive-folder.md)). Design:
+([`docs/drive-folder.md`](../docs/drive-folder.md)). It also types by voice
+into other apps (말로 입력, a floating microphone key; see below). Design:
 [`docs/specs/2026-11-24-galaxy-app-design.md`](../docs/specs/2026-11-24-galaxy-app-design.md).
 
 Kotlin and Jetpack Compose, minimum Android 13 (API 33), target API 35.
 
 ## Build
 
-JDK 17 and the Android SDK (platform 35, build-tools 35.0.0).
+JDK 17 and the Android SDK (platform 35, build-tools 35.0.0), NDK
+29.0.14206865 and CMake 3.31.6 (Gradle installs the last two when they are
+missing; `sdkmanager "ndk;29.0.14206865" "cmake;3.31.6"` does it ahead). The
+native build downloads the transcribe.cpp 0.4.2 source tarball from GitHub and
+checks its SHA-256; to build offline, point `seogi.transcribeTarball` in
+`local.properties` (or `SEOGI_TRANSCRIBE_TARBALL`) at a local copy of the same
+file.
 
 ```bash
 cd android
@@ -73,3 +80,36 @@ secret is in the app.
   told.
 - A sidecar JSON is made once: a retry first looks for the one an earlier try
   made (its answer lost, or the list forgot its id) and updates it.
+
+## 말로 입력 (dictation)
+
+A round microphone key floats over other apps. Hold it and speak, or tap to
+start and tap to stop; the words go into the field that has the cursor.
+
+- Turned on in 설정 › 말로 입력, one step a screen: microphone and
+  notifications, "다른 앱 위에 표시", the accessibility service, the model.
+- Speech becomes text on the phone: Qwen3-ASR 0.6B Q8_0 (~850 MB, Apache 2.0)
+  through transcribe.cpp 0.4.2 on the CPU (arm64 with dot product and int8
+  matrix instructions; the app checks the CPU first). The model is never in
+  the APK: it is downloaded after the user asks, continuing where it stopped,
+  and named only after its SHA-256 matches the desktop catalog's. Loaded on
+  the first use, let go after three minutes without speaking.
+- The sound stays in memory, is never written or sent, and is dropped once it
+  has become text. Long speech is cut into pieces of at most 25 s at quiet
+  moments; listening stops on its own after two minutes.
+- Spoken numbers before a unit are written as digits by the computer's rules
+  ("세 시 반" → "3시 반", "이십 프로 할인" → "20% 할인"; "세 번째" and
+  "아이폰 십오 프로" stay). `dictation/Numbers.kt` is a port of the desktop's
+  `src-tauri/src/seogi/numbers.rs`, and both are tested against the same
+  sentences in `src-tauri/src/seogi/numbers.cases.json`, so a rule changed on
+  one side fails the other side's test. Punctuation is kept; nothing else
+  tidies the text.
+- Text goes in through an accessibility service (`InsertService`), which only
+  looks for the focused field when there is text to put in. Without it, or
+  when no field has the cursor, the text is copied and a toast says
+  "복사했어요, 붙여 넣으세요". Google Play asks apps that use an accessibility
+  service for something other than helping people with disabilities for a
+  declaration; the in-app screen is the disclosure and consent it requires.
+- The key and the engine run in their own process (`:dictation`), so a crash
+  or a kill there never stops a meeting being recorded. While a meeting is
+  recorded the key does not listen.

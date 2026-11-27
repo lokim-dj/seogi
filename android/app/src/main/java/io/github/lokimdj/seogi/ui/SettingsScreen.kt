@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.sp
 import io.github.lokimdj.seogi.BuildConfig
 import io.github.lokimdj.seogi.R
 
-/** Settings: the account, the Wi-Fi rule, quality, calendar, dictation's place, and about. */
+/** Settings: the account, the Wi-Fi rule, quality, calendar, dictation (말로 입력), and about. */
 @Composable
 fun SettingsScreen(
     account: String?,
@@ -29,6 +29,8 @@ fun SettingsScreen(
     onPrivacy: () -> Unit,
     onFeedback: () -> Unit,
     onLicenses: () -> Unit = {},
+    dictationState: String = "",
+    onDictation: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize().padding(horizontal = Gutter)) {
         Spacer(Modifier.height(10.dp))
@@ -61,8 +63,8 @@ fun SettingsScreen(
             )
             Hairline()
             StepLine(
-                stringResource(R.string.dictation), stringResource(R.string.set_dictation_value),
-                stringResource(R.string.set_dictation_why), done = true, onClick = {},
+                stringResource(R.string.dictation), dictationState,
+                stringResource(R.string.set_dictation_why), done = false, onClick = onDictation,
             )
             Hairline()
             StepLine(stringResource(R.string.set_privacy), "↗", "", done = false, onClick = onPrivacy)

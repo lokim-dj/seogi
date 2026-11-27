@@ -38,6 +38,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.lifecycleScope
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.google.android.gms.auth.api.identity.AuthorizationResult
 import com.google.android.gms.common.api.ApiException
@@ -48,6 +49,15 @@ import io.github.lokimdj.seogi.data.MeetingList
 import io.github.lokimdj.seogi.data.Recording
 import io.github.lokimdj.seogi.data.UploadError
 import io.github.lokimdj.seogi.data.UploadState
+import io.github.lokimdj.seogi.dictation.Accessibility
+import io.github.lokimdj.seogi.dictation.DictationModel
+import io.github.lokimdj.seogi.dictation.DictationPrefs
+import io.github.lokimdj.seogi.dictation.DictationService
+import io.github.lokimdj.seogi.dictation.InsertService
+import io.github.lokimdj.seogi.dictation.ModelDownloadWorker
+import io.github.lokimdj.seogi.dictation.SetupState
+import io.github.lokimdj.seogi.dictation.SetupStep
+import io.github.lokimdj.seogi.dictation.SpeechEngine
 import io.github.lokimdj.seogi.record.CalendarEvent
 import io.github.lokimdj.seogi.record.CalendarPick
 import io.github.lokimdj.seogi.record.CalendarReader
@@ -61,6 +71,7 @@ import io.github.lokimdj.seogi.ui.MeetingScreen
 import io.github.lokimdj.seogi.ui.PlayState
 import io.github.lokimdj.seogi.ui.DictationScreen
 import io.github.lokimdj.seogi.ui.LicensesScreen
+import io.github.lokimdj.seogi.ui.ModelDownload
 import io.github.lokimdj.seogi.ui.UndoBar
 import io.github.lokimdj.seogi.ui.HomeScreen
 import io.github.lokimdj.seogi.ui.OnboardingScreen
@@ -246,6 +257,45 @@ class MainActivity : ComponentActivity() {
         calendar = granted(Manifest.permission.READ_CALENDAR),
     )
 
+    private fun dictationSetup() = SetupState(
+        mic = granted(Manifest.permission.RECORD_AUDIO),
+        notifications = granted(Manifest.permission.POST_NOTIFICATIONS),
+        overlay = SystemSettings.canDrawOverlays(this),
+        accessibility = Accessibility.isOn(this),
+        copyOnly = DictationPrefs.copyOnly(this),
+        modelReady = DictationModel.isReady(this),
+    )
+
+    /** Android's page for this app's "다른 앱 위에 표시". */
+    private fun openOverlaySettings() = tryStart(
+        Intent(SystemSettings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")),
+        Intent(SystemSettings.ACTION_MANAGE_OVERLAY_PERMISSION),
+    )
+
+    /** Android's page for Seogi's accessibility service, or the accessibility list where that page is not offered. */
+    private fun openAccessibilitySettings() = tryStart(
+        Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS")
+            .putExtra(Intent.EXTRA_COMPONENT_NAME, android.content.ComponentName(this, InsertService::class.java).flattenToString()),
+        Intent(SystemSettings.ACTION_ACCESSIBILITY_SETTINGS),
+    )
+
+    private fun tryStart(vararg intents: Intent) {
+        for (i in intents) {
+            try {
+                startActivity(i)
+                return
+            } catch (_: Exception) {}
+        }
+    }
+
+    /** MB still to free before the model fits with room to spare; 0 when it fits. */
+    private fun shortOfSpaceMb(): Int {
+        val need = DictationModel.remaining(this) + DictationModel.SPARE_BYTES - freeBytes()
+        return if (need > 0) ((need + Space.MB - 1) / Space.MB).toInt() else 0
+    }
+
+    private fun metered() = getSystemService(android.net.ConnectivityManager::class.java)?.isActiveNetworkMetered == true
+
     private fun openAppSettings() = startActivity(
         Intent(SystemSettings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)),
     )
@@ -359,11 +409,21 @@ class MainActivity : ComponentActivity() {
         val entries = MeetingList.merge(recordings, driveMeetings)
         var openEntry by rememberSaveable { mutableStateOf<String?>(null) }
         var openedFrom by rememberSaveable { mutableStateOf(Screen.HOME) }
+        var dict by remember { mutableStateOf(dictationSetup()) }
+        var dictOn by remember { mutableStateOf(DictationPrefs.isOn(this@MainActivity)) }
+        val cpuSupported = remember { SpeechEngine.cpuSupportedHere() }
+        val modelWork by remember {
+            WorkManager.getInstance(this@MainActivity).getWorkInfosForUniqueWorkFlow(ModelDownloadWorker.NAME)
+        }.collectAsState(initial = emptyList())
 
         fun refresh() {
             app.recoverLeftovers()
             app.refreshMeetings()
             perms = perms()
+            dict = dictationSetup()
+            dictOn = DictationPrefs.isOn(this@MainActivity)
+            // The floating key comes back after a restart or a kill once Seogi is opened.
+            if (dictOn && cpuSupported && dict.mic && dict.overlay && dict.modelReady) DictationService.start(this@MainActivity)
             now = System.currentTimeMillis()
             lifecycleScope.launch { events = withContext(Dispatchers.IO) { CalendarReader.today(this@MainActivity) } }
         }
@@ -374,6 +434,30 @@ class MainActivity : ComponentActivity() {
             if (DeleteWindow.commitOnStop(isChangingConfigurations, screenOn)) app.deletes.commitNow()
         }
         val pending by app.deletes.pending.collectAsState()
+        val work = modelWork.lastOrNull()
+        LaunchedEffect(work?.state) { dict = dictationSetup() }
+        val download = when (work?.state) {
+            WorkInfo.State.RUNNING -> ModelDownload.Running(
+                work.progress.getLong(ModelDownloadWorker.KEY_DONE, -1).takeIf { it >= 0 }
+                    ?: DictationModel.partFile(this@MainActivity).length(),
+                DictationModel.SIZE,
+            )
+            WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED ->
+                ModelDownload.WaitingForNetwork(wifi = ModelDownloadWorker.TAG_UNMETERED in work.tags)
+            WorkInfo.State.FAILED -> when {
+                work.outputData.getBoolean(ModelDownloadWorker.KEY_WRONG, false) -> ModelDownload.Wrong
+                work.outputData.getBoolean(ModelDownloadWorker.KEY_UNAVAILABLE, false) -> ModelDownload.Unavailable
+                else -> ModelDownload.Idle
+            }
+            else -> ModelDownload.Idle
+        }
+        val askDictationPerms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
+            refresh()
+            if (res.values.any { !it } && res.keys.any { !shouldShowRequestPermissionRationale(it) && !granted(it) }) {
+                // Refused for good: Android shows no dialog any more.
+                openAppSettings()
+            }
+        }
         LaunchedEffect(Unit) {
             while (true) {
                 kotlinx.coroutines.delay(30_000)
@@ -564,8 +648,43 @@ class MainActivity : ComponentActivity() {
                     onPrivacy = { open(PRIVACY_URL) },
                     onFeedback = { open(FEEDBACK_URL) },
                     onLicenses = { screen = Screen.LICENSES },
+                    dictationState = when {
+                        dict.current() != SetupStep.READY || !cpuSupported -> stringResource(R.string.set_dictation_setup)
+                        dictOn -> stringResource(R.string.on)
+                        else -> stringResource(R.string.off)
+                    },
+                    onDictation = { screen = Screen.DICTATION },
                 )
-                Screen.DICTATION -> DictationScreen(onBack = { screen = Screen.HOME })
+                Screen.DICTATION -> DictationScreen(
+                    state = dict,
+                    cpuSupported = cpuSupported,
+                    on = dictOn,
+                    download = download,
+                    metered = metered(),
+                    shortOfSpaceMb = shortOfSpaceMb(),
+                    onBack = { screen = Screen.HOME },
+                    onMic = {
+                        askDictationPerms.launch(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS))
+                    },
+                    onOverlay = ::openOverlaySettings,
+                    onAccessibility = {
+                        DictationPrefs.setCopyOnly(this@MainActivity, false)
+                        dict = dictationSetup()
+                        openAccessibilitySettings()
+                    },
+                    onCopyOnly = {
+                        DictationPrefs.setCopyOnly(this@MainActivity, true)
+                        dict = dictationSetup()
+                    },
+                    onGetModel = {
+                        if (shortOfSpaceMb() <= 0) ModelDownloadWorker.start(this@MainActivity, unmetered = !metered())
+                    },
+                    onStopModel = { ModelDownloadWorker.stop(this@MainActivity) },
+                    onSwitch = { v ->
+                        if (v) DictationService.start(this@MainActivity) else DictationService.stop(this@MainActivity)
+                        dictOn = v
+                    },
+                )
                 Screen.LICENSES -> LicensesScreen(onBack = { screen = Screen.SETTINGS })
             }
           }
