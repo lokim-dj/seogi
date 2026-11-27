@@ -520,6 +520,12 @@ const en: Strings = {
       "The names, site and note are used for the transcript and the minutes once the recording ends. They may be left empty.",
   },
   onboarding: {
+    steps: "First-run steps",
+    step: {
+      how: "How minutes are written",
+      needed: "What must be allowed",
+      nice: "Nice to have",
+    },
     once: "Set once. You can change it later in Settings.",
     title: "Who should write up the minutes?",
     lead: "Turning the recording into text always happens on this computer. Choose only how that text becomes minutes.",
@@ -562,8 +568,17 @@ const en: Strings = {
     keySaved: "A key is saved.",
     geminiWarn:
       "A free Gemini key may let what you send be used for training. Not advised for meetings about customers.",
+    neededTitle: "First, please allow these",
+    neededLeadMic:
+      "Seogi needs the microphone to record. You can start without it and allow it any time in Settings.",
+    niceTitle: "A few things that make it easier",
+    niceLead:
+      "None of this is needed now. Whatever you skip can be done any time in Settings.",
     links: "Calendar and phone recordings",
     calendar: "Calendar",
+    calendarWay: "Where events are read from",
+    calendarMac: "Mac Calendar",
+    calendarAddress: "By address",
     calendarField: "Secret address of the Google calendar",
     calendarHow: "Where to find it",
     calendarHowText:
@@ -590,7 +605,7 @@ const en: Strings = {
     inboxNoDrive:
       "No Google Drive was found on this computer. Use the folder in your home folder, or choose another.",
     inboxNew: "The folder will be made",
-    inboxNewHint: "It is not there yet. Pressing start makes it too.",
+    inboxNewHint: "It is not there yet. Pressing 'Start Seogi' makes it too.",
     speech: "Transcribing",
     speechHint:
       "The meeting speech model, the model that tells speakers apart and the dictation model are downloaded once (about 3.2 GB in all).",
@@ -612,7 +627,15 @@ const en: Strings = {
       "Press {{keys}} in any app and speak, and the words go in where you type. You can turn this off in Settings.",
     dictationKeyTrouble:
       "{{keys}} is taken by another program, so it could not be set. You can choose another key in Settings › Dictation.",
+    typingHint:
+      "To put words where the cursor is, turn on 'Seogi' in System Settings › Privacy & Security › Accessibility. This changes by itself once it is on.",
+    typingOk: "Typing allowed",
+    typingNo: "Needs Accessibility",
+    atLoginLabel: "At login",
     later: "Decide later",
+    back: "Back",
+    next: "Next",
+    skip: "Skip and start",
     start: "Start Seogi",
   },
   signIn: {
