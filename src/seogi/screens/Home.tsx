@@ -682,7 +682,9 @@ function ContextMenu({
   );
 }
 
-/** The menu a meeting's line opens with the right mouse button. */
+/** The menu a meeting's line opens with the right mouse button. With
+ *  Google connected it can also take the meeting out of Drive (its Drive
+ *  folder goes to Drive's trash; the meeting here stays), or put it back. */
 function RowMenu({
   x,
   y,
@@ -699,6 +701,29 @@ function RowMenu({
   onDelete: () => void;
 }) {
   const { t } = useTranslation(NS);
+  // Whether the meeting is out of Drive; null while not connected (or not
+  // read yet).
+  const [excluded, setExcluded] = useState<boolean | null>(null);
+  useEffect(() => {
+    let live = true;
+    void Promise.all([
+      commands.seogiPhoneStatus(),
+      commands.seogiDriveStatus(),
+    ]).then(([phone, drive]) => {
+      if (live)
+        setExcluded(
+          phone.connected ? drive.excluded.includes(meeting.id) : null,
+        );
+    });
+    return () => {
+      live = false;
+    };
+  }, [meeting.id]);
+  const toggleDrive = async () => {
+    if (excluded === null) return;
+    await commands.seogiDriveExclude(meeting.id, !excluded);
+    onClose();
+  };
   return (
     <ContextMenu
       x={x}
@@ -714,6 +739,16 @@ function RowMenu({
       >
         {t("trash.open")}
       </button>
+      {excluded !== null ? (
+        <button
+          type="button"
+          role="menuitem"
+          className={MENU_ITEM}
+          onClick={() => void toggleDrive()}
+        >
+          {excluded ? t("drive.include") : t("drive.exclude")}
+        </button>
+      ) : null}
       <button
         type="button"
         role="menuitem"

@@ -1066,6 +1066,10 @@ pub fn run(cli_args: CliArgs) {
             seogi::commands::seogi_phone_cancel_connect,
             seogi::commands::seogi_phone_disconnect,
             seogi::commands::seogi_phone_look_now,
+            seogi::commands::seogi_drive_status,
+            seogi::commands::seogi_drive_backlog,
+            seogi::commands::seogi_drive_upload_backlog,
+            seogi::commands::seogi_drive_exclude,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,

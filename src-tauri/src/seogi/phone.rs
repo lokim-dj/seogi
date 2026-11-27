@@ -1,19 +1,21 @@
 //! Recordings made on the phone: the phone's Seogi uploads each one to the
-//! user's Google Drive (`서기 폰 녹음`) with a small JSON beside it, and this
-//! brings them in as meetings, the same way a recording made here is
-//! processed.
+//! user's Google Drive (the shared `서기` folder) with a small JSON beside
+//! it, and this brings them in as meetings, the same way a recording made
+//! here is processed.
 //!
 //! A recording is taken only whole: its audio and its JSON are both in the
 //! folder, and the downloaded audio has the SHA-256 the JSON (or, for a
 //! JSON that has none, Drive) gives. Audio without a JSON, or a JSON
 //! without its audio, waits for the next look. Nothing in Drive is changed
-//! or deleted. What was brought in is noted in the ledger by the Drive file
-//! and its SHA-256, so nothing comes in twice.
+//! or deleted here; once the meeting's minutes are ready the recording and
+//! its JSON move into the meeting's own Drive folder ([`super::upload`]).
+//! What was brought in is noted in the ledger by the Drive file and its
+//! SHA-256, so nothing comes in twice.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -113,6 +115,8 @@ fn is_sidecar(file: &DriveFile) -> bool {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ready {
     pub audio: DriveFile,
+    /// The Drive id of the JSON beside it.
+    pub json_id: String,
     pub sidecar: Sidecar,
     /// The SHA-256 the download must have.
     pub sha256: String,
@@ -190,6 +194,7 @@ pub fn plan(
         }
         plan.ready.push(Ready {
             audio: audio.clone(),
+            json_id: json.id.clone(),
             sidecar: sidecar.clone(),
             sha256,
         });
@@ -263,6 +268,9 @@ pub trait Host {
     fn bring_in(&self, file: &Path, arrival: &Arrival) -> Result<String>;
     /// Notes a recording as brought in.
     fn note(&self, key: &str, meeting_id: &str);
+    /// Notes the Drive files (the recording and its JSON) a meeting was
+    /// brought in from, so they can move into its Drive folder later.
+    fn brought_from(&self, meeting_id: &str, drive_files: &[String]);
     /// Tells the user, once, that Google has to be connected again.
     fn lost_sign_in(&self);
 }
@@ -295,7 +303,7 @@ pub struct PhoneStatus {
 
 /// Pulling the phone's recordings from Drive.
 pub struct Phone {
-    google: Google,
+    google: Arc<Google>,
     data_dir: PathBuf,
     sidecars: Mutex<HashMap<String, (String, Option<Sidecar>)>>,
     /// Recordings waiting after a failure: since when, and whether the
@@ -311,9 +319,9 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl Phone {
-    pub fn new(data_dir: &Path) -> Self {
+    pub fn new(data_dir: &Path, google: Arc<Google>) -> Self {
         Self {
-            google: Google::new(data_dir),
+            google,
             data_dir: data_dir.to_path_buf(),
             sidecars: Mutex::new(HashMap::new()),
             held: Mutex::new(HashMap::new()),
@@ -477,6 +485,7 @@ impl Phone {
                 Ok(id) => {
                     host.note(&key, &id);
                     if !id.is_empty() {
+                        host.brought_from(&id, &[ready.audio.id.clone(), ready.json_id.clone()]);
                         look.brought_in += 1;
                         info!("Brought in a recording from the phone as {id}");
                     }
@@ -784,6 +793,7 @@ mod tests {
     fn the_meeting_takes_the_phones_title_time_and_marks() {
         let ready = Ready {
             audio: file("A", NAME, Some("ab12")),
+            json_id: "J".into(),
             sidecar: sidecar(NAME, "ab12"),
             sha256: "ab12".into(),
         };
@@ -870,6 +880,7 @@ mod tests {
         known: HashSet<String>,
         /// Bringing in fails (a full disk).
         full: bool,
+        from: Mutex<HashMap<String, Vec<String>>>,
     }
 
     impl Host for FakeLibrary {
@@ -893,6 +904,9 @@ mod tests {
         }
         fn note(&self, key: &str, meeting_id: &str) {
             lock(&self.noted).insert(key.to_string(), meeting_id.to_string());
+        }
+        fn brought_from(&self, meeting_id: &str, drive_files: &[String]) {
+            lock(&self.from).insert(meeting_id.to_string(), drive_files.to_vec());
         }
         fn lost_sign_in(&self) {}
     }
@@ -927,7 +941,7 @@ mod tests {
     #[test]
     fn a_look_brings_a_recording_in_once_with_its_checked_bytes() {
         let dir = tempfile::tempdir().unwrap();
-        let phone = Phone::new(dir.path());
+        let phone = Phone::new(dir.path(), Arc::new(Google::new(dir.path())));
         let mut drive = FakeDrive::default();
         put(&mut drive, 1, b"audio one", b"audio one");
         let library = FakeLibrary::default();
@@ -944,6 +958,11 @@ mod tests {
             lock(&library.noted).get(&key).map(String::as_str),
             Some("m1")
         );
+        // The recording and its JSON, to move into the meeting's folder.
+        assert_eq!(
+            lock(&library.from)["m1"],
+            vec!["A1".to_string(), "J1".to_string()]
+        );
         // The download is not left behind.
         assert!(std::fs::read_dir(dir.path().join(INCOMING))
             .map(|entries| entries.count() == 0)
@@ -958,7 +977,7 @@ mod tests {
     #[test]
     fn bytes_that_are_not_what_the_json_says_never_come_in() {
         let dir = tempfile::tempdir().unwrap();
-        let phone = Phone::new(dir.path());
+        let phone = Phone::new(dir.path(), Arc::new(Google::new(dir.path())));
         let mut drive = FakeDrive::default();
         put(&mut drive, 1, b"half an upl", b"half an upload");
         let library = FakeLibrary::default();
@@ -974,7 +993,7 @@ mod tests {
     #[test]
     fn one_recording_in_trouble_does_not_hold_up_the_others() {
         let dir = tempfile::tempdir().unwrap();
-        let phone = Phone::new(dir.path());
+        let phone = Phone::new(dir.path(), Arc::new(Google::new(dir.path())));
         let mut drive = FakeDrive::default();
         put(&mut drive, 1, b"gone", b"gone");
         put(&mut drive, 2, b"fine", b"fine");
@@ -1002,7 +1021,7 @@ mod tests {
     #[test]
     fn no_connection_stops_the_look_and_nothing_is_noted() {
         let dir = tempfile::tempdir().unwrap();
-        let phone = Phone::new(dir.path());
+        let phone = Phone::new(dir.path(), Arc::new(Google::new(dir.path())));
         let mut drive = FakeDrive::default();
         put(&mut drive, 1, b"one", b"one");
         put(&mut drive, 2, b"two", b"two");
@@ -1020,7 +1039,7 @@ mod tests {
     #[test]
     fn a_recording_already_here_is_noted_without_a_download() {
         let dir = tempfile::tempdir().unwrap();
-        let phone = Phone::new(dir.path());
+        let phone = Phone::new(dir.path(), Arc::new(Google::new(dir.path())));
         let mut drive = FakeDrive::default();
         put(&mut drive, 1, b"one", b"one");
         let library = FakeLibrary {
@@ -1040,7 +1059,7 @@ mod tests {
     #[test]
     fn a_recording_that_cannot_be_kept_here_waits_and_says_so() {
         let dir = tempfile::tempdir().unwrap();
-        let phone = Phone::new(dir.path());
+        let phone = Phone::new(dir.path(), Arc::new(Google::new(dir.path())));
         let mut drive = FakeDrive::default();
         put(&mut drive, 1, b"one", b"one");
         let library = FakeLibrary {
@@ -1062,7 +1081,7 @@ mod tests {
     #[test]
     fn a_download_finished_after_disconnecting_is_not_brought_in() {
         let dir = tempfile::tempdir().unwrap();
-        let phone = Phone::new(dir.path());
+        let phone = Phone::new(dir.path(), Arc::new(Google::new(dir.path())));
         let mut drive = FakeDrive::default();
         put(&mut drive, 1, b"one", b"one");
         put(&mut drive, 2, b"two", b"two");

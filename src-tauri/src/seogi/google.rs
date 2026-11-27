@@ -1,8 +1,8 @@
-//! Google, for the recordings the phone puts in the user's Drive.
+//! Google, for the one Drive folder the phone and this computer share.
 //!
 //! Seogi asks for one permission, `drive.file`: it sees only the files and
-//! folders a Seogi app made (the phone's `서기 폰 녹음` folder and what is in
-//! it), nothing else in the user's Drive. Signing in happens in the user's
+//! folders a Seogi app made (the `서기` folder and what is in it), nothing
+//! else in the user's Drive. Signing in happens in the user's
 //! own browser, which sends the answer back to this computer only
 //! (`127.0.0.1`, a port chosen for that one sign-in, with PKCE).
 //!
@@ -30,8 +30,16 @@ use sha2::{Digest, Sha256};
 
 /// The one permission asked for: files a Seogi app made.
 pub const SCOPE: &str = "https://www.googleapis.com/auth/drive.file";
-/// The folder the phone uploads into. Found by its marker, not its name.
-pub const FOLDER_NAME: &str = "서기 폰 녹음";
+/// The folder the phone and this computer share. Found by its marker, not
+/// its name.
+pub const FOLDER_NAME: &str = "서기";
+/// The name the folder had before this computer put its own meetings in
+/// it too: a folder still named so is renamed to [`FOLDER_NAME`] (the same
+/// folder; a name the user chose is left alone).
+pub const OLD_FOLDER_NAME: &str = "서기 폰 녹음";
+/// The marker on a meeting's folder inside the shared one: its value is
+/// the meeting's id on this computer.
+pub const MEETING_KEY: &str = "seogi_meeting";
 /// The marker every Seogi app looks for (the phone, the Mac and Windows).
 pub const MARK_KEY: &str = "seogi";
 pub const MARK_VALUE: &str = "recordings-root";
@@ -41,6 +49,7 @@ const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const REVOKE_URL: &str = "https://oauth2.googleapis.com/revoke";
 const API: &str = "https://www.googleapis.com/drive/v3";
+const UPLOAD_API: &str = "https://www.googleapis.com/upload/drive/v3";
 const TOKENS_NAME: &str = "google.json";
 /// How long the browser has to come back with an answer.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -612,9 +621,9 @@ fn quoted(value: &str) -> String {
     value.replace('\\', "\\\\").replace('\'', "\\'")
 }
 
-/// The phone's recordings folder: the oldest marked one, made (with the
-/// marker, as the phone makes it) when there is none, so a phone signed in
-/// later uploads into the same one.
+/// The shared folder: the oldest marked one, made (with the marker, as the
+/// phone makes it) when there is none, so a phone signed in later uploads
+/// into the same one. One still named [`OLD_FOLDER_NAME`] is renamed.
 pub fn find_or_make_folder(token: &str) -> Result<String> {
     tauri::async_runtime::block_on(async {
         let client = http()?;
@@ -625,7 +634,7 @@ pub fn find_or_make_folder(token: &str) -> Result<String> {
                 .query(&[
                     ("spaces", "drive"),
                     ("orderBy", "createdTime"),
-                    ("fields", "files(id,createdTime)"),
+                    ("fields", "files(id,name,createdTime)"),
                     ("q", folder_query().as_str()),
                 ])
                 .send()
@@ -637,6 +646,26 @@ pub fn find_or_make_folder(token: &str) -> Result<String> {
         .await
         .map_err(reached)?;
         if let Some(id) = found["files"][0]["id"].as_str() {
+            if found["files"][0]["name"].as_str() == Some(OLD_FOLDER_NAME) {
+                // Only the name changes; the folder, its id and what is in
+                // it stay. A failed rename is tried at the next look.
+                let renamed = client
+                    .patch(format!("{API}/files/{id}"))
+                    .header("Authorization", bearer(token))
+                    .query(&[("fields", "id")])
+                    .json(&serde_json::json!({ "name": FOLDER_NAME }))
+                    .send()
+                    .await
+                    .map_err(reached);
+                match renamed {
+                    Ok(response) => {
+                        if let Err(e) = checked(response).await {
+                            log::warn!("The Drive folder could not be renamed yet: {e:#}");
+                        }
+                    }
+                    Err(e) => log::warn!("The Drive folder could not be renamed yet: {e:#}"),
+                }
+            }
             return Ok(id.to_string());
         }
         let made: Value = checked(
@@ -767,6 +796,395 @@ pub fn download(token: &str, id: &str, to: &Path) -> Result<u64> {
         }
         file.sync_all().ok();
         Ok(written)
+    })
+}
+
+/// What Drive says about one file or folder, for moving and renaming.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileInfo {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub parents: Vec<String>,
+    #[serde(default)]
+    pub trashed: bool,
+    #[serde(default)]
+    pub sha256_checksum: Option<String>,
+}
+
+/// One file or folder; `None` when Drive no longer has it (or this app may
+/// no longer see it).
+pub fn file_info(token: &str, id: &str) -> Result<Option<FileInfo>> {
+    tauri::async_runtime::block_on(async {
+        let response = http()?
+            .get(format!("{API}/files/{id}"))
+            .header("Authorization", bearer(token))
+            .query(&[("fields", "id,name,parents,trashed,sha256Checksum")])
+            .send()
+            .await
+            .map_err(reached)?;
+        if response.status().as_u16() == 404 {
+            return Ok(None);
+        }
+        Ok(Some(
+            checked(response).await?.json().await.map_err(reached)?,
+        ))
+    })
+}
+
+/// The first file in `parent` (not in the trash) matching `q`, a Drive
+/// search added to the parent's.
+async fn find_in(token: &str, parent: &str, q: &str) -> Result<Option<FileInfo>> {
+    let query = format!(
+        "'{}' in parents and trashed = false and {q}",
+        quoted(parent)
+    );
+    let found: Value = checked(
+        http()?
+            .get(format!("{API}/files"))
+            .header("Authorization", bearer(token))
+            .query(&[
+                ("spaces", "drive"),
+                ("orderBy", "createdTime"),
+                ("fields", "files(id,name,parents,trashed,sha256Checksum)"),
+                ("q", query.as_str()),
+            ])
+            .send()
+            .await
+            .map_err(reached)?,
+    )
+    .await?
+    .json()
+    .await
+    .map_err(reached)?;
+    Ok(found["files"]
+        .get(0)
+        .and_then(|file| serde_json::from_value(file.clone()).ok()))
+}
+
+/// The folder in `parent` marked as the meeting `meeting_id`'s.
+pub fn find_meeting_folder(token: &str, parent: &str, meeting_id: &str) -> Result<Option<String>> {
+    let q = format!(
+        "mimeType = '{FOLDER_MIME}' and appProperties has {{ key='{MEETING_KEY}' and value='{}' }}",
+        quoted(meeting_id)
+    );
+    tauri::async_runtime::block_on(async {
+        Ok(find_in(token, parent, &q).await?.map(|file| file.id))
+    })
+}
+
+/// The file named `name` in `parent`, if there is one.
+pub fn find_named(token: &str, parent: &str, name: &str) -> Result<Option<FileInfo>> {
+    let q = format!("name = '{}'", quoted(name));
+    tauri::async_runtime::block_on(find_in(token, parent, &q))
+}
+
+/// Makes a meeting's folder in `parent`, marked with its id.
+pub fn make_meeting_folder(
+    token: &str,
+    parent: &str,
+    name: &str,
+    meeting_id: &str,
+) -> Result<String> {
+    tauri::async_runtime::block_on(async {
+        let made: Value = checked(
+            http()?
+                .post(format!("{API}/files"))
+                .header("Authorization", bearer(token))
+                .query(&[("fields", "id")])
+                .json(&serde_json::json!({
+                    "name": name,
+                    "mimeType": FOLDER_MIME,
+                    "parents": [parent],
+                    "appProperties": { MEETING_KEY: meeting_id },
+                }))
+                .send()
+                .await
+                .map_err(reached)?,
+        )
+        .await?
+        .json()
+        .await
+        .map_err(reached)?;
+        made["id"]
+            .as_str()
+            .map(str::to_string)
+            .ok_or_else(|| anyhow!("Drive made no folder"))
+    })
+}
+
+/// Changes a file's metadata (`fields` as Drive takes them) and, with
+/// `add`, moves it: into `add`, out of `remove`.
+fn patch(token: &str, id: &str, body: Value, add: Option<&str>, remove: &[String]) -> Result<()> {
+    tauri::async_runtime::block_on(async {
+        let mut query: Vec<(&str, String)> = vec![("fields", "id".to_string())];
+        if let Some(add) = add {
+            query.push(("addParents", add.to_string()));
+            if !remove.is_empty() {
+                query.push(("removeParents", remove.join(",")));
+            }
+        }
+        checked(
+            http()?
+                .patch(format!("{API}/files/{id}"))
+                .header("Authorization", bearer(token))
+                .query(&query)
+                .json(&body)
+                .send()
+                .await
+                .map_err(reached)?,
+        )
+        .await?;
+        Ok(())
+    })
+}
+
+pub fn rename(token: &str, id: &str, name: &str) -> Result<()> {
+    patch(token, id, serde_json::json!({ "name": name }), None, &[])
+}
+
+/// Moves a file into `to`, out of the folders it was in (`from`). The
+/// file itself, its id and its content stay as they are.
+pub fn move_into(token: &str, id: &str, to: &str, from: &[String]) -> Result<()> {
+    patch(token, id, serde_json::json!({}), Some(to), from)
+}
+
+/// Puts a file or folder in Drive's trash, where the user can take it back
+/// for 30 days. Nothing is deleted for good.
+pub fn trash(token: &str, id: &str) -> Result<()> {
+    patch(token, id, serde_json::json!({ "trashed": true }), None, &[])
+}
+
+/// A small file made in `parent` in one request.
+pub fn create_small(
+    token: &str,
+    parent: &str,
+    name: &str,
+    mime: &str,
+    bytes: &[u8],
+) -> Result<String> {
+    let boundary = format!("seogi-{}", random_text(24)?.replace(['.', '~'], "-"));
+    let metadata = serde_json::json!({ "name": name, "parents": [parent] });
+    let mut body = Vec::with_capacity(bytes.len() + 512);
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{metadata}\r\n--{boundary}\r\nContent-Type: {mime}\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    tauri::async_runtime::block_on(async {
+        let made: Value = checked(
+            http()?
+                .post(format!("{UPLOAD_API}/files"))
+                .header("Authorization", bearer(token))
+                .header(
+                    "Content-Type",
+                    format!("multipart/related; boundary={boundary}"),
+                )
+                .query(&[("uploadType", "multipart"), ("fields", "id")])
+                .body(body)
+                .send()
+                .await
+                .map_err(reached)?,
+        )
+        .await?
+        .json()
+        .await
+        .map_err(reached)?;
+        made["id"]
+            .as_str()
+            .map(str::to_string)
+            .ok_or_else(|| anyhow!("Drive made no file"))
+    })
+}
+
+/// Gives a small file this app made new content.
+pub fn update_small(token: &str, id: &str, mime: &str, bytes: &[u8]) -> Result<()> {
+    let bytes = bytes.to_vec();
+    tauri::async_runtime::block_on(async {
+        checked(
+            http()?
+                .patch(format!("{UPLOAD_API}/files/{id}"))
+                .header("Authorization", bearer(token))
+                .header("Content-Type", mime)
+                .query(&[("uploadType", "media"), ("fields", "id")])
+                .body(bytes)
+                .send()
+                .await
+                .map_err(reached)?,
+        )
+        .await?;
+        Ok(())
+    })
+}
+
+/// How many bytes the account has left; `None` when it has no limit.
+pub fn free_space(token: &str) -> Result<Option<u64>> {
+    tauri::async_runtime::block_on(async {
+        let about: Value = checked(
+            http()?
+                .get(format!("{API}/about"))
+                .header("Authorization", bearer(token))
+                .query(&[("fields", "storageQuota(limit,usage)")])
+                .send()
+                .await
+                .map_err(reached)?,
+        )
+        .await?
+        .json()
+        .await
+        .map_err(reached)?;
+        let number = |key: &str| {
+            about["storageQuota"][key]
+                .as_str()
+                .and_then(|text| text.parse::<u64>().ok())
+        };
+        Ok(number("limit").map(|limit| limit.saturating_sub(number("usage").unwrap_or(0))))
+    })
+}
+
+/// Where a resumable upload stands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Upload {
+    /// Drive has the first this many bytes.
+    At(u64),
+    /// Drive has it all: the new file's id.
+    Done(String),
+    /// The upload's address no longer works (a week old, or refused): it
+    /// starts again from the beginning.
+    Expired,
+}
+
+/// Starts a resumable upload of `size` bytes into `parent`; returns the
+/// address the bytes go to. The address is kept, so an upload cut off
+/// (the computer asleep, the app quit) goes on where it stopped.
+pub fn start_upload(
+    token: &str,
+    parent: &str,
+    name: &str,
+    mime: &str,
+    size: u64,
+) -> Result<String> {
+    tauri::async_runtime::block_on(async {
+        let response = checked(
+            http()?
+                .post(format!("{UPLOAD_API}/files"))
+                .header("Authorization", bearer(token))
+                .header("X-Upload-Content-Type", mime)
+                .header("X-Upload-Content-Length", size.to_string())
+                .query(&[("uploadType", "resumable"), ("fields", "id")])
+                .json(&serde_json::json!({ "name": name, "parents": [parent] }))
+                .send()
+                .await
+                .map_err(reached)?,
+        )
+        .await?;
+        response
+            .headers()
+            .get("location")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string)
+            .ok_or_else(|| anyhow!("Drive gave no address for the upload"))
+    })
+}
+
+/// What Drive's answer to an upload request says.
+async fn upload_answer(response: reqwest::Response) -> Result<Upload> {
+    match response.status().as_u16() {
+        200 | 201 => {
+            let made: Value = response.json().await.map_err(reached)?;
+            made["id"]
+                .as_str()
+                .map(|id| Upload::Done(id.to_string()))
+                .ok_or_else(|| anyhow!("Drive made no file"))
+        }
+        308 => Ok(Upload::At(
+            response
+                .headers()
+                .get("range")
+                .and_then(|value| value.to_str().ok())
+                .and_then(range_end)
+                .map_or(0, |end| end + 1),
+        )),
+        404 | 410 => Ok(Upload::Expired),
+        _ => Err(checked(response)
+            .await
+            .err()
+            .unwrap_or_else(|| anyhow!("unexpected"))),
+    }
+}
+
+/// The last byte in a `Range: bytes=0-1234` answer.
+fn range_end(range: &str) -> Option<u64> {
+    range
+        .trim()
+        .strip_prefix("bytes=")?
+        .split('-')
+        .nth(1)?
+        .trim()
+        .parse()
+        .ok()
+}
+
+/// Asks how much of an upload Drive has.
+pub fn upload_offset(token: &str, session: &str, size: u64) -> Result<Upload> {
+    tauri::async_runtime::block_on(async {
+        let response = http()?
+            .put(session)
+            .header("Authorization", bearer(token))
+            .header("Content-Range", format!("bytes */{size}"))
+            .header("Content-Length", "0")
+            .send()
+            .await
+            .map_err(reached)?;
+        upload_answer(response).await
+    })
+}
+
+/// The bytes of an upload sent in one request: a multiple of 256 KiB, as
+/// Drive asks.
+pub const UPLOAD_CHUNK: u64 = 8 * 1024 * 1024;
+
+/// Sends the next part of `file` (of `size` bytes) from `offset`.
+pub fn upload_chunk(
+    token: &str,
+    session: &str,
+    file: &Path,
+    offset: u64,
+    size: u64,
+) -> Result<Upload> {
+    use std::io::{Seek, SeekFrom};
+    let len = UPLOAD_CHUNK.min(size.saturating_sub(offset));
+    let mut bytes = vec![0u8; len as usize];
+    let mut opened =
+        std::fs::File::open(file).with_context(|| format!("could not read {}", file.display()))?;
+    opened.seek(SeekFrom::Start(offset))?;
+    opened
+        .read_exact(&mut bytes)
+        .with_context(|| format!("could not read {}", file.display()))?;
+    tauri::async_runtime::block_on(async {
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(10 * 60))
+            .user_agent(crate::brand::USER_AGENT)
+            .build()?;
+        let range = if len == 0 {
+            format!("bytes */{size}")
+        } else {
+            format!("bytes {offset}-{}/{size}", offset + len - 1)
+        };
+        let response = client
+            .put(session)
+            .header("Authorization", bearer(token))
+            .header("Content-Range", range)
+            .body(bytes)
+            .send()
+            .await
+            .map_err(reached)?;
+        upload_answer(response).await
     })
 }
 
@@ -948,5 +1366,13 @@ mod tests {
             .contains("appProperties has { key='seogi' and value='recordings-root' }"));
         assert!(folder_query().contains("trashed = false"));
         assert_eq!(quoted(r"a'b\c"), r"a\'b\\c");
+    }
+
+    #[test]
+    fn an_upload_goes_on_after_the_last_byte_drive_has() {
+        assert_eq!(range_end("bytes=0-1048575"), Some(1_048_575));
+        assert_eq!(range_end(" bytes=0-0 "), Some(0));
+        assert_eq!(range_end("nonsense"), None);
+        assert_eq!(UPLOAD_CHUNK % (256 * 1024), 0);
     }
 }

@@ -2011,6 +2011,48 @@ async seogiPhoneDisconnect() : Promise<Result<PhoneStatus, string>> {
  */
 async seogiPhoneLookNow() : Promise<void> {
     await TAURI_INVOKE("seogi_phone_look_now");
+},
+/**
+ * Where putting meetings in the shared Drive folder stands.
+ */
+async seogiDriveStatus() : Promise<DriveStatus> {
+    return await TAURI_INVOKE("seogi_drive_status");
+},
+/**
+ * How many meetings "지난 회의 올리기" would put in Drive, and about how
+ * many bytes.
+ */
+async seogiDriveBacklog() : Promise<Result<Backlog, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_drive_backlog") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "지난 회의 올리기": puts the meetings done before in Drive. Returns how
+ * many; fails with `not_connected` while Google is not connected.
+ */
+async seogiDriveUploadBacklog() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_drive_upload_backlog") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "드라이브에서 빼기" (`excluded`), or putting a meeting back: its Drive
+ * folder goes to Drive's trash, and the meeting here stays as it is.
+ */
+async seogiDriveExclude(id: string, excluded: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_drive_exclude", { id, excluded }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -2188,6 +2230,15 @@ export type AutoUnavailableReason =
  */
 { kind: "no_match" }
 export type AvailableAccelerators = { transcribe: string[]; gpu_devices: GpuDeviceOption[] }
+/**
+ * Meetings done before Google was connected, that "지난 회의 올리기" would
+ * put in Drive.
+ */
+export type Backlog = { meetings: number; 
+/**
+ * About how many bytes would go up.
+ */
+bytes: number }
 /**
  * What the small window above everything else shows.
  */
@@ -2403,6 +2454,18 @@ muted_events: string[];
  */
 minutes_beside_source: boolean; 
 /**
+ * With Google connected, put the meetings recorded or brought in on
+ * this computer in the shared Drive folder too, once their minutes are
+ * ready ("이 컴퓨터에서 녹음한 회의도 올리기"). A phone's meetings always
+ * get their minutes there.
+ */
+drive_upload_own: boolean; 
+/**
+ * And their recordings with them ("녹음 파일도 올리기"); the text goes
+ * either way.
+ */
+drive_upload_audio: boolean; 
+/**
  * Dictation: a shortcut, speech, and the words typed where the cursor
  * is. On for a new install.
  */
@@ -2544,6 +2607,34 @@ account: string;
  */
 inbox: string; inbox_exists: boolean }
 /**
+ * Where putting meetings in Drive stands, for the screen.
+ */
+export type DriveStatus = { 
+/**
+ * Uploading right now.
+ */
+uploading: boolean; 
+/**
+ * Meetings waiting to go up.
+ */
+waiting: number; 
+/**
+ * Meetings whose recording waits for room in the account.
+ */
+audio_waiting: number; 
+/**
+ * Meetings the user took out of Drive, by id.
+ */
+excluded: string[]; 
+/**
+ * Meetings in Drive, by id.
+ */
+uploaded: string[]; 
+/**
+ * Why the last turn failed: `offline`, `drive`, `local`, or empty.
+ */
+trouble: string }
+/**
  * One line of the minutes: a task, a decision, a fact.
  */
 export type Entry = { text: string; 
@@ -2577,7 +2668,15 @@ original?: string | null;
 /**
  * A task the user added: no line of the recording is behind it.
  */
-added?: boolean }
+added?: boolean; 
+/**
+ * Names this entry for as long as it lives, whatever the user changes
+ * in it, so the phone and this computer can speak of the same task.
+ * Given when the minutes are written (and to a task the user adds);
+ * empty in meetings saved before entries had ids, which get theirs
+ * when they are first put in Drive.
+ */
+id?: string }
 /**
  * One occurrence of a calendar event.
  */

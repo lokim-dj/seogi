@@ -1,13 +1,23 @@
-// The phone's recordings: one settings row to connect Google, so the
+// The phone and Drive: one settings row to connect Google, so the
 // recordings the phone's Seogi puts in the user's Drive come in here by
-// themselves. It says which account is connected, when the folder was last
-// looked at, and offers "지금 가져오기". While the browser sign-in is open,
-// or a look is under way, the row reads the backend again every few
+// themselves, and the minutes made here go into the same Drive folder for
+// the phone. It says which account is connected, when the folder was last
+// looked at, and offers "지금 가져오기". Once connected, two switches say
+// whether this computer's own meetings go up and their recordings with
+// them, and "지난 회의 올리기" puts up the meetings done before, saying how
+// many and how much first. While the browser sign-in is open, or a look or
+// an upload is under way, the row reads the backend again every few
 // seconds.
 
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { commands, type PhoneStatus } from "@/bindings";
+import {
+  commands,
+  type Backlog,
+  type Config,
+  type DriveStatus,
+  type PhoneStatus,
+} from "@/bindings";
 import { NS } from "../i18n";
 import { hm } from "../lib/format";
 
@@ -25,20 +35,53 @@ const CONNECT_TROUBLE: Record<string, string> = {
   unavailable: "settings.phoneUnavailable",
 };
 
+/** Bytes as the row says them: `1.2` (GB), at least `0.1`. */
+export function gigabytes(bytes: number): string {
+  return Math.max(0.1, bytes / 1024 ** 3).toFixed(1);
+}
+
 export default function PhoneRow({
   onNote,
+  config,
+  onSave,
 }: {
   onNote: (text: string) => void;
+  config: Config;
+  onSave: (next: Config) => Promise<void>;
 }) {
   const { t } = useTranslation(NS);
   const [status, setStatus] = useState<PhoneStatus | null>(null);
+  const [drive, setDrive] = useState<DriveStatus | null>(null);
+  const [backlog, setBacklog] = useState<Backlog | null>(null);
   const [trouble, setTrouble] = useState("");
 
   const look = useCallback(async () => {
-    setStatus(await commands.seogiPhoneStatus());
+    const [phone, uploads] = await Promise.all([
+      commands.seogiPhoneStatus(),
+      commands.seogiDriveStatus(),
+    ]);
+    setStatus(phone);
+    setDrive(uploads);
   }, []);
 
-  const busy = !!status && (status.connecting || status.pulling);
+  const connected = !!status?.connected;
+  const own = config.drive_upload_own;
+  const audio = config.drive_upload_audio;
+  const waiting = drive?.waiting ?? 0;
+  // What "지난 회의 올리기" would put up, read again when what decides it
+  // changes.
+  useEffect(() => {
+    if (!connected) {
+      setBacklog(null);
+      return;
+    }
+    void commands.seogiDriveBacklog().then((result) => {
+      if (result.status === "ok") setBacklog(result.data);
+    });
+  }, [connected, own, audio, waiting]);
+
+  const busy =
+    !!status && (status.connecting || status.pulling || !!drive?.uploading);
   useEffect(() => {
     void look();
     const timer = window.setInterval(
@@ -72,6 +115,17 @@ export default function PhoneRow({
     else onNote(t("failed", { reason: result.error }));
   };
 
+  const uploadBacklog = async () => {
+    const result = await commands.seogiDriveUploadBacklog();
+    if (result.status === "ok") {
+      onNote(t("settings.driveBacklogStarted", { n: result.data }));
+      setBacklog({ meetings: 0, bytes: 0 });
+      await look();
+    } else {
+      onNote(t("failed", { reason: result.error }));
+    }
+  };
+
   const pullNow = async () => {
     await commands.seogiPhoneLookNow();
     setStatus((now) => (now ? { ...now, pulling: true } : now));
@@ -87,88 +141,198 @@ export default function PhoneRow({
       : t("settings.phoneNotYet");
 
   return (
-    <div className="srow">
-      <div>
-        <div className="l">{t("settings.phone")}</div>
-        <div className="h">{t("settings.phoneHint")}</div>
-      </div>
-      <div className="v">
-        {!status.available ? (
-          <span className="t3">{t("settings.phoneUnavailableShort")}</span>
-        ) : status.connecting ? (
-          <button
-            type="button"
-            className="lnk"
-            onClick={() => void commands.seogiPhoneCancelConnect()}
-          >
-            {t("settings.phoneCancel")}
-          </button>
-        ) : status.connected ? (
-          <>
-            <span className="t2 truncate max-w-[220px]" title={status.account}>
-              {status.account || t("settings.phoneConnectedShort")}
-            </span>
-            <button
-              type="button"
-              className="lnk"
-              onClick={() => void disconnect()}
-            >
-              {t("settings.phoneDisconnect")}
-            </button>
-          </>
-        ) : (
-          <button type="button" className="btn" onClick={() => void connect()}>
-            {status.needs_reconnect
-              ? t("settings.phoneReconnect")
-              : t("settings.phoneConnect")}
-          </button>
-        )}
-      </div>
-      {!status.available ? (
-        <p className="full m-0 text-[13.5px] t3">
-          {t("settings.phoneUnavailable")}
-        </p>
-      ) : status.connecting ? (
-        <p className="full m-0 text-[13.5px] t2">
-          {t("settings.phoneWaiting")}
-        </p>
-      ) : status.needs_reconnect ? (
-        <p className="full m-0 text-[13.5px] rt">
-          {t("settings.phoneLost", { account: status.account })}
-        </p>
-      ) : status.connected ? (
-        <div className="full grid gap-1 text-[13.5px]">
-          <div className="flex items-center gap-3">
-            <span className="flex-1 min-w-0 t3">
-              {lookLine}
-              {status.brought_in > 0
-                ? ` · ${t("settings.phoneBrought", { n: status.brought_in })}`
-                : ""}
-            </span>
-            <button
-              type="button"
-              className="lnk"
-              disabled={status.pulling}
-              onClick={() => void pullNow()}
-            >
-              {t("settings.phonePullNow")}
-            </button>
-          </div>
-          {status.trouble ? (
-            <p className="m-0 rt">
-              {t(
-                status.trouble === "offline"
-                  ? "settings.phoneOffline"
-                  : status.trouble === "local"
-                    ? "settings.phoneLocal"
-                    : "settings.phoneDrive",
-              )}
-            </p>
-          ) : null}
+    <>
+      <div className="srow">
+        <div>
+          <div className="l">{t("settings.phone")}</div>
+          <div className="h">{t("settings.phoneHint")}</div>
         </div>
-      ) : trouble ? (
-        <p className="full m-0 text-[13.5px] rt">{trouble}</p>
+        <div className="v">
+          {!status.available ? (
+            <span className="t3">{t("settings.phoneUnavailableShort")}</span>
+          ) : status.connecting ? (
+            <button
+              type="button"
+              className="lnk"
+              onClick={() => void commands.seogiPhoneCancelConnect()}
+            >
+              {t("settings.phoneCancel")}
+            </button>
+          ) : status.connected ? (
+            <>
+              <span
+                className="t2 truncate max-w-[220px]"
+                title={status.account}
+              >
+                {status.account || t("settings.phoneConnectedShort")}
+              </span>
+              <button
+                type="button"
+                className="lnk"
+                onClick={() => void disconnect()}
+              >
+                {t("settings.phoneDisconnect")}
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void connect()}
+            >
+              {status.needs_reconnect
+                ? t("settings.phoneReconnect")
+                : t("settings.phoneConnect")}
+            </button>
+          )}
+        </div>
+        {!status.available ? (
+          <p className="full m-0 text-[13.5px] t3">
+            {t("settings.phoneUnavailable")}
+          </p>
+        ) : status.connecting ? (
+          <p className="full m-0 text-[13.5px] t2">
+            {t("settings.phoneWaiting")}
+          </p>
+        ) : status.needs_reconnect ? (
+          <p className="full m-0 text-[13.5px] rt">
+            {t("settings.phoneLost", { account: status.account })}
+          </p>
+        ) : status.connected ? (
+          <div className="full grid gap-1 text-[13.5px]">
+            <div className="flex items-center gap-3">
+              <span className="flex-1 min-w-0 t3">
+                {lookLine}
+                {status.brought_in > 0
+                  ? ` · ${t("settings.phoneBrought", { n: status.brought_in })}`
+                  : ""}
+              </span>
+              <button
+                type="button"
+                className="lnk"
+                disabled={status.pulling}
+                onClick={() => void pullNow()}
+              >
+                {t("settings.phonePullNow")}
+              </button>
+            </div>
+            {status.trouble ? (
+              <p className="m-0 rt">
+                {t(
+                  status.trouble === "offline"
+                    ? "settings.phoneOffline"
+                    : status.trouble === "local"
+                      ? "settings.phoneLocal"
+                      : "settings.phoneDrive",
+                )}
+              </p>
+            ) : null}
+          </div>
+        ) : trouble ? (
+          <p className="full m-0 text-[13.5px] rt">{trouble}</p>
+        ) : null}
+      </div>
+      {connected ? (
+        <>
+          <div className="srow">
+            <div>
+              <div className="l">{t("settings.driveOwn")}</div>
+              <div className="h">{t("settings.driveOwnHint")}</div>
+            </div>
+            <div className="v">
+              <input
+                type="checkbox"
+                role="switch"
+                className="tg"
+                checked={own}
+                aria-label={t("settings.driveOwn")}
+                onChange={(event) =>
+                  void onSave({
+                    ...config,
+                    drive_upload_own: event.target.checked,
+                  })
+                }
+              />
+            </div>
+            {drive &&
+            (drive.uploading ||
+              waiting > 0 ||
+              drive.audio_waiting > 0 ||
+              drive.trouble) ? (
+              <div className="full grid gap-1 text-[13.5px]">
+                {drive.uploading || waiting > 0 ? (
+                  <span className="t3">
+                    {drive.uploading
+                      ? t("settings.driveUploading")
+                      : t("settings.driveWaiting", { n: waiting })}
+                  </span>
+                ) : null}
+                {drive.audio_waiting > 0 ? (
+                  <p className="m-0 rt">
+                    {t("settings.driveAudioWaiting", {
+                      n: drive.audio_waiting,
+                    })}
+                  </p>
+                ) : null}
+                {drive.trouble ? (
+                  <p className="m-0 rt">
+                    {t(
+                      drive.trouble === "offline"
+                        ? "settings.driveOffline"
+                        : "settings.driveTrouble",
+                    )}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+          {own ? (
+            <div className="srow">
+              <div>
+                <div className="l">{t("settings.driveAudio")}</div>
+                <div className="h">{t("settings.driveAudioHint")}</div>
+              </div>
+              <div className="v">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  className="tg"
+                  checked={audio}
+                  aria-label={t("settings.driveAudio")}
+                  onChange={(event) =>
+                    void onSave({
+                      ...config,
+                      drive_upload_audio: event.target.checked,
+                    })
+                  }
+                />
+              </div>
+            </div>
+          ) : null}
+          {backlog && backlog.meetings > 0 ? (
+            <div className="srow">
+              <div>
+                <div className="l">{t("settings.driveBacklog")}</div>
+                <div className="h">
+                  {t("settings.driveBacklogHint", {
+                    n: backlog.meetings,
+                    gb: gigabytes(backlog.bytes),
+                  })}
+                </div>
+              </div>
+              <div className="v">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => void uploadBacklog()}
+                >
+                  {t("settings.driveBacklogGo", { n: backlog.meetings })}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </>
       ) : null}
-    </div>
+    </>
   );
 }

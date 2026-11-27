@@ -22,6 +22,7 @@ use super::recorder::{self, Microphone};
 use super::sign_in::{self, SignIn, SignIns, Tool};
 use super::store::{Found, Meeting, MeetingSummary, Origin, MINUTES_NAME};
 use super::templates::{self, Template};
+use super::upload::{Backlog, DriveStatus};
 use super::vocab::Vocabulary;
 use super::{audio_in, watch};
 use crate::managers::model::ModelManager;
@@ -1140,6 +1141,45 @@ pub async fn seogi_phone_disconnect(
 #[specta::specta]
 pub fn seogi_phone_look_now(secretary: State<'_, Arc<Secretary>>) {
     secretary.phone_look_now();
+}
+
+/// Where putting meetings in the shared Drive folder stands.
+#[tauri::command]
+#[specta::specta]
+pub fn seogi_drive_status(secretary: State<'_, Arc<Secretary>>) -> DriveStatus {
+    secretary.drive_status()
+}
+
+/// How many meetings "지난 회의 올리기" would put in Drive, and about how
+/// many bytes.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_drive_backlog(secretary: State<'_, Arc<Secretary>>) -> Result<Backlog, String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || Ok(secretary.drive_backlog().1)).await
+}
+
+/// "지난 회의 올리기": puts the meetings done before in Drive. Returns how
+/// many; fails with `not_connected` while Google is not connected.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_drive_upload_backlog(
+    secretary: State<'_, Arc<Secretary>>,
+) -> Result<u32, String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || secretary.drive_upload_backlog().map_err(text)).await
+}
+
+/// "드라이브에서 빼기" (`excluded`), or putting a meeting back: its Drive
+/// folder goes to Drive's trash, and the meeting here stays as it is.
+#[tauri::command]
+#[specta::specta]
+pub fn seogi_drive_exclude(
+    secretary: State<'_, Arc<Secretary>>,
+    id: String,
+    excluded: bool,
+) -> Result<(), String> {
+    secretary.drive_exclude(&id, excluded).map_err(text)
 }
 
 /// Opens the official page on installing `tool` in the browser. Seogi does

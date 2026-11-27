@@ -198,6 +198,10 @@ const en: Strings = {
     together:
       "Say so together where the AI is wrong, and where it is right. The company's standard can be written in consult-feedback.md in the data folder.",
   },
+  drive: {
+    exclude: "Take out of Drive",
+    include: "Put back in Drive",
+  },
   trash: {
     menu: "Move to Trash",
     open: "Open",
@@ -887,9 +891,9 @@ const en: Strings = {
     inbox: "Watched folders",
     inboxMakeIn: "Make the folder in the {{account}} Drive",
     inboxHint: "Phone recordings put here are brought in by themselves.",
-    phone: "Phone recordings",
+    phone: "Phone and Drive",
     phoneHint:
-      "Meetings recorded with Seogi on your phone are brought in from your Google Drive and written up. Seogi sees only the files it made, and never changes or deletes them.",
+      "Meetings recorded with Seogi on your phone are brought in from your Google Drive and written up, and the minutes go into the Seogi folder in Drive so the phone shows them too. Seogi sees only the files it made, and deletes nothing.",
     phoneConnect: "Connect Google",
     phoneReconnect: "Connect again",
     phoneDisconnect: "Disconnect",
@@ -916,6 +920,24 @@ const en: Strings = {
     phoneOffline: "No internet. Seogi looks again in a few minutes.",
     phoneDrive:
       "Google Drive did not answer. Seogi looks again in a few minutes.",
+    driveOwn: "Also put up meetings recorded on this computer",
+    driveOwnHint:
+      "When the minutes are ready, the recording, the transcript and the minutes go into the Seogi folder in Drive. Meetings recorded on the phone always go up.",
+    driveAudio: "Put up recordings too",
+    driveAudioHint:
+      "The original recording goes up as it is. A recording that would leave less than 1 GB free in Drive waits, and only the text goes up.",
+    driveUploading: "Putting meetings in Drive…",
+    driveWaiting: "{{n}} meetings to put up",
+    driveAudioWaiting:
+      "Drive is short of room, so {{n}} recordings wait. They go up when there is room.",
+    driveOffline: "No internet. Seogi tries again in a few minutes.",
+    driveTrouble:
+      "Could not put meetings in Drive. Seogi tries again in a few minutes.",
+    driveBacklog: "Put up earlier meetings",
+    driveBacklogHint:
+      "{{n}} earlier meetings not in Drive yet, about {{gb}} GB.",
+    driveBacklogGo: "Put up {{n}}",
+    driveBacklogStarted: "Putting up {{n}} earlier meetings.",
     add: "Add folder",
     remove: "Remove",
     none: "None",

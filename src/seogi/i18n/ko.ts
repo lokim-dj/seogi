@@ -194,6 +194,10 @@ const ko = {
     together:
       "AI가 틀렸으면 틀렸다고, 맞으면 맞다고 함께 이야기해 주세요. 회사의 상담 기준은 데이터 폴더의 consult-feedback.md 에 적어 바꿀 수 있습니다.",
   },
+  drive: {
+    exclude: "드라이브에서 빼기",
+    include: "드라이브에 다시 올리기",
+  },
   trash: {
     menu: "휴지통으로 옮기기",
     open: "열기",
@@ -871,9 +875,9 @@ const ko = {
     inbox: "녹음함",
     inboxMakeIn: "{{account}} 드라이브에 녹음함 만들기",
     inboxHint: "폰 녹음 파일을 여기에 넣으면 알아서 가져와요.",
-    phone: "폰 녹음",
+    phone: "폰과 드라이브",
     phoneHint:
-      "폰의 서기로 녹음한 회의를 구글 드라이브에서 받아 와 회의록을 만들어요. 서기가 만든 파일만 보고, 고치거나 지우지 않아요.",
+      "폰의 서기로 녹음한 회의를 구글 드라이브에서 받아 와 회의록을 만들고, 회의록을 드라이브의 '서기' 폴더에 올려 폰에서도 보게 해요. 서기가 만든 파일만 보고, 아무것도 지우지 않아요.",
     phoneConnect: "구글 연결",
     phoneReconnect: "다시 연결",
     phoneDisconnect: "연결 끊기",
@@ -899,6 +903,23 @@ const ko = {
     phonePullNow: "지금 가져오기",
     phoneOffline: "인터넷에 닿지 않아요. 몇 분 뒤 다시 살펴봐요.",
     phoneDrive: "구글 드라이브가 답하지 않아요. 몇 분 뒤 다시 살펴봐요.",
+    driveOwn: "이 컴퓨터에서 녹음한 회의도 올리기",
+    driveOwnHint:
+      "회의록이 나오면 녹음·받아쓴 글·회의록을 드라이브의 '서기' 폴더에 올려요. 폰에서 녹음한 회의는 늘 올라가요.",
+    driveAudio: "녹음 파일도 올리기",
+    driveAudioHint:
+      "원본 녹음을 그대로 올려요. 올리고 나서 드라이브에 1GB가 남지 않을 녹음은 기다리고 글만 올려요.",
+    driveUploading: "드라이브에 올리는 중…",
+    driveWaiting: "올릴 회의 {{n}}개",
+    driveAudioWaiting:
+      "드라이브 공간이 넉넉하지 않아 녹음 {{n}}개는 올리지 않고 기다려요. 공간이 생기면 올려요.",
+    driveOffline: "인터넷에 닿지 않아요. 몇 분 뒤 다시 올려요.",
+    driveTrouble: "드라이브에 올리지 못했어요. 몇 분 뒤 다시 해 봐요.",
+    driveBacklog: "지난 회의 올리기",
+    driveBacklogHint:
+      "아직 드라이브에 없는 지난 회의 {{n}}개, 약 {{gb}} GB예요.",
+    driveBacklogGo: "{{n}}개 올리기",
+    driveBacklogStarted: "지난 회의 {{n}}개를 올릴게요.",
     add: "폴더 추가",
     remove: "빼기",
     none: "없음",

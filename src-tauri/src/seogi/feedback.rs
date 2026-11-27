@@ -223,6 +223,7 @@ mod tests {
             faint: false,
             original: None,
             added: false,
+            id: String::new(),
         }
     }
 

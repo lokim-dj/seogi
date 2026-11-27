@@ -205,6 +205,26 @@ pub struct Entry {
     /// A task the user added: no line of the recording is behind it.
     #[serde(default)]
     pub added: bool,
+    /// Names this entry for as long as it lives, whatever the user changes
+    /// in it, so the phone and this computer can speak of the same task.
+    /// Given when the minutes are written (and to a task the user adds);
+    /// empty in meetings saved before entries had ids, which get theirs
+    /// when they are first put in Drive.
+    #[serde(default)]
+    pub id: String,
+}
+
+/// A new entry id: 12 hex characters from the system's randomness (the
+/// time, should there be none), unique enough within one meeting.
+pub fn new_entry_id() -> String {
+    let mut bytes = [0u8; 6];
+    if getrandom::fill(&mut bytes).is_err() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        bytes.copy_from_slice(&nanos.to_le_bytes()[..6]);
+    }
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 impl Entry {
@@ -224,6 +244,7 @@ impl Entry {
             faint: false,
             original: None,
             added: true,
+            id: new_entry_id(),
         }
     }
 
@@ -305,6 +326,35 @@ pub struct Minutes {
 }
 
 impl Minutes {
+    /// Gives every entry that has none an id, those taken out included.
+    /// Returns whether any was given.
+    pub fn give_ids(&mut self) -> bool {
+        let mut taken: std::collections::HashSet<String> = self
+            .sections
+            .iter()
+            .flat_map(|s| s.entries.iter().chain(s.removed.iter().map(|r| &r.entry)))
+            .map(|e| e.id.clone())
+            .filter(|id| !id.is_empty())
+            .collect();
+        let mut given = false;
+        for section in &mut self.sections {
+            let entries = section
+                .entries
+                .iter_mut()
+                .chain(section.removed.iter_mut().map(|r| &mut r.entry));
+            for entry in entries.filter(|e| e.id.is_empty()) {
+                let mut id = new_entry_id();
+                while taken.contains(&id) {
+                    id = new_entry_id();
+                }
+                taken.insert(id.clone());
+                entry.id = id;
+                given = true;
+            }
+        }
+        given
+    }
+
     /// Counts again what was checked and what is to be checked, after the
     /// user took an entry out, put it back or added one. An entry the user
     /// added was not checked against the recording, so it is neither.
@@ -1449,6 +1499,7 @@ fn check_item(
             faint: false,
             original: None,
             added: false,
+            id: String::new(),
         },
         lines,
     })
@@ -2493,6 +2544,7 @@ fn mark_disagreements(
                     faint: false,
                     original: None,
                     added: false,
+                    id: String::new(),
                 },
             ));
         }
@@ -3270,6 +3322,7 @@ mod tests {
             faint: false,
             original: None,
             added: false,
+            id: String::new(),
         }
     }
 
@@ -3804,6 +3857,7 @@ mod tests {
                 faint: false,
                 original: None,
                 added: false,
+                id: String::new(),
             },
             lines: line..=line,
         }
@@ -4740,6 +4794,7 @@ mod tests {
         );
         let mut entry = Entry {
             added: false,
+            id: String::new(),
             ..Entry::added("도면을 보내기로 했다.")
         };
         entry.rewrite("도면을 금요일에 보내기로 했다.");
@@ -4748,5 +4803,51 @@ mod tests {
         entry.rewrite(" 도면을 보내기로 했다. ");
         assert_eq!(entry.original, None);
         assert_eq!(entry.text, "도면을 보내기로 했다.");
+    }
+
+    #[test]
+    fn every_entry_gets_an_id_once_and_keeps_it() {
+        let entry = |text: &str, id: &str| Entry {
+            id: id.to_string(),
+            ..Entry::added(text)
+        };
+        let mut minutes: Minutes = serde_json::from_value(serde_json::json!({
+            "template_id": "meeting", "template_name": "회의", "title": "", "summary": "",
+            "sections": [], "verified": 0, "to_check": 0, "dropped": 0, "written_by": ""
+        }))
+        .unwrap();
+        minutes.sections.push(MinutesSection {
+            key: "actions".into(),
+            title: "할 일".into(),
+            kind: SectionKind::Actions,
+            entries: vec![entry("가", ""), entry("나", "kept"), entry("다", "")],
+            removed: vec![Removed {
+                index: 0,
+                entry: entry("라", ""),
+            }],
+        });
+        assert!(minutes.give_ids());
+        let ids: Vec<String> = minutes.sections[0]
+            .entries
+            .iter()
+            .chain(minutes.sections[0].removed.iter().map(|r| &r.entry))
+            .map(|e| e.id.clone())
+            .collect();
+        assert_eq!(ids[1], "kept");
+        assert!(ids.iter().all(|id| !id.is_empty()));
+        let unique: std::collections::HashSet<&String> = ids.iter().collect();
+        assert_eq!(unique.len(), 4);
+        // Given once: nothing changes the second time, nor when a task is
+        // changed.
+        assert!(!minutes.give_ids());
+        minutes.sections[0].entries[0].rewrite("가 고침");
+        assert_eq!(minutes.sections[0].entries[0].id, ids[0]);
+        // A task the user adds has its own at once; an old record has none.
+        assert_eq!(Entry::added("새 일").id.len(), 12);
+        let old: Entry = serde_json::from_value(serde_json::json!({
+            "text": "옛 일", "owner": "", "due": "", "sources": [], "reasons": []
+        }))
+        .unwrap();
+        assert!(old.id.is_empty());
     }
 }
