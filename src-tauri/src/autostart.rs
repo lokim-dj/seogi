@@ -13,6 +13,25 @@
 use tauri::AppHandle;
 use tauri_plugin_autostart::ManagerExt;
 
+/// What the login item passes when tauri-plugin-autostart starts the app
+/// (Windows, Linux, macOS before 13): the app opens without its window. A
+/// `SMAppService` login item passes nothing; `opened_by_mac_login_item` tells
+/// that launch apart instead. On Windows the entry is written again on every
+/// launch, so an entry from an older version gains the flag by itself.
+pub const LOGIN_ARGS: &[&str] = &["--start-hidden"];
+
+/// Whether macOS 13+ opened the app as its login item rather than the user
+/// opening it. Asked while the app finishes launching (in `setup`), when the
+/// open-application Apple Event that started it is still the current one:
+/// a login item's says `keyAELaunchedAsLogInItem`. Always false elsewhere.
+pub fn opened_by_mac_login_item() -> bool {
+    #[cfg(target_os = "macos")]
+    if macos::login_item_api_available() {
+        return macos::opened_by_login_item();
+    }
+    false
+}
+
 /// Apply the user's autostart preference using the best mechanism for the
 /// current platform.
 ///
@@ -145,6 +164,37 @@ mod macos {
         }
     }
 
+    /// The Apple Event that is being handled now is the open-application
+    /// event, sent because the app is a login item.
+    pub fn opened_by_login_item() -> bool {
+        use objc2::msg_send;
+        use objc2::rc::Retained;
+        use objc2_foundation::{NSAppleEventDescriptor, NSAppleEventManager};
+
+        const K_AE_OPEN_APPLICATION: u32 = u32::from_be_bytes(*b"oapp");
+        const KEY_AE_PROP_DATA: u32 = u32::from_be_bytes(*b"prdt");
+        const KEY_AE_LAUNCHED_AS_LOG_IN_ITEM: u32 = u32::from_be_bytes(*b"lgit");
+
+        let manager = NSAppleEventManager::sharedAppleEventManager();
+        let Some(event) = manager.currentAppleEvent() else {
+            return false;
+        };
+        // SAFETY: `eventID` and `paramDescriptorForKeyword:` are plain
+        // getters of NSAppleEventDescriptor with these exact types
+        // (AEEventID and AEKeyword are four-character codes, u32).
+        let event_id: u32 = unsafe { msg_send![&*event, eventID] };
+        if event_id != K_AE_OPEN_APPLICATION {
+            return false;
+        }
+        let prop: Option<Retained<NSAppleEventDescriptor>> =
+            unsafe { msg_send![&*event, paramDescriptorForKeyword: KEY_AE_PROP_DATA] };
+        let opened = prop.is_some_and(|p| p.enumCodeValue() == KEY_AE_LAUNCHED_AS_LOG_IN_ITEM);
+        if opened {
+            log::info!("Opened at login: starting without the window");
+        }
+        opened
+    }
+
     /// The login item as `SMAppService` reports it.
     pub fn login_item() -> super::LoginItem {
         let service = unsafe { SMAppService::mainAppService() };
@@ -217,10 +267,32 @@ mod macos {
             assert!(!plist.exists());
         }
 
+        /// Outside a launch there is no open-application event to read, so
+        /// a run of the tests is never taken for a login launch.
+        #[test]
+        fn no_login_launch_outside_an_apple_event() {
+            assert!(!opened_by_login_item());
+        }
+
         #[test]
         fn missing_launch_agent_is_a_no_op() {
             let dir = tempfile::tempdir().unwrap();
             remove_launch_agent_file(&dir.path().join("Handy.plist"));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    /// The login item's arguments are ones the app reads as "start hidden".
+    #[test]
+    fn login_args_start_the_app_hidden() {
+        let args = crate::cli::CliArgs::try_parse_from(
+            std::iter::once("seogi").chain(super::LOGIN_ARGS.iter().copied()),
+        )
+        .unwrap();
+        assert!(args.start_hidden);
     }
 }

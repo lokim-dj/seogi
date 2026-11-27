@@ -159,6 +159,35 @@ fn apply_startup_activation_policy(app: &mut tauri::App, headless_mode: bool) {
     app.set_activation_policy(tauri::ActivationPolicy::Regular);
 }
 
+/// What decides whether the main window opens when the app starts.
+struct StartWindow {
+    /// Permission onboarding needs the window (Windows).
+    force_show: bool,
+    /// The "start hidden" setting, or `--start-hidden`, which the login item
+    /// passes on Windows, Linux and macOS before 13 (`autostart::LOGIN_ARGS`).
+    start_hidden: bool,
+    /// The tray icon is there to open the window from.
+    tray_available: bool,
+    /// macOS 13+ opened the app as its login item (no arguments come with it).
+    opened_by_mac_login_item: bool,
+}
+
+impl StartWindow {
+    /// The user opened the app: show the window. The system opened it at
+    /// login: no window, the Dock icon (macOS, always there) or the tray icon
+    /// opens it. Starting hidden needs a way back in, so without a tray icon
+    /// off macOS the window shows anyway.
+    fn shows_window(&self) -> bool {
+        if self.force_show {
+            return true;
+        }
+        if self.opened_by_mac_login_item {
+            return false;
+        }
+        !self.start_hidden || !self.tray_available
+    }
+}
+
 #[allow(unused_variables)]
 fn should_force_show_permissions_window(app: &AppHandle) -> bool {
     #[cfg(target_os = "windows")]
@@ -518,6 +547,48 @@ mod headless_guard_tests {
     #[test]
     fn converts_worker_panics_to_runtime_failures() {
         assert_eq!(run_headless_guarded(|| panic!("simulated failure")), 1);
+    }
+}
+
+#[cfg(test)]
+mod start_window_tests {
+    use super::StartWindow;
+
+    fn start(start_hidden: bool, tray_available: bool, mac_login: bool) -> StartWindow {
+        StartWindow {
+            force_show: false,
+            start_hidden,
+            tray_available,
+            opened_by_mac_login_item: mac_login,
+        }
+    }
+
+    #[test]
+    fn a_launch_by_the_user_shows_the_window() {
+        assert!(start(false, true, false).shows_window());
+        assert!(start(false, false, false).shows_window());
+    }
+
+    #[test]
+    fn a_login_launch_starts_without_the_window() {
+        // macOS 13+: the login item opens the app with no arguments.
+        assert!(!start(false, true, true).shows_window());
+        // The Dock icon is always there on macOS, tray or not.
+        assert!(!start(false, false, true).shows_window());
+        // Elsewhere the login item passes --start-hidden and the tray opens it.
+        assert!(!start(true, true, false).shows_window());
+    }
+
+    #[test]
+    fn starting_hidden_without_a_tray_still_shows_the_window() {
+        assert!(start(true, false, false).shows_window());
+    }
+
+    #[test]
+    fn permission_onboarding_always_shows_the_window() {
+        let mut s = start(true, true, true);
+        s.force_show = true;
+        assert!(s.shows_window());
     }
 }
 
@@ -1103,7 +1174,7 @@ pub fn run(cli_args: CliArgs) {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
-            Some(vec![]),
+            Some(autostart::LOGIN_ARGS.to_vec()),
         ))
         .manage(cli_args.clone())
         .manage(notices::NoticeStore::default())
@@ -1308,17 +1379,13 @@ pub fn run(cli_args: CliArgs) {
                 tray::set_tray_visibility(&app_handle, false);
             }
 
-            // Show main window only if not starting hidden.
-            // CLI --start-hidden flag overrides the setting.
-            // But if permission onboarding is required, always show the window.
-            let should_hide = settings.start_hidden || cli_args.start_hidden;
-            let should_force_show = should_force_show_permissions_window(&app_handle);
-
-            // If start_hidden but tray is disabled, we must show the window
-            // anyway. Without a tray icon, the dock is the only way back in.
-            // Keep in sync with `apply_startup_activation_policy` (macOS).
-            let tray_available = settings.show_tray_icon && !cli_args.no_tray;
-            if should_force_show || !should_hide || !tray_available {
+            let start = StartWindow {
+                force_show: should_force_show_permissions_window(&app_handle),
+                start_hidden: settings.start_hidden || cli_args.start_hidden,
+                tray_available: settings.show_tray_icon && !cli_args.no_tray,
+                opened_by_mac_login_item: autostart::opened_by_mac_login_item(),
+            };
+            if start.shows_window() {
                 show_main_window(&app_handle);
             }
 
