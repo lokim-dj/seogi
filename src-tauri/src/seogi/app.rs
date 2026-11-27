@@ -1940,7 +1940,12 @@ impl Secretary {
         cancel: &AtomicBool,
     ) -> Result<bool> {
         let all_templates = templates::load(&self.data_dir.join("templates"));
-        let Some(transcript) = meeting.transcript.clone() else {
+        // The lines as the user fixed them: the minutes rest on those.
+        let Some(transcript) = meeting
+            .transcript
+            .as_ref()
+            .map(super::transcript::Transcript::as_read)
+        else {
             return Err(anyhow!("there is no transcript"));
         };
         let recorded_on = meeting.recorded_on();
@@ -2399,8 +2404,11 @@ impl Secretary {
     /// words the answer rests on.
     pub fn ask(&self, id: &str, question: &str) -> Result<super::ask::Answer> {
         let meeting = self.meeting(id)?;
+        // The lines as the user fixed them.
         let transcript = meeting
             .transcript
+            .as_ref()
+            .map(super::transcript::Transcript::as_read)
             .ok_or_else(|| anyhow!("it has not been transcribed yet"))?;
         let keychain = |name: &str| super::secrets::get(name);
         super::ask::answer(&transcript, question, &self.config().summary, &keychain)
@@ -2504,6 +2512,145 @@ impl Secretary {
             .and_then(|section| section.entries.get_mut(index))
             .ok_or_else(|| anyhow!("there is no such task"))?;
         entry.done = done;
+        self.save(&meeting, &folder)
+    }
+
+    /// The task section `section` of a meeting's minutes, to change.
+    fn task_section<'a>(
+        meeting: &'a mut Meeting,
+        section: &str,
+    ) -> Result<&'a mut minutes::MinutesSection> {
+        meeting
+            .minutes
+            .first_mut()
+            .and_then(|minutes| minutes.sections.iter_mut().find(|s| s.key == section))
+            .ok_or_else(|| anyhow!("there is no such list of tasks"))
+    }
+
+    /// Gives a task of the minutes the user's words; the minutes' own are
+    /// kept beside them.
+    pub fn edit_task(&self, id: &str, section: &str, index: usize, text: &str) -> Result<()> {
+        if text.trim().is_empty() {
+            bail!("a task needs words");
+        }
+        let (mut meeting, folder) = self.editable(id)?;
+        Self::task_section(&mut meeting, section)?
+            .entries
+            .get_mut(index)
+            .ok_or_else(|| anyhow!("there is no such task"))?
+            .rewrite(text);
+        self.save(&meeting, &folder)
+    }
+
+    /// Takes a task out of the minutes; it is kept so it can be put back.
+    pub fn remove_task(&self, id: &str, section: &str, index: usize) -> Result<()> {
+        let (mut meeting, folder) = self.editable(id)?;
+        let tasks = Self::task_section(&mut meeting, section)?;
+        if index >= tasks.entries.len() {
+            bail!("there is no such task");
+        }
+        let entry = tasks.entries.remove(index);
+        tasks.removed.push(minutes::Removed {
+            index: index as u32,
+            entry,
+        });
+        if let Some(minutes) = meeting.minutes.first_mut() {
+            minutes.recount();
+        }
+        self.save(&meeting, &folder)
+    }
+
+    /// Puts a task taken out back where it was; `removed` is its place
+    /// among the ones taken out of that section.
+    pub fn restore_task(&self, id: &str, section: &str, removed: usize) -> Result<()> {
+        let (mut meeting, folder) = self.editable(id)?;
+        let tasks = Self::task_section(&mut meeting, section)?;
+        if removed >= tasks.removed.len() {
+            bail!("there is no such task taken out");
+        }
+        let back = tasks.removed.remove(removed);
+        let at = (back.index as usize).min(tasks.entries.len());
+        tasks.entries.insert(at, back.entry);
+        if let Some(minutes) = meeting.minutes.first_mut() {
+            minutes.recount();
+        }
+        self.save(&meeting, &folder)
+    }
+
+    /// Adds a task the user writes to the end of a task section. With no
+    /// such section yet (the minutes found no task), the template's first
+    /// task section is made, in its place among the others.
+    pub fn add_task(&self, id: &str, section: &str, text: &str) -> Result<()> {
+        if text.trim().is_empty() {
+            bail!("a task needs words");
+        }
+        let (mut meeting, folder) = self.editable(id)?;
+        let all_templates = templates::load(&self.data_dir.join("templates"));
+        let minutes = meeting
+            .minutes
+            .first_mut()
+            .ok_or_else(|| anyhow!("the minutes are not written yet"))?;
+        let template = all_templates
+            .iter()
+            .find(|template| template.id == minutes.template_id);
+        let at = match minutes.sections.iter().position(|s| s.key == section) {
+            Some(at) => at,
+            None => {
+                let made = template
+                    .and_then(|template| {
+                        template
+                            .sections
+                            .iter()
+                            .find(|s| s.kind == templates::SectionKind::Actions)
+                    })
+                    .map(|s| (s.key.clone(), s.title.clone()))
+                    .unwrap_or_else(|| ("actions".to_string(), "할 일".to_string()));
+                if let Some(at) = minutes.sections.iter().position(|s| s.key == made.0) {
+                    at
+                } else {
+                    // Before the first section that comes after it in the
+                    // template; at the top when the template does not say.
+                    let order = |key: &str| {
+                        template.and_then(|t| t.sections.iter().position(|s| s.key == key))
+                    };
+                    let mine = order(&made.0).unwrap_or(0);
+                    let at = minutes
+                        .sections
+                        .iter()
+                        .position(|s| order(&s.key).is_none_or(|o| o > mine))
+                        .unwrap_or(minutes.sections.len());
+                    minutes.sections.insert(
+                        at,
+                        minutes::MinutesSection {
+                            key: made.0,
+                            title: made.1,
+                            kind: templates::SectionKind::Actions,
+                            entries: Vec::new(),
+                            removed: Vec::new(),
+                        },
+                    );
+                    at
+                }
+            }
+        };
+        minutes.sections[at]
+            .entries
+            .push(minutes::Entry::added(text));
+        minutes.recount();
+        self.save(&meeting, &folder)
+    }
+
+    /// Gives a stretch of the transcript (one paragraph on the screen, from
+    /// the line starting at `from_ms` to `to_ms`) the user's words. The
+    /// words as transcribed are kept, and `전사.txt` keeps them.
+    pub fn edit_lines(&self, id: &str, from_ms: u64, to_ms: u64, text: &str) -> Result<()> {
+        let (mut meeting, folder) = self.editable(id)?;
+        meeting
+            .transcript
+            .as_mut()
+            .ok_or_else(|| anyhow!("there is no transcript"))?
+            .edit_lines(from_ms, to_ms, text)
+            .map_err(|e| anyhow!(e))?;
         self.save(&meeting, &folder)
     }
 
@@ -3040,6 +3187,8 @@ mod tests {
             reasons: vec![],
             done: false,
             faint: false,
+            original: None,
+            added: false,
         };
         let mut meeting = Meeting::new(0, store::Origin::Recorded, "녹음.wav");
         meeting.transcript = Some(Transcript {
@@ -3077,6 +3226,7 @@ mod tests {
                 title: "우리 숙제".into(),
                 kind: SectionKind::Actions,
                 entries: vec![task("화자 1", 0), task("화자 2", 1_000)],
+                removed: Vec::new(),
             }],
             verified: 0,
             to_check: 0,
@@ -3145,6 +3295,8 @@ mod tests {
             reasons: vec![],
             done: false,
             faint: false,
+            original: None,
+            added: false,
         };
         let mut meeting = Meeting::new(0, store::Origin::Recorded, "녹음.wav");
         meeting.transcript = Some(Transcript {
@@ -3182,6 +3334,7 @@ mod tests {
                 title: "우리 숙제".into(),
                 kind: SectionKind::Actions,
                 entries: vec![task("지우", 0), task("지우", 1_000), task("지우", 2_000)],
+                removed: Vec::new(),
             }],
             verified: 0,
             to_check: 0,

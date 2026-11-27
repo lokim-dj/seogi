@@ -211,6 +211,151 @@ await flow("ticking a task off", "minutes", async (page, called) => {
 });
 
 await flow(
+  "changing a task's words, and seeing the words as written",
+  "minutes",
+  async (page, called) => {
+    const row = page.locator("[data-task='1']").first();
+    await row.hover();
+    await row.getByRole("button", { name: "고치기" }).click();
+    const box = page.getByRole("textbox", { name: "할 일 고치기" });
+    await box.fill("주방 가구 견적을 세 곳에 확인하기로 했다.");
+    await box.press("Enter");
+    await page.waitForTimeout(400);
+    expect(
+      await called(
+        "seogi_edit_task",
+        (a) => a.index === 1 && String(a.text).includes("세 곳"),
+      ),
+      "the task's new words were not kept",
+    );
+    await page.getByText("주방 가구 견적을 세 곳에 확인하기로 했다.").waitFor();
+    await row.getByRole("button", { name: "고침" }).click();
+    await page.getByText(/원래 말.*업체에 확인해서/).waitFor({ timeout: 2000 });
+  },
+);
+
+await flow(
+  "taking a task out and putting it back",
+  "minutes",
+  async (page, called) => {
+    const text = "냉장고 치수를 받으면 주방 도면을 바로 고치기로 했다.";
+    const row = page.locator(".task", { hasText: text }).first();
+    await row.hover();
+    await row.getByRole("button", { name: "지우기" }).click();
+    await page.waitForTimeout(400);
+    expect(
+      await called("seogi_remove_task", (a) => a.index === 4),
+      "the task was not taken out",
+    );
+    expect(
+      (await page.locator(".task", { hasText: text }).count()) === 0,
+      "the task is still in the list",
+    );
+    await page.getByRole("button", { name: /지운 할 일 1/ }).click();
+    await page.waitForTimeout(400);
+    expect(
+      await called("seogi_restore_task", (a) => a.removed === 0),
+      "the task was not put back",
+    );
+    await page.locator(".task", { hasText: text }).first().waitFor();
+  },
+);
+
+await flow("adding a task", "minutes", async (page, called) => {
+  await page.getByRole("button", { name: "+ 할 일 더하기" }).first().click();
+  const box = page.getByRole("textbox", { name: "더할 할 일" });
+  await box.fill("현관 중문 견적을 받아 보기로 했다.");
+  await page.getByRole("button", { name: "고친 대로 두기" }).click();
+  await page.waitForTimeout(400);
+  expect(
+    await called("seogi_add_task", (a) => String(a.text).includes("중문")),
+    "the task was not added",
+  );
+  await page.locator(".task", { hasText: "현관 중문 견적" }).first().waitFor();
+});
+
+await flow(
+  "fixing a transcript line, and the transcript as first written",
+  "minutes",
+  async (page, called) => {
+    await unfold(page, "받아쓴 글");
+    const line = page.locator(".tline").nth(3);
+    await line.hover();
+    await line.getByRole("button", { name: /고치기/ }).click();
+    const box = page.getByRole("textbox", { name: "받아쓴 글 고치기" });
+    const before = await box.inputValue();
+    await box.fill(before.replace("우물천장탄", "우물천장"));
+    await page.getByRole("button", { name: "고친 대로 두기" }).click();
+    await page.waitForTimeout(400);
+    expect(
+      await called(
+        "seogi_edit_lines",
+        (a) => typeof a.fromMs === "number" && !String(a.text).includes("탄"),
+      ),
+      "the line's new words were not kept",
+    );
+    await line.getByRole("button", { name: "고침" }).click();
+    await line.getByText(/원래 말.*우물천장탄/).waitFor({ timeout: 2000 });
+    await page.getByRole("button", { name: "처음 받아쓴 글 보기" }).click();
+    await page
+      .locator(".tline")
+      .nth(3)
+      .getByText(/우물천장탄/)
+      .waitFor({ timeout: 2000 });
+    await page.getByRole("button", { name: "고친 글 보기" }).waitFor();
+  },
+);
+
+await flow(
+  "writing the minutes again asks first when tasks were changed",
+  "minutes-edited",
+  async (page, called) => {
+    const rewrite = async () => {
+      await page
+        .getByRole("button", { name: /더 보기|…|more/i })
+        .first()
+        .click();
+      await page.getByRole("menuitem", { name: "회의록 다시 쓰기" }).click();
+    };
+    await rewrite();
+    const ask = page.getByRole("alertdialog", {
+      name: "회의록을 다시 쓸까요?",
+    });
+    await ask
+      .getByText(
+        "고친 할 일 1개, 더한 할 일 1개, 지운 할 일 1개가 처음 모습으로 돌아가요.",
+      )
+      .waitFor({ timeout: 2000 });
+    await ask.getByText("고친 받아쓴 글은 그대로 두고").waitFor();
+    await ask.getByRole("button", { name: "그만두기" }).click();
+    await page.waitForTimeout(300);
+    expect(!(await called("seogi_retry")), "it wrote again without a yes");
+    await rewrite();
+    await ask.getByRole("button", { name: "다시 쓰기" }).click();
+    await page.waitForTimeout(300);
+    expect(await called("seogi_retry"), "it did not write again after a yes");
+  },
+);
+
+await flow(
+  "writing the minutes again goes straight on when nothing was changed",
+  "minutes",
+  async (page, called) => {
+    await page
+      .getByRole("button", { name: /더 보기|…|more/i })
+      .first()
+      .click();
+    await page.getByRole("menuitem", { name: "회의록 다시 쓰기" }).click();
+    await page.waitForTimeout(300);
+    expect(
+      (await page.getByRole("alertdialog").count()) === 0,
+      "it asked with nothing to lose",
+    );
+    expect(await called("seogi_retry"), "it did not write again");
+  },
+);
+
+await flow(
   "hearing five seconds of a doubtful line",
   "minutes",
   async (page, called) => {
@@ -399,7 +544,10 @@ await flow(
   async (page, called) => {
     await page.getByRole("button", { name: /^참석/ }).first().click();
     expect(
-      (await page.getByRole("button", { name: /^\+ / }).count()) === 0,
+      // "+ 할 일 더하기" under the tasks is not a name.
+      (await page
+        .getByRole("button", { name: /^\+ (?!할 일 더하기)/ })
+        .count()) === 0,
       "names are still suggested from elsewhere",
     );
     await page

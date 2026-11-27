@@ -108,11 +108,11 @@ pub fn minutes_markdown(
         out.push_str(&format!("> {}\n\n", minutes.summary));
     }
 
-    // 1. Who does what.
+    // 1. Who does what. A list the user took every task out of is left out.
     let tasks: Vec<&MinutesSection> = minutes
         .sections
         .iter()
-        .filter(|section| section.kind == SectionKind::Actions)
+        .filter(|section| section.kind == SectionKind::Actions && !section.entries.is_empty())
         .collect();
     if !tasks.is_empty() {
         // The people of the meeting, whose names a task line may leave out.
@@ -765,6 +765,8 @@ mod tests {
             reasons,
             done: false,
             faint: false,
+            original: None,
+            added: false,
         }
     }
 
@@ -804,6 +806,7 @@ mod tests {
                             vec![CheckReason::UnsureSpeech],
                         ),
                     ],
+                    removed: Vec::new(),
                 },
                 MinutesSection {
                     key: "concerns".into(),
@@ -816,6 +819,7 @@ mod tests {
                         70_000,
                         vec![],
                     )],
+                    removed: Vec::new(),
                 },
                 MinutesSection {
                     key: "open".into(),
@@ -828,6 +832,7 @@ mod tests {
                         180_000,
                         vec![],
                     )],
+                    removed: Vec::new(),
                 },
             ],
             verified: 3,
@@ -847,6 +852,7 @@ mod tests {
                 confidence: None,
                 unsure: false,
                 overlap: false,
+                edited: None,
             }],
             speakers: vec![Speaker {
                 id: 1,
@@ -962,6 +968,7 @@ mod tests {
                 ),
                 entry("견본 목록 정리하기", "", "", 0, vec![]),
             ],
+            removed: Vec::new(),
         };
         let names = vec!["김서윤".to_string()];
         assert_eq!(

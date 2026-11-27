@@ -2,7 +2,7 @@
 // went, and everything else folded under "자세히". Every line points at the
 // moment of the recording it rests on; a thin line at the bottom plays it.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   commands,
@@ -38,6 +38,13 @@ import {
 import MeetingContext, { setMeetingInfo } from "../components/MeetingContext";
 import { NamePicker, PeopleLine } from "../components/People";
 import { ConfirmDelete, busy } from "../components/DeleteMeeting";
+import {
+  EditedMark,
+  TextEdit,
+  useConfirmRedo,
+  WasWords,
+  type Redo,
+} from "../components/Edit";
 import { SummaryCardDialog } from "../components/SummaryCard";
 import { NS } from "../i18n";
 import { clock, fullDay, hm, hms, isoDay, shortModel } from "../lib/format";
@@ -101,6 +108,9 @@ export default function Minutes({ id }: { id: string }) {
   const [menu, setMenu] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [card, setCard] = useState(false);
+  // Asks before writing again would undo the user's changes; it outlives
+  // the menu it is asked from.
+  const redo = useConfirmRedo(meeting);
 
   const path =
     summary && meeting ? joinPath(summary.folder, meeting.audio_file) : null;
@@ -179,6 +189,7 @@ export default function Minutes({ id }: { id: string }) {
             <MoreMenu
               meeting={meeting}
               templates={templates}
+              onRedo={redo.ask}
               onClose={() => setMenu(false)}
               onDelete={() => {
                 setMenu(false);
@@ -192,6 +203,7 @@ export default function Minutes({ id }: { id: string }) {
               onClose={() => setCard(false)}
             />
           ) : null}
+          {redo.dialog}
           {deleting && meeting ? (
             <ConfirmDelete
               meeting={{
@@ -226,11 +238,14 @@ export default function Minutes({ id }: { id: string }) {
 function MoreMenu({
   meeting,
   templates,
+  onRedo,
   onClose,
   onDelete,
 }: {
   meeting: Meeting;
   templates: Template[];
+  /** Goes on with writing again, asking first when it would undo changes. */
+  onRedo: (redo: Redo, go: () => void) => void;
   onClose: () => void;
   onDelete: () => void;
 }) {
@@ -261,9 +276,12 @@ function MoreMenu({
           disabled={working || !meeting.transcript}
           value={kind}
           onChange={(event) => {
-            void setMeetingInfo(meeting.id, { template_id: event.target.value })
-              .then(() => commands.seogiRetry(meeting.id, true))
-              .then(() => refreshDetail());
+            const template = event.target.value;
+            onRedo("minutes", () => {
+              void setMeetingInfo(meeting.id, { template_id: template })
+                .then(() => commands.seogiRetry(meeting.id, true))
+                .then(() => refreshDetail());
+            });
             onClose();
           }}
         >
@@ -284,9 +302,11 @@ function MoreMenu({
           className={item}
           disabled={working}
           onClick={() => {
-            void commands
-              .seogiRetry(meeting.id, true)
-              .then(() => refreshDetail());
+            onRedo("minutes", () => {
+              void commands
+                .seogiRetry(meeting.id, true)
+                .then(() => refreshDetail());
+            });
             onClose();
           }}
         >
@@ -582,6 +602,7 @@ function Sheet({
       : "";
   const length = useLength();
   const refreshDetail = useSeogi((s) => s.refreshDetail);
+  const redoSpeech = useConfirmRedo(meeting);
   const sheet = useRef<HTMLElement | null>(null);
   const talk = useTalk(meeting);
   useGoToSpot(sheet, jump);
@@ -691,7 +712,8 @@ function Sheet({
         </p>
       ) : (
         <>
-          {taskCount > 0 ? (
+          {taskCount > 0 ||
+          actionSections.some((s) => (s.removed ?? []).length > 0) ? (
             <section className="a-sec" aria-labelledby="tasks-h">
               <h2 id="tasks-h">
                 {t("minutes.tasks")}
@@ -710,6 +732,8 @@ function Sheet({
                   onDone={(index, done) =>
                     void setDone(section.key, index, done)
                   }
+                  meetingId={meeting.id}
+                  onChanged={refreshDetail}
                 />
               ))}
             </section>
@@ -720,6 +744,11 @@ function Sheet({
                 {checkLink}
               </h2>
               <p className="m-0 t2">{t("minutes.noTasksPlain")}</p>
+              <NoTasksAdd
+                meetingId={meeting.id}
+                section={actionSections[0]?.key ?? ""}
+                onChanged={refreshDetail}
+              />
             </section>
           )}
 
@@ -953,7 +982,13 @@ function Sheet({
                 <button
                   type="button"
                   className="lnk"
-                  onClick={() => void commands.seogiRetranscribe(meeting.id)}
+                  onClick={() =>
+                    redoSpeech.ask("speech", () => {
+                      void commands
+                        .seogiRetranscribe(meeting.id)
+                        .then(() => refreshDetail());
+                    })
+                  }
                 >
                   {t("minutes.redoWith", { model: shortModel(redoWith) })}
                 </button>
@@ -962,11 +997,13 @@ function Sheet({
           </p>
         </Fold>
       </section>
+      {redoSpeech.dialog}
     </article>
   );
 }
 
 function TaskGroup({
+  meetingId,
   section,
   showTitle,
   people,
@@ -974,7 +1011,9 @@ function TaskGroup({
   words,
   onListen,
   onDone,
+  onChanged,
 }: {
+  meetingId: string;
   section: MinutesSection;
   showTitle: boolean;
   /** The people of the meeting, whose names a line may leave out. */
@@ -984,9 +1023,37 @@ function TaskGroup({
   words: string;
   onListen: (ms: number) => void;
   onDone: (index: number, done: boolean) => void;
+  onChanged: () => Promise<void>;
 }) {
   const { t } = useTranslation(NS);
   const speakerName = useSpeakerName();
+  // The task being changed, by its place; "add" while one is being added.
+  const [editing, setEditing] = useState<number | "add" | null>(null);
+  // The changed task whose words as written are shown.
+  const [seeing, setSeeing] = useState<number | null>(null);
+  const [showRemoved, setShowRemoved] = useState(false);
+  const [trouble, setTrouble] = useState("");
+  const removed = section.removed ?? [];
+
+  /** Asks the backend for a change and reads the meeting again; the error
+   *  to show, or "" when it went through. */
+  const change = async (
+    work: Promise<{ status: "ok" } | { status: "error"; error: string }>,
+  ): Promise<string> => {
+    const result = await work;
+    if (result.status === "error") return result.error;
+    setEditing(null);
+    setSeeing(null);
+    await onChanged();
+    return "";
+  };
+  const act = async (
+    work: Promise<{ status: "ok" } | { status: "error"; error: string }>,
+  ) => {
+    const error = await change(work);
+    setTrouble(error ? t("failed", { reason: error }) : "");
+  };
+
   return (
     <div className="mb-2">
       {showTitle ? (
@@ -999,51 +1066,241 @@ function TaskGroup({
         const { who, text, unowned } = taskLine(section, entry, people);
         const owner = who ? speakerName(who) : "";
         const here = found === index;
+        const original = entry.original ?? "";
         return (
-          <div
-            key={`${section.key}-${index}`}
-            className={`task ${entry.faint ? "opacity-70" : ""}`}
-            data-found={here ? "" : undefined}
-          >
-            <input
-              type="checkbox"
-              className="chk"
-              checked={entry.done ?? false}
-              onChange={() => onDone(index, !(entry.done ?? false))}
-              aria-label={t("home.doneLabel", { task: entry.text })}
-            />
-            <span
-              className={entry.done ? "t3 line-through" : undefined}
-              title={quoteOf(entry) ? `「${quoteOf(entry)}」` : undefined}
+          <Fragment key={`${section.key}-${index}`}>
+            <div
+              className={`task ${entry.faint ? "opacity-70" : ""}`}
+              data-found={here ? "" : undefined}
+              data-task={index}
             >
-              {owner ? (
-                <span className="who">
-                  {here ? <Marked text={owner} words={words} /> : owner}
+              <input
+                type="checkbox"
+                className="chk"
+                checked={entry.done ?? false}
+                onChange={() => onDone(index, !(entry.done ?? false))}
+                aria-label={t("home.doneLabel", { task: entry.text })}
+              />
+              {editing === index ? (
+                // The words and the due column, so there is room to write.
+                <span className="flex items-center gap-2 min-w-0 col-span-2">
+                  {owner ? <span className="who shrink-0">{owner}</span> : null}
+                  <TextEdit
+                    initial={text}
+                    label={t("edit.taskLabel")}
+                    onCancel={() => setEditing(null)}
+                    onKeep={(words) =>
+                      change(
+                        commands.seogiEditTask(
+                          meetingId,
+                          section.key,
+                          index,
+                          words,
+                        ),
+                      )
+                    }
+                  />
                 </span>
-              ) : null}
-              {here ? (
-                <Marked
-                  text={text}
-                  words={words}
-                  wholeIfAbsent={!has(owner, words)}
-                />
               ) : (
-                text
+                <span>
+                  <span
+                    className={entry.done ? "t3 line-through" : undefined}
+                    title={quoteOf(entry) ? `「${quoteOf(entry)}」` : undefined}
+                  >
+                    {owner ? (
+                      <span className="who">
+                        {here ? <Marked text={owner} words={words} /> : owner}
+                      </span>
+                    ) : null}
+                    {here ? (
+                      <Marked
+                        text={text}
+                        words={words}
+                        wholeIfAbsent={!has(owner, words)}
+                      />
+                    ) : (
+                      text
+                    )}
+                  </span>
+                  {unowned ? (
+                    <span className="unowned">{t("ownerUnknown")}</span>
+                  ) : null}
+                  {(entry.reasons ?? []).length > 0 ? (
+                    <em>{t("minutes.checkMark")}</em>
+                  ) : null}
+                  {original ? (
+                    <EditedMark
+                      open={seeing === index}
+                      onToggle={() =>
+                        setSeeing(seeing === index ? null : index)
+                      }
+                    />
+                  ) : null}
+                  <span className="acts">
+                    <button
+                      type="button"
+                      className="lnk"
+                      onClick={() => {
+                        setEditing(index);
+                        setTrouble("");
+                      }}
+                    >
+                      {t("edit.fix")}
+                    </button>
+                    <span aria-hidden="true">·</span>
+                    <button
+                      type="button"
+                      className="lnk"
+                      onClick={() =>
+                        void act(
+                          commands.seogiRemoveTask(
+                            meetingId,
+                            section.key,
+                            index,
+                          ),
+                        )
+                      }
+                    >
+                      {t("edit.remove")}
+                    </button>
+                  </span>
+                </span>
               )}
-              {unowned ? (
-                <span className="unowned">{t("ownerUnknown")}</span>
-              ) : null}
-              {(entry.reasons ?? []).length > 0 ? (
-                <em>{t("minutes.checkMark")}</em>
-              ) : null}
-            </span>
-            <span className={`due ${entry.due ? "" : "none"}`}>
-              {entry.due || t("dueUnknown")}
-            </span>
-            {source ? <TimeKey ms={source.ms} onListen={onListen} /> : <span />}
-          </div>
+              {editing === index ? null : (
+                <span className={`due ${entry.due ? "" : "none"}`}>
+                  {entry.due || t("dueUnknown")}
+                </span>
+              )}
+              {source ? (
+                <TimeKey ms={source.ms} onListen={onListen} />
+              ) : (
+                <span />
+              )}
+            </div>
+            {seeing === index && original ? <WasWords text={original} /> : null}
+          </Fragment>
         );
       })}
+      <TaskFoot
+        adding={editing === "add"}
+        removed={removed.length}
+        open={showRemoved}
+        onAdd={() => {
+          setEditing("add");
+          setTrouble("");
+        }}
+        onCancelAdd={() => setEditing(null)}
+        onKeepAdd={(words) =>
+          change(commands.seogiAddTask(meetingId, section.key, words))
+        }
+        onRemoved={() => {
+          // One taken out comes straight back; with more, pick which.
+          if (removed.length === 1) {
+            void act(commands.seogiRestoreTask(meetingId, section.key, 0));
+          } else setShowRemoved(!showRemoved);
+        }}
+      />
+      {showRemoved && removed.length > 1
+        ? removed.map((gone, index) => (
+            <div key={`gone-${index}`} className="task-gone">
+              <span className="t3 line-through">{gone.entry.text}</span>
+              <button
+                type="button"
+                className="lnk"
+                onClick={() =>
+                  void act(
+                    commands.seogiRestoreTask(meetingId, section.key, index),
+                  )
+                }
+              >
+                {t("edit.restore")}
+              </button>
+            </div>
+          ))
+        : null}
+      {trouble ? <p className="m-0 mt-1 text-[13px] rt">{trouble}</p> : null}
+    </div>
+  );
+}
+
+/** "+ 할 일 더하기" where the minutes found no task. */
+function NoTasksAdd({
+  meetingId,
+  section,
+  onChanged,
+}: {
+  meetingId: string;
+  /** The task section, or "" to have the template's first one made. */
+  section: string;
+  onChanged: () => Promise<void>;
+}) {
+  const [adding, setAdding] = useState(false);
+  return (
+    <TaskFoot
+      adding={adding}
+      removed={0}
+      open={false}
+      onAdd={() => setAdding(true)}
+      onCancelAdd={() => setAdding(false)}
+      onKeepAdd={async (words) => {
+        const result = await commands.seogiAddTask(meetingId, section, words);
+        if (result.status === "error") return result.error;
+        setAdding(false);
+        await onChanged();
+        return "";
+      }}
+    />
+  );
+}
+
+/** Under a list of tasks: "+ 할 일 더하기", and the ones taken out. */
+function TaskFoot({
+  adding,
+  removed,
+  open,
+  onAdd,
+  onCancelAdd,
+  onKeepAdd,
+  onRemoved,
+}: {
+  adding: boolean;
+  removed: number;
+  open: boolean;
+  onAdd: () => void;
+  onCancelAdd: () => void;
+  onKeepAdd: (text: string) => Promise<string>;
+  onRemoved?: () => void;
+}) {
+  const { t } = useTranslation(NS);
+  return (
+    <div className="task-foot">
+      {adding ? (
+        <TextEdit
+          initial=""
+          label={t("edit.addLabel")}
+          placeholder={t("edit.addPlaceholder")}
+          onCancel={onCancelAdd}
+          onKeep={onKeepAdd}
+        />
+      ) : (
+        <button type="button" className="quiet" onClick={onAdd}>
+          {t("edit.add")}
+        </button>
+      )}
+      {removed > 0 && onRemoved ? (
+        <button
+          type="button"
+          className="quiet ml-auto"
+          aria-expanded={removed > 1 ? open : undefined}
+          onClick={onRemoved}
+        >
+          {t("edit.removed", { n: removed })}
+          {" · "}
+          <span className="underline underline-offset-[3px] decoration-[var(--t3)]">
+            {t("edit.restore")}
+          </span>
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -1230,21 +1487,34 @@ interface Paragraph {
   startMs: number;
   endMs: number;
   speaker: number;
+  /** The words as the user reads them: theirs where they fixed a line. */
   text: string;
+  /** The words as transcribed. */
+  original: string;
+  /** Whether the user fixed any of its lines. */
+  edited: boolean;
   unsure: boolean;
 }
+
+/** `more` after `words` with a space, leaving out nothing said. */
+const joined = (words: string, more: string) =>
+  more.trim() ? (words ? `${words} ${more}` : more) : words;
 
 /** Lines by the same speaker with no real pause between them, as one. */
 function paragraphs(segments: Segment[]): Paragraph[] {
   const out: Paragraph[] = [];
   for (const line of segments) {
     const last = out[out.length - 1];
+    const said = line.edited ?? line.text;
+    const edited = line.edited !== undefined && line.edited !== null;
     if (
       last &&
       last.speaker === line.speaker &&
       line.start_ms - last.endMs <= 2000
     ) {
-      last.text = `${last.text} ${line.text}`;
+      last.text = joined(last.text, said);
+      last.original = joined(last.original, line.text);
+      last.edited = last.edited || edited;
       last.endMs = line.end_ms;
       last.unsure = last.unsure || (line.unsure ?? false);
     } else {
@@ -1252,7 +1522,9 @@ function paragraphs(segments: Segment[]): Paragraph[] {
         startMs: line.start_ms,
         endMs: line.end_ms,
         speaker: line.speaker,
-        text: line.text,
+        text: said.trim(),
+        original: line.text,
+        edited,
         unsure: line.unsure ?? false,
       });
     }
@@ -1608,9 +1880,10 @@ function AskSpeaker({
   const [state, setState] = useState(() =>
     startAsking(
       askLines(
-        (transcript?.segments ?? []).filter(
-          (line) => line.speaker === speaker.id,
-        ),
+        // In the user's words where they fixed a line.
+        (transcript?.segments ?? [])
+          .map((line) => ({ ...line, text: line.edited ?? line.text }))
+          .filter((line) => line.speaker === speaker.id && line.text.trim()),
         meeting.duration_ms,
       ),
       isUnnamed(speaker.name) ? "" : speaker.name,
@@ -2047,6 +2320,12 @@ function Transcript({
   const refreshDetail = useSeogi((s) => s.refreshDetail);
   // The line (by its start) whose speaker is being named.
   const [naming, setNaming] = useState<number | null>(null);
+  // The line (by its start) being fixed, and the fixed one whose words as
+  // transcribed are shown.
+  const [fixing, setFixing] = useState<number | null>(null);
+  const [seeing, setSeeing] = useState<number | null>(null);
+  // The whole transcript as first written, before any fix.
+  const [asWritten, setAsWritten] = useState(false);
   const current = useRef<HTMLDivElement | null>(null);
   const transcript = meeting.transcript;
   const marks = meeting.marks_ms ?? [];
@@ -2084,6 +2363,7 @@ function Transcript({
     }
   }, [nowIndex, player.playing]);
 
+  const anyEdited = lines.some((line) => line.edited);
   if (!transcript || lines.length === 0) return null;
   const nameOf = (id: number) =>
     transcript.speakers.find((speaker) => speaker.id === id)?.name ?? "";
@@ -2094,7 +2374,24 @@ function Transcript({
       className="max-h-[70vh] overflow-y-auto pr-1"
     >
       <p className="mt-0 mb-2 text-[13.5px] t3">
-        {t("minutes.transcriptLead")}
+        {asWritten ? t("edit.originalLead") : t("minutes.transcriptLead")}
+        {anyEdited ? (
+          <>
+            {" "}
+            <button
+              type="button"
+              className="lnk text-[13px] t2"
+              aria-pressed={asWritten}
+              onClick={() => {
+                setAsWritten(!asWritten);
+                setFixing(null);
+                setSeeing(null);
+              }}
+            >
+              {asWritten ? t("edit.showEdited") : t("edit.showOriginal")}
+            </button>
+          </>
+        ) : null}
       </p>
       {lines.map((line, index) => {
         const on = following && index === nowIndex;
@@ -2108,13 +2405,15 @@ function Transcript({
         // The same speaker going on after a pause: the mark is left out,
         // the name kept quiet (pressing it still names this line).
         const goingOn = index > 0 && lines[index - 1].speaker === line.speaker;
-        const noise = isGibberish(line.text, korean);
+        const shown = asWritten ? line.original : line.text;
+        const noise = isGibberish(shown, korean);
         return (
           <div
             key={line.startMs}
             ref={on ? current : undefined}
             data-found={index === foundIndex ? "" : undefined}
-            className={`py-2 px-2 -mx-2 rounded-[8px] ${
+            data-line={line.startMs}
+            className={`tline py-2 px-2 -mx-2 rounded-[8px] ${
               band
                 ? marked
                   ? "bg-s1 shadow-[inset_2px_0_0_var(--red)]"
@@ -2165,6 +2464,21 @@ function Transcript({
                     .join(", ")}
                 </span>
               ) : null}
+              {asWritten || fixing === line.startMs ? null : (
+                <span className={`acts ${on || marked ? "" : "ml-auto"}`}>
+                  <button
+                    type="button"
+                    className="lnk"
+                    aria-label={`${t("edit.fix")} ${clock(line.startMs)}`}
+                    onClick={() => {
+                      setFixing(line.startMs);
+                      setSeeing(null);
+                    }}
+                  >
+                    {t("edit.fix")}
+                  </button>
+                </span>
+              )}
             </div>
             {naming === line.startMs ? (
               <SpeakerNamer
@@ -2179,18 +2493,55 @@ function Transcript({
                 }}
               />
             ) : null}
-            <p
-              title={noise ? t("minutes.noiseLine") : undefined}
-              className={`mt-1 mb-0 text-[14.5px] leading-[1.7] ${
-                on ? "font-medium" : ""
-              } ${noise ? "t3 opacity-60" : ""} ${line.unsure ? "underline decoration-dotted decoration-[var(--t3)] underline-offset-4" : ""}`}
-            >
-              {index === foundIndex ? (
-                <Marked text={line.text} words={words} />
-              ) : (
-                line.text
-              )}
-            </p>
+            {fixing === line.startMs ? (
+              <div className="mt-1">
+                <TextEdit
+                  multiline
+                  initial={line.text}
+                  label={t("edit.lineLabel")}
+                  onCancel={() => setFixing(null)}
+                  onKeep={async (text) => {
+                    const result = await commands.seogiEditLines(
+                      meeting.id,
+                      line.startMs,
+                      line.endMs,
+                      text,
+                    );
+                    if (result.status === "error") return result.error;
+                    setFixing(null);
+                    await refreshDetail();
+                    return "";
+                  }}
+                />
+              </div>
+            ) : (
+              <p
+                title={noise ? t("minutes.noiseLine") : undefined}
+                className={`mt-1 mb-0 text-[14.5px] leading-[1.7] ${
+                  on ? "font-medium" : ""
+                } ${noise ? "t3 opacity-60" : ""} ${line.unsure ? "underline decoration-dotted decoration-[var(--t3)] underline-offset-4" : ""}`}
+              >
+                {index === foundIndex && !asWritten ? (
+                  <Marked text={line.text} words={words} />
+                ) : (
+                  shown
+                )}
+                {line.edited && !asWritten ? (
+                  <>
+                    {" "}
+                    <EditedMark
+                      open={seeing === line.startMs}
+                      onToggle={() =>
+                        setSeeing(seeing === line.startMs ? null : line.startMs)
+                      }
+                    />
+                  </>
+                ) : null}
+              </p>
+            )}
+            {seeing === line.startMs && line.edited && !asWritten ? (
+              <WasWords text={line.original} />
+            ) : null}
           </div>
         );
       })}

@@ -8,7 +8,8 @@
 //            banner-ready | settings-dictation |
 //            mic-idle | mic-listening | mic-working |
 //            indicator-listening | indicator-tidying | indicator-note |
-//            indicator-nowhere | card | card-empty
+//            indicator-nowhere | card | card-empty | minutes-edited |
+//            minutes-editing
 //   &claude=missing|signed_out|signed_in&codex=… sets where the two
 //   subscription tools stand (settings, onboarding).
 //   &summary=key starts on '내 API 키' (Anthropic); &key=anthropic has its
@@ -16,6 +17,9 @@
 //   &os=windows shows the screens as on Windows (no Mac Calendar, no
 //   macOS permission rows).
 //   &step=2 or &step=3 opens the first-run screen on that step.
+//   minutes-edited has a task changed, one taken out, one added and a
+//   transcript line fixed; minutes-editing opens the boxes for changing a
+//   task and a line.
 //   card opens the one-page summary of the made-up consultation; card-empty
 //   the same meeting with no decisions, no numbers, nothing to check and a
 //   long title. What the card's save keys would write is kept in
@@ -66,6 +70,33 @@ const today = (hours: number, minutes: number) => {
 
 const done = consultMeeting as unknown as Meeting;
 done.started_at_ms = today(10, 30);
+if (screen === "minutes-edited" || screen === "minutes-editing") {
+  // What the user changed: a task's words, one taken out, one added, and a
+  // transcript line fixed (src-tauri/src/seogi/minutes.rs, transcript.rs).
+  const tasks = done.minutes?.[0]?.sections.find(
+    (section) => section.kind === "actions",
+  );
+  if (tasks && screen === "minutes-edited") {
+    const changed = tasks.entries[2];
+    changed.original = changed.text;
+    changed.text = "공사 신고와 엘리베이터 보양을 착공 전에 처리하기로 했다.";
+    const [gone] = tasks.entries.splice(1, 1);
+    tasks.removed = [{ index: 1, entry: gone }];
+    tasks.entries.push({
+      text: "현관 중문 견적을 두 곳에서 받아 보기로 했다.",
+      owner: "",
+      due: "",
+      sources: [],
+      reasons: [],
+      done: false,
+      faint: false,
+      original: null,
+      added: true,
+    });
+    const line = done.transcript?.segments[1];
+    if (line) line.edited = line.text.replace(/\s*$/, " 거실부터 볼게요.");
+  }
+}
 if (screen === "card-empty") {
   // Nothing decided, no amounts, nothing doubted, and a long title.
   done.customer = "";
@@ -527,6 +558,10 @@ const recordingMeeting: Meeting = {
   },
 };
 
+/** A section of the made-up minutes, by its key. */
+const taskSection = (key: unknown) =>
+  done.minutes?.[0]?.sections.find((section) => section.key === key);
+
 /** What the backend's search gives for the one meeting with minutes here,
  *  in the same order (src-tauri/src/seogi/store.rs, `Meeting::found`). */
 function search(query: string): Found[] {
@@ -833,6 +868,77 @@ mockIPC(
       case "seogi_mark":
         recording.marks_ms = [...recording.marks_ms, recording.elapsed_ms];
         return recording.elapsed_ms;
+      case "seogi_edit_task": {
+        const entry = taskSection(args.section)?.entries[Number(args.index)];
+        if (entry) {
+          const text = String(args.text).trim();
+          const written = entry.original ?? entry.text;
+          entry.original = written !== text && !entry.added ? written : null;
+          entry.text = text;
+        }
+        return null;
+      }
+      case "seogi_remove_task": {
+        const section = taskSection(args.section);
+        if (!section) return null;
+        const index = Number(args.index);
+        const [entry] = section.entries.splice(index, 1);
+        section.removed = [...(section.removed ?? []), { index, entry }];
+        return null;
+      }
+      case "seogi_restore_task": {
+        const section = taskSection(args.section);
+        const removed = section?.removed ?? [];
+        const [back] = removed.splice(Number(args.removed), 1);
+        if (section && back) {
+          section.entries.splice(
+            Math.min(back.index, section.entries.length),
+            0,
+            back.entry,
+          );
+        }
+        return null;
+      }
+      case "seogi_add_task": {
+        const section =
+          taskSection(args.section) ??
+          done.minutes?.[0]?.sections.find((item) => item.kind === "actions");
+        section?.entries.push({
+          text: String(args.text).trim(),
+          owner: "",
+          due: "",
+          sources: [],
+          reasons: [],
+          done: false,
+          faint: false,
+          original: null,
+          added: true,
+        });
+        return null;
+      }
+      case "seogi_edit_lines": {
+        // Simpler than the backend's: the paragraph's words go to its first
+        // line, unless they are the words transcribed.
+        const segments = done.transcript?.segments ?? [];
+        const first = segments.findIndex(
+          (line) => line.start_ms === Number(args.fromMs),
+        );
+        if (first < 0) throw new Error("no line starts there");
+        let last = first;
+        while (
+          segments[last + 1] &&
+          segments[last + 1].speaker === segments[first].speaker &&
+          segments[last + 1].end_ms <= Number(args.toMs)
+        )
+          last += 1;
+        const lines = segments.slice(first, last + 1);
+        const text = String(args.text).trim();
+        const asTranscribed = lines.map((line) => line.text.trim()).join(" ");
+        lines.forEach((line, index) => {
+          line.edited = text === asTranscribed ? null : index === 0 ? text : "";
+        });
+        return null;
+      }
       case "seogi_set_action_done": {
         const section = done.minutes?.[0]?.sections.find(
           (item) => item.key === args.section,
@@ -1141,7 +1247,29 @@ async function show() {
   const stop = useSeogi.subscribe((state) => {
     if (!state.loaded) return;
     stop();
-    if (screen === "minutes") state.open(done.id);
+    if (screen === "minutes" || screen.startsWith("minutes-"))
+      state.open(done.id);
+    if (screen === "minutes-editing") {
+      // Press "고치기" on the second task and on the third transcript line
+      // once they are on the screen.
+      const press = window.setInterval(() => {
+        const task = document.querySelector<HTMLElement>(
+          '[data-task="1"] .acts button',
+        );
+        if (!task) return;
+        window.clearInterval(press);
+        task.click();
+        const details = Array.from(
+          document.querySelectorAll<HTMLDetailsElement>("details"),
+        );
+        for (const fold of details) fold.open = true;
+        window.setTimeout(() => {
+          document
+            .querySelectorAll<HTMLElement>(".tline .acts button")[2]
+            ?.click();
+        }, 100);
+      }, 50);
+    }
     if (screen.startsWith("card")) {
       state.open(done.id);
       // Press "한 장 요약" once the minutes are on the screen.

@@ -1325,6 +1325,64 @@ async seogiSetActionDone(id: string, section: string, index: number, done: boole
 }
 },
 /**
+ * Gives a task of the minutes the user's words; the minutes' own are kept.
+ */
+async seogiEditTask(id: string, section: string, index: number, text: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_edit_task", { id, section, index, text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Takes a task out of the minutes, kept so it can be put back.
+ */
+async seogiRemoveTask(id: string, section: string, index: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_remove_task", { id, section, index }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Puts a task taken out back where it was; `removed` is its place among
+ * the section's tasks taken out.
+ */
+async seogiRestoreTask(id: string, section: string, removed: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_restore_task", { id, section, removed }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Adds a task the user writes to a task section of the minutes.
+ */
+async seogiAddTask(id: string, section: string, text: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_add_task", { id, section, text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Gives a stretch of the transcript (a paragraph on the screen: the line
+ * starting at `from_ms` up to `to_ms`) the user's words. The words as
+ * transcribed are kept, and `전사.txt` keeps them.
+ */
+async seogiEditLines(id: string, fromMs: number, toMs: number, text: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_edit_lines", { id, fromMs, toMs, text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * What the banner window shows now, if anything.
  */
 async seogiBanner() : Promise<Banner | null> {
@@ -2437,7 +2495,17 @@ done?: boolean;
  * The checks had a small doubt about it, not worth a listen beside the
  * few that are: it is shown faintly instead of being put to the person.
  */
-faint?: boolean }
+faint?: boolean; 
+/**
+ * The minutes' own words, when the user changed `text` on the screen;
+ * `None` while it stands as written. Absent in meetings saved before
+ * tasks could be changed.
+ */
+original?: string | null; 
+/**
+ * A task the user added: no line of the recording is behind it.
+ */
+added?: boolean }
 /**
  * One occurrence of a calendar event.
  */
@@ -2866,7 +2934,14 @@ not_rechecked?: boolean;
  * The model that wrote it: `ollama gemma3:12b`.
  */
 written_by: string }
-export type MinutesSection = { key: string; title: string; kind: SectionKind; entries: Entry[] }
+export type MinutesSection = { key: string; title: string; kind: SectionKind; entries: Entry[]; 
+/**
+ * Entries the user took out, newest last. Kept apart from `entries`
+ * so that everything that reads the minutes (and an older version of
+ * the app) leaves them out. Absent in meetings saved before tasks
+ * could be taken out.
+ */
+removed?: Removed[] }
 /**
  * A model the user can pick from a list.
  */
@@ -3248,6 +3323,15 @@ marks_ms: number[]; device: string;
 no_sound: boolean }
 export type RecordingStateEvent = { phase: RecordingPhase }
 /**
+ * An entry the user took out of the minutes, kept so it can be put back
+ * where it was.
+ */
+export type Removed = { 
+/**
+ * Its place among the section's entries when it was taken out.
+ */
+index: number; entry: Entry }
+/**
  * A retired ONNX model found on disk.
  */
 export type RetiredModel = { id: string; name: string; size_mb: number; replacement_repo: string }
@@ -3350,7 +3434,15 @@ unsure?: boolean;
  * Someone else talks over most of this line, so the words may be a mix
  * of two people.
  */
-overlap?: boolean }
+overlap?: boolean; 
+/**
+ * The user's words for this line, when they fixed it on the screen.
+ * The speech model's words stay in `text`: they are the record, and
+ * `전사.txt` is written from them. `Some("")` when the user took the
+ * line's words out (they went into the line before, or were wrong).
+ * Absent in meetings saved before lines could be fixed.
+ */
+edited?: string | null }
 /**
  * How the transcribe shortcut's key events drive a recording.
  */

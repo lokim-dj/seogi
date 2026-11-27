@@ -204,6 +204,96 @@ pub async fn seogi_set_action_done(
     .await
 }
 
+/// Gives a task of the minutes the user's words; the minutes' own are kept.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_edit_task(
+    secretary: State<'_, Arc<Secretary>>,
+    id: String,
+    section: String,
+    index: u32,
+    text: String,
+) -> Result<(), String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || {
+        secretary
+            .edit_task(&id, &section, index as usize, &text)
+            .map_err(self::text)
+    })
+    .await
+}
+
+/// Takes a task out of the minutes, kept so it can be put back.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_remove_task(
+    secretary: State<'_, Arc<Secretary>>,
+    id: String,
+    section: String,
+    index: u32,
+) -> Result<(), String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || {
+        secretary
+            .remove_task(&id, &section, index as usize)
+            .map_err(text)
+    })
+    .await
+}
+
+/// Puts a task taken out back where it was; `removed` is its place among
+/// the section's tasks taken out.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_restore_task(
+    secretary: State<'_, Arc<Secretary>>,
+    id: String,
+    section: String,
+    removed: u32,
+) -> Result<(), String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || {
+        secretary
+            .restore_task(&id, &section, removed as usize)
+            .map_err(text)
+    })
+    .await
+}
+
+/// Adds a task the user writes to a task section of the minutes.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_add_task(
+    secretary: State<'_, Arc<Secretary>>,
+    id: String,
+    section: String,
+    text: String,
+) -> Result<(), String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || secretary.add_task(&id, &section, &text).map_err(self::text)).await
+}
+
+/// Gives a stretch of the transcript (a paragraph on the screen: the line
+/// starting at `from_ms` up to `to_ms`) the user's words. The words as
+/// transcribed are kept, and `전사.txt` keeps them.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_edit_lines(
+    secretary: State<'_, Arc<Secretary>>,
+    id: String,
+    from_ms: u64,
+    to_ms: u64,
+    text: String,
+) -> Result<(), String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || {
+        secretary
+            .edit_lines(&id, from_ms, to_ms, &text)
+            .map_err(self::text)
+    })
+    .await
+}
+
 /// What the banner window shows now, if anything.
 #[tauri::command]
 #[specta::specta]
