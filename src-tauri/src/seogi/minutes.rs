@@ -197,12 +197,56 @@ pub struct Entry {
     /// few that are: it is shown faintly instead of being put to the person.
     #[serde(default)]
     pub faint: bool,
+    /// The minutes' own words, when the user changed `text` on the screen;
+    /// `None` while it stands as written. Absent in meetings saved before
+    /// tasks could be changed.
+    #[serde(default)]
+    pub original: Option<String>,
+    /// A task the user added: no line of the recording is behind it.
+    #[serde(default)]
+    pub added: bool,
 }
 
 impl Entry {
     pub fn needs_check(&self) -> bool {
         !self.reasons.is_empty()
     }
+
+    /// A task the user writes in themselves.
+    pub fn added(text: &str) -> Self {
+        Self {
+            text: text.trim().to_string(),
+            owner: String::new(),
+            due: String::new(),
+            sources: Vec::new(),
+            reasons: Vec::new(),
+            done: false,
+            faint: false,
+            original: None,
+            added: true,
+        }
+    }
+
+    /// Gives the entry the user's words, keeping the minutes' own beside
+    /// them; words put back as written are no longer a change.
+    pub fn rewrite(&mut self, text: &str) {
+        let text = text.trim().to_string();
+        if text == self.text {
+            return;
+        }
+        let written = self.original.take().unwrap_or_else(|| self.text.clone());
+        self.original = (written != text && !self.added).then_some(written);
+        self.text = text;
+    }
+}
+
+/// An entry the user took out of the minutes, kept so it can be put back
+/// where it was.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct Removed {
+    /// Its place among the section's entries when it was taken out.
+    pub index: u32,
+    pub entry: Entry,
 }
 
 /// A part of the meeting told as a story: a short heading and a paragraph,
@@ -220,6 +264,12 @@ pub struct MinutesSection {
     pub title: String,
     pub kind: SectionKind,
     pub entries: Vec<Entry>,
+    /// Entries the user took out, newest last. Kept apart from `entries`
+    /// so that everything that reads the minutes (and an older version of
+    /// the app) leaves them out. Absent in meetings saved before tasks
+    /// could be taken out.
+    #[serde(default)]
+    pub removed: Vec<Removed>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -252,6 +302,19 @@ pub struct Minutes {
     pub not_rechecked: bool,
     /// The model that wrote it: `ollama gemma3:12b`.
     pub written_by: String,
+}
+
+impl Minutes {
+    /// Counts again what was checked and what is to be checked, after the
+    /// user took an entry out, put it back or added one. An entry the user
+    /// added was not checked against the recording, so it is neither.
+    pub fn recount(&mut self) {
+        let entries = || self.sections.iter().flat_map(|s| &s.entries);
+        let to_check = entries().filter(|e| e.needs_check()).count() as u32;
+        let checked = entries().filter(|e| !e.added).count() as u32;
+        self.to_check = to_check;
+        self.verified = checked.saturating_sub(to_check);
+    }
 }
 
 /// What the minutes are made from.
@@ -544,6 +607,7 @@ pub fn write(
                 title: section.title.clone(),
                 kind: section.kind,
                 entries: in_section,
+                removed: Vec::new(),
             });
         }
     }
@@ -1383,6 +1447,8 @@ fn check_item(
             reasons,
             done: false,
             faint: false,
+            original: None,
+            added: false,
         },
         lines,
     })
@@ -2425,6 +2491,8 @@ fn mark_disagreements(
                     reasons: vec![reason],
                     done: false,
                     faint: false,
+                    original: None,
+                    added: false,
                 },
             ));
         }
@@ -3200,6 +3268,8 @@ mod tests {
             reasons,
             done: false,
             faint: false,
+            original: None,
+            added: false,
         }
     }
 
@@ -3450,6 +3520,7 @@ mod tests {
             confidence: Some(0.9),
             unsure: false,
             overlap: false,
+            edited: None,
         }
     }
 
@@ -3730,6 +3801,8 @@ mod tests {
                 reasons: Vec::new(),
                 done: false,
                 faint: false,
+                original: None,
+                added: false,
             },
             lines: line..=line,
         }
@@ -4654,5 +4727,25 @@ mod tests {
         );
         assert!(feedback.improve.is_empty());
         assert_eq!(entries[0].1.reasons, [CheckReason::SaidDifferently]);
+    }
+
+    #[test]
+    fn a_task_changed_keeps_the_minutes_own_words_until_they_are_put_back() {
+        let mut entry = Entry::added("처음 적은 일");
+        entry.rewrite("고쳐 적은 일");
+        assert_eq!(
+            entry.original, None,
+            "a task the user added has no words of the minutes"
+        );
+        let mut entry = Entry {
+            added: false,
+            ..Entry::added("도면을 보내기로 했다.")
+        };
+        entry.rewrite("도면을 금요일에 보내기로 했다.");
+        entry.rewrite("도면을 금요일 오전에 보내기로 했다.");
+        assert_eq!(entry.original.as_deref(), Some("도면을 보내기로 했다."));
+        entry.rewrite(" 도면을 보내기로 했다. ");
+        assert_eq!(entry.original, None);
+        assert_eq!(entry.text, "도면을 보내기로 했다.");
     }
 }

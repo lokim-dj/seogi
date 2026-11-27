@@ -6,6 +6,16 @@
 //! meeting: its state, transcript and minutes. The folders are the truth;
 //! the app keeps nothing about a meeting anywhere else, so a library can be
 //! moved, synced or backed up as plain files.
+//!
+//! What the user changes is kept in `meeting.json` too: a task ticked off,
+//! a speaker's name, a task changed, taken out or added (`Entry::original`,
+//! `Entry::added`, `MinutesSection::removed`), a transcript line fixed
+//! (`Segment::edited`). New fields are only ever added, each with
+//! `#[serde(default)]`, so a record saved by an older version still reads;
+//! nothing denies fields it does not know, so an older version reads a
+//! newer record too (and drops what it does not know if it saves it). The
+//! words as transcribed stay in `Segment::text` and in `전사.txt`; the
+//! minutes, `회의록.md` and searching read the user's words.
 
 use std::path::{Path, PathBuf};
 
@@ -429,10 +439,10 @@ impl Meeting {
         }
         if let Some(transcript) = &self.transcript {
             for (index, segment) in transcript.segments.iter().enumerate() {
-                if has(&segment.text) {
+                if has(segment.said()) {
                     add(
                         FoundIn::Transcript,
-                        &segment.text,
+                        segment.said(),
                         "",
                         index,
                         Some(segment.start_ms),
@@ -747,7 +757,8 @@ impl Library {
     }
 
     /// Saves the meeting's record, and its minutes and transcript as plain
-    /// documents when it has them.
+    /// documents when it has them: the minutes with the user's changes, the
+    /// transcript as it was transcribed.
     pub fn save(meeting: &Meeting, folder: &Path) -> Result<()> {
         let json = serde_json::to_string_pretty(meeting)?;
         write_atomically(&folder.join(RECORD_NAME), json.as_bytes())?;
@@ -759,7 +770,7 @@ impl Library {
             if let Some(minutes) = meeting.minutes.first() {
                 let markdown = render::minutes_markdown(
                     minutes,
-                    transcript,
+                    &transcript.as_read(),
                     &meeting.header(),
                     &meeting.marks_ms,
                 );
@@ -842,6 +853,7 @@ mod tests {
                 confidence: None,
                 unsure: false,
                 overlap: false,
+                edited: None,
             }],
             ..Default::default()
         });
@@ -1120,5 +1132,49 @@ mod tests {
         assert_eq!(title_in_name("20251124_140012"), "");
         assert_eq!(title_in_name("New Recording 12"), "");
         assert_eq!(title_in_name("음성 251124_140012"), "");
+    }
+
+    #[test]
+    fn what_the_user_changed_stays_and_the_transcript_file_keeps_the_words_transcribed() {
+        use crate::seogi::minutes::Removed;
+        // A record saved before tasks and lines could be changed.
+        let old = include_str!("../../../src/seogi/preview/fixtures/consult.json");
+        let mut meeting: Meeting = serde_json::from_str(old).expect("an older record reads");
+        let transcript = meeting.transcript.as_mut().unwrap();
+        let first = transcript.segments[0].clone();
+        transcript
+            .edit_lines(first.start_ms, first.end_ms, "새로 고친 첫 줄입니다")
+            .unwrap();
+        let minutes = &mut meeting.minutes[0];
+        let tasks = minutes
+            .sections
+            .iter_mut()
+            .find(|s| s.kind == SectionKind::Actions)
+            .unwrap();
+        let written = tasks.entries[0].text.clone();
+        tasks.entries[0].rewrite("새로 고친 할 일");
+        let gone = tasks.entries.remove(1);
+        tasks.removed.push(Removed {
+            index: 1,
+            entry: gone,
+        });
+        minutes.recount();
+
+        let dir = tempfile::tempdir().unwrap();
+        Library::save(&meeting, dir.path()).unwrap();
+        let back = Library::read(dir.path()).unwrap();
+        assert_eq!(back, meeting);
+        assert_eq!(
+            back.minutes[0].sections[0].entries[0].original.as_deref(),
+            Some(written.as_str())
+        );
+        let plain = std::fs::read_to_string(dir.path().join(TRANSCRIPT_NAME)).unwrap();
+        assert!(plain.contains(&first.text));
+        assert!(!plain.contains("새로 고친 첫 줄입니다"));
+        let markdown = std::fs::read_to_string(dir.path().join(MINUTES_NAME)).unwrap();
+        assert!(markdown.contains("새로 고친 할 일"));
+        // A search finds the line in the user's words.
+        let found = back.found("새로 고친 첫 줄").expect("found");
+        assert_eq!(found.places[0].kind, FoundIn::Transcript);
     }
 }

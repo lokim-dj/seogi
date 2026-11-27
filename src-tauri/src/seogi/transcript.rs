@@ -23,6 +23,21 @@ pub struct Segment {
     /// of two people.
     #[serde(default)]
     pub overlap: bool,
+    /// The user's words for this line, when they fixed it on the screen.
+    /// The speech model's words stay in `text`: they are the record, and
+    /// `전사.txt` is written from them. `Some("")` when the user took the
+    /// line's words out (they went into the line before, or were wrong).
+    /// Absent in meetings saved before lines could be fixed.
+    #[serde(default)]
+    pub edited: Option<String>,
+}
+
+impl Segment {
+    /// The line as the user reads it: their words when they fixed it, the
+    /// speech model's otherwise.
+    pub fn said(&self) -> &str {
+        self.edited.as_deref().unwrap_or(&self.text)
+    }
 }
 
 /// A speaker in one recording. The name starts as "화자 N" and is the
@@ -164,6 +179,176 @@ impl Transcript {
         }
         Ok(())
     }
+}
+
+impl Transcript {
+    /// The transcript as the user reads it: each line in their words where
+    /// they fixed it, a line they emptied left out. For the minutes and
+    /// for searching; `전사.txt` is written from the transcript as it was
+    /// transcribed.
+    pub fn as_read(&self) -> Transcript {
+        let mut read = self.clone();
+        read.segments = self
+            .segments
+            .iter()
+            .filter(|segment| {
+                segment
+                    .edited
+                    .as_deref()
+                    .is_none_or(|words| !words.trim().is_empty())
+            })
+            .map(|segment| Segment {
+                text: segment.said().to_string(),
+                edited: None,
+                ..segment.clone()
+            })
+            .collect();
+        read
+    }
+
+    /// Whether the user fixed any line.
+    pub fn edited(&self) -> bool {
+        self.segments.iter().any(|segment| segment.edited.is_some())
+    }
+
+    /// Gives the lines from the one starting at `from_ms` up to `to_ms` (a
+    /// paragraph on the screen) the user's words `text`. The words are
+    /// spread back over the lines they came from, so a fixed word stays
+    /// with its own line and its time; a line that ends up as transcribed
+    /// is no longer marked as fixed. The transcribed words are never
+    /// changed. Refused when no line starts at `from_ms`.
+    pub fn edit_lines(
+        &mut self,
+        from_ms: u64,
+        to_ms: u64,
+        text: &str,
+    ) -> std::result::Result<(), &'static str> {
+        let first = self
+            .segments
+            .iter()
+            .position(|segment| segment.start_ms == from_ms)
+            .ok_or("no line starts there")?;
+        let speaker = self.segments[first].speaker;
+        let mut last = first;
+        while self
+            .segments
+            .get(last + 1)
+            .is_some_and(|next| next.speaker == speaker && next.end_ms <= to_ms)
+        {
+            last += 1;
+        }
+        let lines = &mut self.segments[first..=last];
+        let now: Vec<&str> = lines.iter().map(|segment| segment.said()).collect();
+        let parts = spread(&now, text.trim());
+        for (segment, part) in lines.iter_mut().zip(parts) {
+            segment.edited = (part != segment.text.trim()).then_some(part);
+        }
+        Ok(())
+    }
+}
+
+/// Splits `text`, the new words for `lines` read one after another with a
+/// space between, back into one piece per line. What did not change at the
+/// start and the end keeps its line; the changed stretch goes to the line
+/// it starts in.
+fn spread(lines: &[&str], text: &str) -> Vec<String> {
+    let mut joined: Vec<char> = Vec::new();
+    let mut spans = Vec::with_capacity(lines.len());
+    for line in lines {
+        let line = line.trim();
+        if line.is_empty() {
+            spans.push((joined.len(), joined.len()));
+            continue;
+        }
+        if !joined.is_empty() {
+            joined.push(' ');
+        }
+        let start = joined.len();
+        joined.extend(line.chars());
+        spans.push((start, joined.len()));
+    }
+    let new: Vec<char> = text.chars().collect();
+    let most = joined.len().min(new.len());
+    let same_start = joined.iter().zip(&new).take_while(|(a, b)| a == b).count();
+    let same_end = joined
+        .iter()
+        .rev()
+        .zip(new.iter().rev())
+        .take(most - same_start)
+        .take_while(|(a, b)| a == b)
+        .count();
+    let mut old_end = joined.len() - same_end;
+    let mut new_end = new.len() - same_end;
+    // A change across lines takes the rest of the last line it reaches,
+    // so a full stop the old and new words happen to end with is not left
+    // alone on that line.
+    if spans
+        .iter()
+        .any(|&(start, end)| end > start && start > same_start && start < old_end)
+    {
+        let reach = spans
+            .iter()
+            .filter(|&&(start, end)| end > start && start < old_end)
+            .map(|&(_, end)| end)
+            .max()
+            .unwrap_or(old_end);
+        if reach > old_end {
+            new_end += reach - old_end;
+            old_end = reach;
+        }
+    }
+    // Where a line's start and end land in the new words. A line the change
+    // starts at the start of takes what was put in there; a line the change
+    // ends at the end of takes what was added after it.
+    let start_at = |at: usize| {
+        if at <= same_start {
+            at
+        } else if at >= old_end {
+            at - old_end + new_end
+        } else {
+            new_end
+        }
+    };
+    let end_at = |at: usize| {
+        if at >= old_end {
+            at - old_end + new_end
+        } else if at <= same_start {
+            at
+        } else {
+            new_end
+        }
+    };
+    let parts: Vec<String> = spans
+        .into_iter()
+        .map(|(start, end)| {
+            if start == end {
+                // A line already emptied stays empty.
+                return String::new();
+            }
+            let (start, end) = (start_at(start), end_at(end).max(start_at(start)));
+            new[start..end]
+                .iter()
+                .collect::<String>()
+                .trim()
+                .to_string()
+        })
+        .collect();
+    // Never a word lost or doubled: when the pieces do not read as the new
+    // words (a change that began on the space between two lines), the
+    // whole of them goes to the first line.
+    let letters = |text: &str| {
+        text.chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>()
+    };
+    if letters(&parts.concat()) == letters(text) {
+        return parts;
+    }
+    let mut whole = vec![String::new(); parts.len()];
+    if let Some(first) = whole.first_mut() {
+        *first = text.trim().to_string();
+    }
+    whole
 }
 
 /// Names that two people can share: a role, or no name at all.
@@ -615,6 +800,7 @@ mod tests {
             confidence: None,
             unsure: false,
             overlap: false,
+            edited: None,
         }
     }
 
@@ -721,5 +907,168 @@ mod tests {
             collapse_loops("거실은 마루 방은 마루 주방은 타일"),
             "거실은 마루 방은 마루 주방은 타일"
         );
+    }
+
+    fn lines(texts: &[&str]) -> Transcript {
+        Transcript {
+            segments: texts
+                .iter()
+                .enumerate()
+                .map(|(i, text)| segment(i as u64 * 1000, i as u64 * 1000 + 900, 1, text))
+                .collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_fixed_word_stays_with_its_own_line_and_the_transcribed_words_stay() {
+        let mut transcript = lines(&[
+            "네 안녕하세요.",
+            "우물천장탄을 내리면 답답하지 않습니다.",
+            "좋아요.",
+        ]);
+        transcript
+            .edit_lines(
+                0,
+                2900,
+                "네 안녕하세요. 우물천장을 내리면 답답하지 않습니다. 좋아요.",
+            )
+            .unwrap();
+        let s = &transcript.segments;
+        assert_eq!(s[0].edited, None);
+        assert_eq!(
+            s[1].edited.as_deref(),
+            Some("우물천장을 내리면 답답하지 않습니다.")
+        );
+        assert_eq!(s[1].text, "우물천장탄을 내리면 답답하지 않습니다.");
+        assert_eq!(s[2].edited, None);
+        assert!(transcript.edited());
+        // The plain transcript is the one transcribed; reading gives the fix.
+        assert!(transcript.to_text().contains("우물천장탄을"));
+        assert_eq!(
+            transcript.as_read().segments[1].text,
+            "우물천장을 내리면 답답하지 않습니다."
+        );
+    }
+
+    #[test]
+    fn words_put_back_as_they_were_are_no_longer_a_fix() {
+        let mut transcript = lines(&["하나 둘.", "셋 넷."]);
+        transcript.edit_lines(0, 1900, "하나 둘. 셋 다섯.").unwrap();
+        assert_eq!(transcript.segments[1].edited.as_deref(), Some("셋 다섯."));
+        transcript.edit_lines(0, 1900, "하나 둘. 셋 넷.").unwrap();
+        assert!(!transcript.edited());
+    }
+
+    #[test]
+    fn a_paragraph_written_anew_goes_to_its_first_line() {
+        let mut transcript = lines(&["가나다.", "라마바.", "사아자."]);
+        transcript.edit_lines(0, 2900, "전혀 다른 말.").unwrap();
+        let said: Vec<&str> = transcript.segments.iter().map(|s| s.said()).collect();
+        assert_eq!(said, vec!["전혀 다른 말.", "", ""]);
+        // A line emptied is left out of what is read.
+        assert_eq!(transcript.as_read().segments.len(), 1);
+        // Only the paragraph asked for: a line after `to_ms` is untouched.
+        let mut transcript = lines(&["가나다.", "라마바.", "사아자."]);
+        transcript.edit_lines(0, 1900, "가나다. 라마.").unwrap();
+        assert_eq!(transcript.segments[1].said(), "라마.");
+        assert_eq!(transcript.segments[2].edited, None);
+        assert!(transcript.edit_lines(500, 900, "없는 줄").is_err());
+    }
+
+    #[test]
+    fn words_added_at_a_line_s_end_stay_with_it() {
+        let mut transcript = lines(&["가나다.", "라마바."]);
+        transcript
+            .edit_lines(0, 1900, "가나다 하고. 라마바.")
+            .unwrap();
+        assert_eq!(transcript.segments[0].said(), "가나다 하고.");
+        assert_eq!(transcript.segments[1].edited, None);
+    }
+
+    #[test]
+    fn words_added_at_either_end_of_a_paragraph_are_kept() {
+        assert_eq!(spread(&["라라"], "라라라"), vec!["라라라"]);
+        assert_eq!(
+            spread(
+                &["답답하지 않습니다.", "좋아요."],
+                "답답하지 않습니다. 좋아요. 그리고 또."
+            ),
+            vec!["답답하지 않습니다.", "좋아요. 그리고 또."]
+        );
+        assert_eq!(
+            spread(
+                &["답답하지 않습니다.", "좋아요."],
+                "음 답답하지 않습니다. 좋아요."
+            ),
+            vec!["음 답답하지 않습니다.", "좋아요."]
+        );
+        // Put in where one line ends and the next starts: with the first.
+        assert_eq!(spread(&["가", "나"], "가 X나"), vec!["가", "X나"]);
+    }
+
+    #[test]
+    fn a_paragraph_replaced_or_emptied_loses_nothing_it_was_given() {
+        assert_eq!(
+            spread(&["가나다.", "라마바."], "전혀 다른 말"),
+            vec!["전혀 다른 말", ""]
+        );
+        assert_eq!(spread(&["가나다.", "라마바."], ""), vec!["", ""]);
+        // A change that starts on the space between two lines.
+        let parts = spread(&["나나라", "다. 라", "."], "나나라다. 라라 .");
+        assert_eq!(parts.concat().replace(' ', ""), "나나라다.라라.");
+        // New words for a paragraph whose lines were all taken out.
+        assert_eq!(spread(&["", ""], "다시 적은 말"), vec!["다시 적은 말", ""]);
+    }
+
+    #[test]
+    fn no_edit_loses_or_doubles_a_word() {
+        // Many edits of made-up lines, the same every run.
+        let mut seed: u64 = 0x5eed_0057;
+        let mut next = |below: usize| {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            ((seed >> 33) as usize) % below.max(1)
+        };
+        let alphabet: Vec<char> = "가나다라마바 .".chars().collect();
+        for _ in 0..5_000 {
+            let lines: Vec<String> = (0..1 + next(4))
+                .map(|_| {
+                    (0..next(7))
+                        .map(|_| alphabet[next(alphabet.len())])
+                        .collect()
+                })
+                .collect();
+            let now: Vec<&str> = lines.iter().map(String::as_str).collect();
+            let mut text: Vec<char> = now
+                .iter()
+                .map(|l| l.trim())
+                .filter(|l| !l.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ")
+                .chars()
+                .collect();
+            for _ in 0..1 + next(3) {
+                let at = next(text.len() + 1);
+                match next(3) {
+                    0 => text.insert(at, alphabet[next(alphabet.len())]),
+                    1 if at < text.len() => {
+                        text.remove(at);
+                    }
+                    _ if at < text.len() => text[at] = alphabet[next(alphabet.len())],
+                    _ => {}
+                }
+            }
+            let text: String = text.into_iter().collect();
+            let parts = spread(&now, &text);
+            assert_eq!(parts.len(), now.len());
+            let letters = |t: &str| t.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+            assert_eq!(
+                letters(&parts.concat()),
+                letters(&text),
+                "{now:?} -> {text:?} gave {parts:?}"
+            );
+        }
     }
 }

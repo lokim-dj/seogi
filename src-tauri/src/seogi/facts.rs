@@ -679,6 +679,7 @@ mod tests {
                     confidence: None,
                     unsure: false,
                     overlap: false,
+                    edited: None,
                 }
             })
             .collect();

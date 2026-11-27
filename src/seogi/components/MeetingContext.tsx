@@ -7,6 +7,7 @@ import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { commands, type Meeting, type MeetingInfo } from "@/bindings";
 import { NS } from "../i18n";
+import { useConfirmRedo } from "./Edit";
 import { PeopleLine } from "./People";
 
 const NOTHING: MeetingInfo = {
@@ -61,7 +62,11 @@ export default function MeetingContext({
     await onChanged();
   };
 
-  const again = async (fromSpeech: boolean) => {
+  // Asks first when writing again would undo what the user changed.
+  const redo = useConfirmRedo(meeting);
+  const again = (fromSpeech: boolean) =>
+    redo.ask(fromSpeech ? "speech" : "minutes", () => void run(fromSpeech));
+  const run = async (fromSpeech: boolean) => {
     const result = fromSpeech
       ? await commands.seogiRetranscribe(meeting.id)
       : await commands.seogiRetry(meeting.id, true);
@@ -166,7 +171,7 @@ export default function MeetingContext({
             type="button"
             className="key key-small"
             disabled={working}
-            onClick={() => void again(false)}
+            onClick={() => again(false)}
           >
             {t("context.rewrite")}
           </button>
@@ -175,7 +180,7 @@ export default function MeetingContext({
           type="button"
           className="key key-small"
           disabled={working || meeting.status === "recording"}
-          onClick={() => void again(true)}
+          onClick={() => again(true)}
         >
           {t("context.retranscribe")}
         </button>
@@ -183,6 +188,7 @@ export default function MeetingContext({
           {note || t("context.againHint")}
         </span>
       </div>
+      {redo.dialog}
     </section>
   );
 }

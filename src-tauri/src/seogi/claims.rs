@@ -344,6 +344,7 @@ mod tests {
                     confidence: Some(0.9),
                     unsure: false,
                     overlap: false,
+                    edited: None,
                 })
                 .collect(),
             speakers: vec![

@@ -14,6 +14,8 @@ const screens = [
   "home-going-long",
   "home-many",
   "minutes",
+  "minutes-edited",
+  "minutes-editing",
   "recording",
   "onboarding",
   "onboarding&step=2",

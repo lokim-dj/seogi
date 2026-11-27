@@ -221,6 +221,8 @@ mod tests {
             reasons: Vec::new(),
             done: false,
             faint: false,
+            original: None,
+            added: false,
         }
     }
 

@@ -504,6 +504,7 @@ fn lines_of(
                     confidence,
                     unsure,
                     overlap: false,
+                    edited: None,
                 }
             })
             .collect()
@@ -519,6 +520,7 @@ fn lines_of(
             confidence,
             unsure,
             overlap: false,
+            edited: None,
         }]
     };
 

@@ -564,6 +564,118 @@
     font-size: 13px;
     margin-left: 8px;
   }
+  /* Changing a task or a transcript line: the keys are there only on the
+     line the pointer is on or the keyboard is in (Tab from the line's
+     first key reaches them), so the sheet reads and wraps as before. */
+  .acts {
+    display: none;
+    gap: 5px;
+    align-items: baseline;
+    margin-left: 10px;
+    color: var(--t3);
+    font-size: 13px;
+  }
+  .acts .lnk {
+    font-size: 13px;
+  }
+  .task:hover .acts,
+  .task:focus-within .acts,
+  .tline:hover .acts,
+  .tline:focus-within .acts {
+    display: inline-flex;
+  }
+  @media (hover: none) {
+    .acts {
+      display: inline-flex;
+    }
+  }
+  .edit {
+    display: flex;
+    flex: 1;
+    gap: 12px;
+    align-items: center;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  .edit .field {
+    flex: 1;
+    min-width: 12em;
+    color: var(--t1);
+    font-size: inherit;
+    font-weight: inherit;
+  }
+  .edit-many {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .edit-many .field {
+    flex: none;
+    width: 100%;
+    resize: vertical;
+    font-size: 14.5px;
+    line-height: 1.7;
+  }
+  .edit-keys {
+    display: inline-flex;
+    gap: 14px;
+    justify-content: flex-end;
+    white-space: nowrap;
+  }
+  .edit-mark {
+    margin-left: 8px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--t3);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .edit-mark:hover,
+  .edit-mark[aria-expanded="true"] {
+    color: var(--t1);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .edit-was {
+    margin: 0 0 6px 26px;
+    color: var(--t3);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .tline .edit-was {
+    margin: 4px 0 0;
+  }
+  .task-foot {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    min-height: 32px;
+    padding: 2px 0 0 26px;
+  }
+  .task-gone {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 4px 0 4px 26px;
+    font-size: 13.5px;
+  }
+  .quiet {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--t3);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .quiet:hover {
+    color: var(--t1);
+  }
   .story {
     margin: 0;
     font-size: 15.5px;
