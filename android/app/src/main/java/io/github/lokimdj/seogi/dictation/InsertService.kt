@@ -16,8 +16,10 @@ import android.view.accessibility.AccessibilityWindowInfo
  * settings: it finds the text field that has the cursor in the app in front
  * and puts the spoken text there. It also notices when a field takes the
  * cursor or the keyboard comes up, so the floating key shows only while the
- * user types ([Typing]); for that it looks at the kind of window and whether
- * the focused field takes text, never at what is written or shown. It keeps
+ * user types ([Typing]), and that a field was changed by hand, so the key
+ * steps back while the user types; for that it looks at the kind of window,
+ * whether the focused field takes text and that a field changed, never at
+ * what is written or shown. It keeps
  * nothing and sends nothing. Runs in the `:dictation` process beside
  * [DictationService].
  */
@@ -49,7 +51,7 @@ class InsertService : AccessibilityService() {
             AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED -> remember(event.source)
             // Only that a field changed is used, never what it holds; Seogi's own writing is not typing.
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED ->
-                if (SystemClock.uptimeMillis() - wroteAt > OWN_WRITE_MS) keystroke?.invoke()
+                if (OwnWrite.isTyping(SystemClock.uptimeMillis(), wroteAt)) keystroke?.invoke()
             AccessibilityEvent.TYPE_WINDOWS_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> check()
         }
@@ -188,8 +190,6 @@ class InsertService : AccessibilityService() {
     companion object {
         private const val TAG = "SeogiDictation"
         private const val RESUME_EVERY_MS = 30_000L
-        /** Text changes this soon after Seogi wrote are its own, not the user's typing. */
-        private const val OWN_WRITE_MS = 1_500L
 
         /** The running service, when the user has switched it on. Read and set on the main thread. */
         @Volatile

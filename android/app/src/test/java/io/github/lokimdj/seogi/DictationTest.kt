@@ -12,6 +12,7 @@ import io.github.lokimdj.seogi.dictation.KeyRule
 import io.github.lokimdj.seogi.dictation.Typing
 import io.github.lokimdj.seogi.dictation.TextField
 import io.github.lokimdj.seogi.dictation.Loaded
+import io.github.lokimdj.seogi.dictation.OwnWrite
 import io.github.lokimdj.seogi.dictation.MeetingCheck
 import io.github.lokimdj.seogi.dictation.SetupState
 import io.github.lokimdj.seogi.dictation.SetupStep
@@ -189,6 +190,14 @@ class DictationTest {
         assertEquals(0.5f, p.x)
         assertEquals(1f, p.y)
         assertEquals(Pair(450, 900), p.toPixels(1000, 1000, 100, margin = 50))
+    }
+
+    @Test fun seogisOwnWritingIsNotTyping() {
+        assertFalse(OwnWrite.isTyping(now = 10_500, wroteAt = 10_000))
+        assertFalse(OwnWrite.isTyping(now = 11_500, wroteAt = 10_000))
+        assertTrue(OwnWrite.isTyping(now = 11_501, wroteAt = 10_000))
+        // Nothing written yet: every change is the user's.
+        assertTrue(OwnWrite.isTyping(now = 5_000, wroteAt = 0))
     }
 
     @Test fun keyStaysOffTheBackGestureStrips() {
