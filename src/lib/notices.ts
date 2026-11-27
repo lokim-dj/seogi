@@ -69,6 +69,9 @@ const NOTICE_DISPLAY: Record<NoticeCode, NoticeDisplay> = {
   MicrophoneReconnecting: {
     title: "errors.microphoneReconnectingTitle",
   },
+  CalendarUnreadable: {
+    title: "errors.calendarUnreadableTitle",
+  },
 };
 
 export const noticeDisplay = (code: NoticeCode) => NOTICE_DISPLAY[code];

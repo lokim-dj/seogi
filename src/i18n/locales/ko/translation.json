@@ -933,6 +933,7 @@
     "loadDirectory": "디렉토리 로딩 오류: {{error}}",
     "calendarPermissionLostTitle": "일정을 읽으려면 캘린더에서 서기를 다시 허락해 주세요",
     "microphoneReconnectingTitle": "마이크 끊김, 다시 연결 중",
+    "calendarUnreadableTitle": "캘린더를 못 읽어 시작 알림이 안 옵니다 · 서기 다시 켜기",
     "typingPermissionLostTitle": "말로 입력을 쓰려면 손쉬운 사용에서 서기를 다시 허락해 주세요",
     "micPermissionDeniedTitle": "마이크 접근이 거부되었습니다",
     "micPermissionDenied": {

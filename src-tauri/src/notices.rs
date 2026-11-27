@@ -72,6 +72,10 @@ pub enum NoticeCode {
     /// laptop's lid closed, a headset dropped). The meeting stays open and
     /// the microphone is opened again as soon as it is back.
     MicrophoneReconnecting,
+    /// Seogi may read the Calendar app, yet no calendar came back, even
+    /// after a refresh and over a fresh connection, so no meeting is
+    /// announced. Restarting Seogi reads them again.
+    CalendarUnreadable,
 }
 
 impl NoticeCode {
@@ -89,7 +93,8 @@ impl NoticeCode {
             | Self::FileTranscriptionFailed
             | Self::TypingPermissionLost
             | Self::CalendarPermissionLost
-            | Self::MicrophoneReconnecting => NoticeLevel::Error,
+            | Self::MicrophoneReconnecting
+            | Self::CalendarUnreadable => NoticeLevel::Error,
             Self::PostProcessFailed | Self::FilePostProcessFailed => NoticeLevel::Warning,
         }
     }
@@ -112,6 +117,7 @@ impl NoticeCode {
             Self::TypingPermissionLost => &strings.typing_permission_lost_title,
             Self::CalendarPermissionLost => &strings.calendar_permission_lost_title,
             Self::MicrophoneReconnecting => &strings.microphone_reconnecting_title,
+            Self::CalendarUnreadable => &strings.calendar_unreadable_title,
         }
     }
 }

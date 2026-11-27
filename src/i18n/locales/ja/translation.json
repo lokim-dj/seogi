@@ -933,6 +933,7 @@
     "loadDirectory": "ディレクトリの読み込みエラー: {{error}}",
     "calendarPermissionLostTitle": "Allow Seogi again in Calendars to read your events",
     "microphoneReconnectingTitle": "Microphone lost, reconnecting",
+    "calendarUnreadableTitle": "Calendar cannot be read, so no start reminders · Restart Seogi",
     "typingPermissionLostTitle": "Allow Seogi again in Accessibility to use dictation",
     "micPermissionDeniedTitle": "マイクへのアクセスが拒否されました",
     "micPermissionDenied": {

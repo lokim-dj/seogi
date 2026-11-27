@@ -230,8 +230,12 @@ const en: Strings = {
     typing: "To use dictation, allow Seogi again in Accessibility",
     calendar:
       "To read your events, allow Seogi again in Calendars. Until then no event reminders come.",
+    calendarUnreadable:
+      "The calendar cannot be read, so no start reminders come. Your events are still in Calendar; restarting Seogi reads them again.",
     open: "Open System Settings",
     ask: "Allow",
+    restart: "Restart Seogi",
+    restartLater: "Restart once the recording has ended.",
   },
   update: {
     available: "Version {{version}} is out",
@@ -929,7 +933,9 @@ const en: Strings = {
     macRestricted: "Reading calendars is blocked on this Mac.",
     macPick: "Choose the calendars to read",
     macNone:
-      "The Calendar app has no calendars. Add the Google account in Calendar → Settings → Accounts.",
+      "The Calendar app has no accounts. Add the account with your events in Calendar → Settings → Accounts.",
+    macUnreadable:
+      "The Calendar app has accounts, but Seogi could not read its calendars. Restarting Seogi reads them again.",
     macOk: "Connected",
     macBad: "Could not be read",
     calendarConnect: "Connect",
@@ -957,6 +963,10 @@ const en: Strings = {
         "Seogi may not read calendars. Turn on Seogi in System Settings → Privacy & Security → Calendars.",
       mac_missing:
         "The chosen calendars are not in the Calendar app. Choose again.",
+      mac_no_account:
+        "The Calendar app has no accounts. Add the account with your events in Calendar → Settings → Accounts.",
+      mac_unreadable:
+        "Seogi may read calendars, but the Calendar app gave none. Your events are still there; restarting Seogi reads them again.",
     },
     mutedEvents: "Events turned off",
     mutedEventsHint: "Left out of the home and the start reminders.",
