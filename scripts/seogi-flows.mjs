@@ -498,9 +498,16 @@ await flow(
     await unfold(page, "상담 피드백");
     await page.getByRole("region", { name: "상담 피드백" }).waitFor();
     expect(await called("seogi_talk"), "the talking was not measured");
+    // The talking is measured from the made-up transcript (three speakers,
+    // none under 1%), so each one has their own share and nobody is "기타".
+    const shares = await page
+      .getByRole("region", { name: "상담 피드백" })
+      .getByRole("img")
+      .first()
+      .getAttribute("aria-label");
     expect(
-      (await page.getByText("기타 1명").count()) > 0,
-      "a speaker who said almost nothing is not counted as one of the others",
+      (shares ?? "").split(", ").length === 3 && !shares?.includes("기타"),
+      `the talking is not shown per speaker: ${shares}`,
     );
     expect(
       (await page.getByText("잘한 점", { exact: true }).count()) === 1,
@@ -525,8 +532,16 @@ await flow(
       (await card.getByText(/^「/).count()) >= 1,
       "no line of theirs is shown",
     );
-    // Pressing a name gives it at once.
-    await card.getByRole("button", { name: "이서진", exact: true }).click();
+    // Four lines given the same name settle it, on one more press.
+    for (let i = 0; i < 4; i += 1) {
+      await card.getByRole("button", { name: "이서진", exact: true }).click();
+      await page.waitForTimeout(150);
+    }
+    expect(
+      !(await called("seogi_name_speaker")),
+      "the speaker was named before it was settled",
+    );
+    await card.getByRole("button", { name: "이서진으로 정하기" }).click();
     await page.waitForTimeout(300);
     expect(
       await called(
@@ -573,9 +588,11 @@ await flow(
   "minutes",
   async (page, called) => {
     await page.getByText("회의록", { exact: true }).first().waitFor();
+    // Renaming opens the card that names one speaker at a time.
     await page.getByRole("button", { name: "말한 사람 이름 바꾸기" }).click();
     await page
-      .getByText("이름을 누르면 말한 사람 이름을 바꿀 수 있어요.")
+      .getByRole("region", { name: "말한 사람에게 이름 붙이기" })
+      .getByText("이 말은 누가 했나요?")
       .waitFor({ timeout: 2000 });
     await page
       .getByRole("button", { name: /더 보기|…|more/i })
@@ -732,7 +749,8 @@ await flow(
       name: "구글 캘린더 비공개 주소",
     });
     await field.fill("someone@example.com");
-    await page.getByRole("button", { name: "연결" }).click();
+    // Exact: the phone's "연결 끊기" is in the same group.
+    await page.getByRole("button", { name: "연결", exact: true }).click();
     await page.getByRole("alert").waitFor({ timeout: 5000 });
     const text = await page.getByRole("alert").textContent();
     expect(text?.includes("비공개 주소(iCal 형식)"), "no reason was given");
