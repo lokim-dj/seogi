@@ -16,8 +16,8 @@ import io.github.lokimdj.seogi.R
 
 /**
  * The round floating key, drawn by hand (no Compose in an overlay window):
- * warm ink with a microphone, red while listening, a small turning arc while
- * the speech becomes text. Touches go to [onTouch] as they are.
+ * warm ink with Seogi's own mark (the launcher icon's single-colour layer),
+ * red while listening, a small turning arc while the speech becomes text. Touches go to [onTouch] as they are.
  */
 @SuppressLint("ViewConstructor")
 class BubbleView(context: Context, private val onTouch: (MotionEvent) -> Unit) : View(context) {
@@ -34,7 +34,7 @@ class BubbleView(context: Context, private val onTouch: (MotionEvent) -> Unit) :
         strokeCap = Paint.Cap.ROUND
         color = TEXT
     }
-    private val mic = context.getDrawable(R.drawable.ic_dictation)!!.mutate()
+    private val mark = context.getDrawable(R.drawable.ic_launcher_monochrome)!!.mutate()
     private val oval = RectF()
     private var turn = 0f
     private val spinner = ValueAnimator.ofFloat(0f, 360f).apply {
@@ -73,19 +73,22 @@ class BubbleView(context: Context, private val onTouch: (MotionEvent) -> Unit) :
         fill.color = if (listening) RED else INK
         canvas.drawCircle(r, r, r - density, fill)
         if (!listening) canvas.drawCircle(r, r, r - density, ring)
-        val icon = (w * 0.42f).toInt()
+        // The launcher layer is a 108-unit canvas with the mark about 45 units
+        // across in the middle; drawn at MARK_SCALE of the key, the mark fills
+        // about half of it (the canvas edges fall outside, and are empty).
+        val icon = (w * MARK_SCALE).toInt()
         val left = ((w - icon) / 2).toInt()
-        mic.setBounds(left, left, left + icon, left + icon)
-        mic.colorFilter = PorterDuffColorFilter(if (listening) Color.WHITE else TEXT, PorterDuff.Mode.SRC_IN)
+        mark.setBounds(left, left, left + icon, left + icon)
+        mark.colorFilter = PorterDuffColorFilter(if (listening) Color.WHITE else TEXT, PorterDuff.Mode.SRC_IN)
         if (mode == BubbleGesture.Mode.WORKING) {
-            mic.alpha = 90
+            mark.alpha = 90
             val inset = 7 * density
             oval.set(inset, inset, w - inset, w - inset)
             canvas.drawArc(oval, turn, 90f, false, arc)
         } else {
-            mic.alpha = 255
+            mark.alpha = 255
         }
-        mic.draw(canvas)
+        mark.draw(canvas)
     }
 
     @SuppressLint("ClickableViewAccessibility") // the key is also announced and works by tap for TalkBack users
@@ -104,5 +107,6 @@ class BubbleView(context: Context, private val onTouch: (MotionEvent) -> Unit) :
         val LINE = Color.rgb(0x36, 0x32, 0x2F)
         val TEXT = Color.rgb(0xED, 0xEB, 0xE7)
         val RED = Color.rgb(0xE9, 0x48, 0x3A)
+        const val MARK_SCALE = 1.2f
     }
 }
