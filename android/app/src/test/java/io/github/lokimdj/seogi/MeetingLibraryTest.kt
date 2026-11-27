@@ -172,6 +172,25 @@ class MeetingLibraryTest {
         assertEquals(1, r.downloads)
     }
 
+    /** A piece left longer than the recording (two downloads mixed) is thrown away, not played. */
+    @Test fun aPieceTooLongIsStartedOver() = runBlocking {
+        val r = FakeReader()
+        r.meeting("m1", "견적 회의", 1000)
+        val lib = library(r)
+        lib.refresh()
+        val cache = tmp.newFolder("cache")
+        File(cache, "meeting-audio").mkdirs()
+        File(cache, "meeting-audio/A-m1.wav.part").writeBytes(ByteArray(10))
+        assertEquals(4L, lib.audio("m1", cache) {}!!.length())
+    }
+
+    /** Drive answers 403 also for going too fast: that is no sign-in matter. */
+    @Test fun aRateLimitIsNotASignIn() {
+        assertTrue(MeetingLibrary.needsLogin(io.github.lokimdj.seogi.upload.DriveHttpException(401, "")))
+        assertTrue(MeetingLibrary.needsLogin(io.github.lokimdj.seogi.upload.DriveHttpException(403, "insufficientPermissions")))
+        assertFalse(MeetingLibrary.needsLogin(io.github.lokimdj.seogi.upload.DriveHttpException(403, "userRateLimitExceeded")))
+    }
+
     @Test fun aMeetingWithoutItsRecordingInDriveHasNothingToDownload() = runBlocking {
         val r = FakeReader()
         r.meeting("m1", "견적 회의", 1000, audio = null)
@@ -211,7 +230,7 @@ class MeetingLibraryTest {
         val doc = MeetingDoc.parse("""{"id":"x","new":"later","lines":[{"start_ms":5,"text":"안녕"}]}""")!!
         assertEquals(5L, doc.lines.single().startMs)
         assertNull(doc.lines.single().speaker)
-        assertEquals("화자 2", doc.speakerName(2))
+        assertNull(doc.speakerName(2))
         assertNull(MeetingDoc.parse("not json"))
         assertNull(MeetingDoc.parse("""{"title":"no id"}"""))
         assertFalse(doc.audio.inFolder)

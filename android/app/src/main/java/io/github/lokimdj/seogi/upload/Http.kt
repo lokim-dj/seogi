@@ -67,7 +67,6 @@ object OkHttpHttp : Http {
             .get()
             .build()
         client.newCall(request).execute().use { r ->
-            if (r.code == 416) return 200 // asked past the end: it is all here
             if (r.code !in 200..299) return r.code
             val body = r.body ?: return r.code
             // 206: Drive sends the rest; 200: it sends it all again.

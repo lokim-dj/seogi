@@ -66,6 +66,7 @@ class MeetingLibrary(
     private val indexFile = File(dir, INDEX)
     private val lock = Mutex()
     private val docs = HashMap<String, MeetingDoc>()
+    private val downloading = HashMap<String, Mutex>()
 
     private val state = MutableStateFlow(load())
 
@@ -101,7 +102,7 @@ class MeetingLibrary(
         } catch (e: IOException) {
             Outcome.OFFLINE
         } catch (e: DriveHttpException) {
-            if (e.code == 401 || e.code == 403) Outcome.NEED_LOGIN else Outcome.FAILED
+            if (needsLogin(e)) Outcome.NEED_LOGIN else Outcome.FAILED
         } catch (e: Exception) {
             Outcome.FAILED
         }
@@ -193,17 +194,40 @@ class MeetingLibrary(
     suspend fun audio(id: String, cacheDir: File, onProgress: (Float) -> Unit): File? {
         val m = get(id) ?: return null
         val fileId = m.audioFileId ?: return null
-        val token = (tokens() as? TokenResult.Ok)?.token ?: throw NeedLogin()
+        // One download per file: a second ask (the screen turned, the meeting
+        // opened again) waits for the first and then finds the file there.
+        val fileLock = synchronized(downloading) { downloading.getOrPut(fileId) { Mutex() } }
+        return fileLock.withLock { downloadOnce(m, fileId, cacheDir, onProgress) }
+    }
+
+    private suspend fun downloadOnce(m: DriveMeeting, fileId: String, cacheDir: File, onProgress: (Float) -> Unit): File {
         val folder = File(cacheDir, AUDIO_DIR).apply { mkdirs() }
         val ext = m.audioName?.substringAfterLast('.', "")?.takeIf { it.isNotEmpty() && it.length <= 5 } ?: "audio"
         val done = File(folder, "${safe(fileId)}.$ext")
         if (done.exists() && (m.audioSize == null || done.length() == m.audioSize)) return done
+        val token = when (val t = tokens()) {
+            is TokenResult.Ok -> t.token
+            TokenResult.NeedLogin -> throw NeedLogin()
+        }
         val part = File(folder, "${safe(fileId)}.$ext.part")
-        reader.download(token, fileId, part) { got, total ->
+        // More than the file holds: not a piece of it; start over.
+        if (m.audioSize != null && part.length() > m.audioSize) part.delete()
+        val progress = { got: Long, total: Long ->
             val whole = m.audioSize ?: total
             if (whole > 0) onProgress((got.toFloat() / whole).coerceIn(0f, 1f))
         }
-        if (m.audioSize != null && part.length() != m.audioSize) throw IOException("download cut off")
+        try {
+            reader.download(token, fileId, part, progress)
+        } catch (e: DriveHttpException) {
+            if (e.code != 416) throw e
+            // Asked from past the end: what is here is not a piece of it.
+            part.delete()
+            reader.download(token, fileId, part, progress)
+        }
+        if (m.audioSize != null && part.length() != m.audioSize) {
+            if (part.length() > m.audioSize) part.delete()
+            throw IOException("download cut off")
+        }
         if (!part.renameTo(done)) throw IOException("could not keep the download")
         return done
     }
@@ -218,6 +242,10 @@ class MeetingLibrary(
 
         /** Text files the computer writes; anything else in a meeting's folder is its recording. */
         private val TEXT_ENDINGS = listOf(".json", ".txt", ".md")
+
+        /** Signed out or the permission taken back; a 403 for going too fast is not. */
+        internal fun needsLogin(e: DriveHttpException) =
+            e.code == 401 || (e.code == 403 && !e.message.orEmpty().contains("ateLimit", ignoreCase = true))
 
         /** A name safe as a file name here. */
         internal fun safe(s: String) = s.replace(Regex("[^A-Za-z0-9._-]"), "_")

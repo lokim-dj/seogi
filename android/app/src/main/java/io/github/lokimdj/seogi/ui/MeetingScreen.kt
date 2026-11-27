@@ -3,7 +3,6 @@ package io.github.lokimdj.seogi.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -138,8 +137,8 @@ fun MeetingScreen(
                         Spacer(Modifier.height(10.dp))
                         Label(stringResource(R.string.m_marks))
                         Hairline()
-                        Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            doc.marksMs.forEach { ms -> TimeKey(ms, onPlayAt) }
+                        doc.marksMs.forEach { ms ->
+                            Row(Modifier.padding(vertical = 6.dp)) { TimeKey(ms, onPlayAt) }
                         }
                         Hairline()
                     }
@@ -151,7 +150,9 @@ fun MeetingScreen(
                             TimeKey(line.startMs, onPlayAt)
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                doc.speakerName(line.speaker)?.let { T(it, size = 11.5.sp, color = pal.t3, medium = true) }
+                                val who = doc.speakerName(line.speaker)
+                                    ?: line.speaker?.takeIf { it > 0 }?.let { stringResource(R.string.m_speaker_n, it) }
+                                if (who != null) T(who, size = 11.5.sp, color = pal.t3, medium = true)
                                 T(line.text, size = 13.5.sp, medium = true)
                             }
                         }
@@ -221,7 +222,8 @@ private fun PlayLine(audio: AudioState, play: PlayState, onPlayAt: (Long?) -> Un
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             when (audio) {
                 is AudioState.InDrive -> T(
-                    stringResource(R.string.p_download, audio.sizeBytes?.let { mb(it) } ?: ""), size = 13.sp, color = pal.t2, medium = true,
+                    audio.sizeBytes?.let { stringResource(R.string.p_download, mb(it)) } ?: stringResource(R.string.p_download_plain),
+                    size = 13.sp, color = pal.t2, medium = true,
                     modifier = Modifier.clickable(role = Role.Button) { onPlayAt(null) }.padding(vertical = 6.dp),
                 )
                 is AudioState.Downloading -> T(

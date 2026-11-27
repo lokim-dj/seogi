@@ -122,7 +122,6 @@
     <!-- meetings from the shared Drive folder -->
     <string name="st_minutes">회의록</string>
     <string name="st_open_tasks">할 일 %1$d</string>
-    <string name="st_minutes_waiting">회의록 기다림</string>
     <string name="sub_from_computer">컴퓨터</string>
     <string name="list_offline">인터넷이 끊겨 전에 받아 둔 회의만 보여요</string>
     <string name="list_failed">드라이브의 회의를 읽지 못했어요 · 눌러서 다시</string>
@@ -134,13 +133,15 @@
     <string name="m_transcript">받아쓴 글</string>
     <string name="m_marks">중요 표시</string>
     <string name="m_needs_check">확인 필요</string>
-    <string name="m_owner_due">%1$s · %2$s</string>
     <string name="m_not_read">회의록을 아직 받지 못했어요. 인터넷이 되면 다시 열어 주세요.</string>
     <string name="m_from_phone">폰에서 녹음</string>
     <string name="m_from_computer">컴퓨터에서 녹음</string>
     <string name="p_play">듣기</string>
     <string name="p_pause">멈춤</string>
     <string name="p_download">눌러서 녹음 내려받기 · %1$s</string>
+    <string name="p_download_plain">눌러서 녹음 내려받기</string>
+    <string name="m_speaker_n">화자 %1$d</string>
+    <string name="list_need_login">구글 로그인이 풀려 회의를 새로 받지 못해요 · 눌러서 로그인</string>
     <string name="p_downloading">녹음 내려받는 중 %1$d%%</string>
     <string name="p_no_audio">이 회의의 녹음은 드라이브에 없어요</string>
     <string name="p_failed">녹음을 내려받지 못했어요 · 눌러서 다시</string>

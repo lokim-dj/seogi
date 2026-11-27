@@ -68,9 +68,9 @@ data class MeetingDoc(
     /** The sections that are not tasks: they go under "자세히". */
     val otherSections: List<Section> get() = sections.filter { it.kind != "tasks" && it.entries.isNotEmpty() }
 
-    /** A speaker's name as the computer last wrote it; `화자 n` when it has none. */
+    /** A speaker's name as the computer last wrote it; null when it has none. */
     fun speakerName(id: Int?): String? =
-        id?.let { n -> speakers.firstOrNull { it.id == n }?.name?.takeIf { it.isNotBlank() } ?: "화자 $n" }
+        id?.let { n -> speakers.firstOrNull { it.id == n }?.name?.takeIf { it.isNotBlank() } }
 
     companion object {
         private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true; isLenient = true }

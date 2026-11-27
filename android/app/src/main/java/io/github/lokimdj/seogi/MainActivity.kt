@@ -282,6 +282,14 @@ class MainActivity : ComponentActivity() {
             AudioState.Ready -> {
                 val uri = audioUri ?: return
                 if (!player.play(uri, ms)) {
+                    val m = e.meeting
+                    if (uri.scheme != "file" && m?.audioFileId != null) {
+                        // The phone's own copy is gone: the one in Drive is the same recording.
+                        audioUri = null
+                        audioState = AudioState.InDrive(m.audioSize)
+                        playAt(e, ms)
+                        return
+                    }
                     Toast.makeText(this, R.string.p_cannot_play, Toast.LENGTH_SHORT).show()
                     return
                 }
@@ -350,6 +358,7 @@ class MainActivity : ComponentActivity() {
         val meetingsProblem by app.meetingsProblem.collectAsState()
         val entries = MeetingList.merge(recordings, driveMeetings)
         var openEntry by rememberSaveable { mutableStateOf<String?>(null) }
+        var openedFrom by rememberSaveable { mutableStateOf(Screen.HOME) }
 
         fun refresh() {
             app.recoverLeftovers()
@@ -407,6 +416,7 @@ class MainActivity : ComponentActivity() {
         }
 
         fun openMeeting(e: ListEntry) {
+            openedFrom = if (screen == Screen.UPLOADS) Screen.UPLOADS else Screen.HOME
             openEntry = e.key
             openAudio(e)
             screen = Screen.MEETING
@@ -414,7 +424,7 @@ class MainActivity : ComponentActivity() {
         fun closeMeeting() {
             closeAudio()
             openEntry = null
-            screen = Screen.UPLOADS
+            screen = openedFrom
         }
         // While playing, the line follows the recording.
         LaunchedEffect(playState.playing) {
@@ -509,9 +519,12 @@ class MainActivity : ComponentActivity() {
                     listProblem = when (meetingsProblem) {
                         MeetingLibrary.Outcome.OFFLINE -> stringResource(R.string.list_offline)
                         MeetingLibrary.Outcome.FAILED -> stringResource(R.string.list_failed)
+                        MeetingLibrary.Outcome.NEED_LOGIN -> stringResource(R.string.list_need_login)
                         else -> null
                     },
-                    onRefresh = { app.refreshMeetings(now = true) },
+                    onRefresh = {
+                        if (meetingsProblem == MeetingLibrary.Outcome.NEED_LOGIN) login() else app.refreshMeetings(now = true)
+                    },
                 )
                 Screen.MEETING -> {
                     val e = entries.firstOrNull { it.key == openEntry }
