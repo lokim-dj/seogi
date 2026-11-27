@@ -586,7 +586,7 @@ await flow(
     await first.focus();
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowDown");
-    const dictation = page.getByRole("tab", { name: "받아쓰기", exact: true });
+    const dictation = page.getByRole("tab", { name: "말로 입력", exact: true });
     expect(
       (await dictation.getAttribute("aria-selected")) === "true",
       "two arrow presses did not reach dictation",
@@ -595,13 +595,15 @@ await flow(
       await dictation.evaluate((el) => el === document.activeElement),
       "the focus did not follow the arrow keys",
     );
-    await page.getByRole("switch", { name: "받아쓰기", exact: true }).waitFor();
+    await page
+      .getByRole("switch", { name: "말로 입력", exact: true })
+      .waitFor();
     await page.getByRole("button", { name: "회의함" }).click();
     await page.getByRole("button", { name: "설정" }).first().click();
     await page.waitForTimeout(300);
     expect(
       (await page
-        .getByRole("tab", { name: "받아쓰기", exact: true })
+        .getByRole("tab", { name: "말로 입력", exact: true })
         .getAttribute("aria-selected")) === "true",
       "the group looked at last was not opened again",
     );
@@ -674,20 +676,20 @@ await flow(
   "dictation: turning it on saves it and shows the rest",
   "settings",
   async (page, called) => {
-    await part(page, "받아쓰기");
+    await part(page, "말로 입력");
     expect(
-      (await page.getByRole("combobox", { name: "받아쓰기 모델" }).count()) ===
+      (await page.getByRole("combobox", { name: "말로 입력 모델" }).count()) ===
         0,
       "the dictation choices show while dictation is off",
     );
-    await page.getByRole("switch", { name: "받아쓰기", exact: true }).check();
+    await page.getByRole("switch", { name: "말로 입력", exact: true }).check();
     await page.waitForTimeout(300);
     expect(
       await called("seogi_set_dictation", (a) => a.dictation.enabled === true),
       "turning dictation on was not saved",
     );
     await page
-      .getByRole("combobox", { name: "받아쓰기 모델" })
+      .getByRole("combobox", { name: "말로 입력 모델" })
       .waitFor({ timeout: 3000 });
   },
 );
@@ -785,7 +787,7 @@ await flow(
   "dictation: the floating key starts and stops a dictation, and offers its menu",
   "mic-idle",
   async (page, called) => {
-    const key = page.getByRole("button", { name: "받아쓰기" });
+    const key = page.getByRole("button", { name: "말로 입력" });
     await key.click();
     await page.waitForTimeout(200);
     expect(
@@ -797,7 +799,7 @@ await flow(
     expect(
       await called(
         "seogi_mic_menu",
-        (a) => a.hide === "단추 숨기기" && a.settings === "받아쓰기 설정",
+        (a) => a.hide === "단추 숨기기" && a.settings === "말로 입력 설정",
       ),
       "a right click did not offer hiding and the settings",
     );
@@ -812,7 +814,7 @@ await flow(
       .locator(".scard")
       .getByText("넣을 곳이 없어요")
       .waitFor({ timeout: 3000 });
-    await page.getByText("최근 받아쓰기에도 있어요").waitFor();
+    await page.getByText("최근 말로 입력한 글에도 있어요").waitFor();
     await page.getByRole("button", { name: "복사" }).click();
     await page.getByText("복사됨").waitFor({ timeout: 2000 });
     expect(

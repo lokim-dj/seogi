@@ -1881,6 +1881,7 @@ async seogiPhoneLookNow() : Promise<void> {
 
 export const events = __makeEvents__<{
 bannerChanged: BannerChanged,
+dictationChanged: DictationChanged,
 historyUpdatePayload: HistoryUpdatePayload,
 meetingChanged: MeetingChanged,
 meetingStarting: MeetingStarting,
@@ -1894,6 +1895,7 @@ transcriptionCompleteEvent: TranscriptionCompleteEvent,
 transcriptionJob: TranscriptionJob
 }>({
 bannerChanged: "banner-changed",
+dictationChanged: "dictation-changed",
 historyUpdatePayload: "history-update-payload",
 meetingChanged: "meeting-changed",
 meetingStarting: "meeting-starting",
@@ -2328,6 +2330,11 @@ numbers: boolean; button: boolean;
  * the meetings).
  */
 keep: number }
+/**
+ * The dictation choices were saved (from the settings or the tray), so a
+ * screen showing them reads them again.
+ */
+export type DictationChanged = Record<string, never>
 /**
  * Seogi's own dictation settings, kept in `seogi.json` and changed only
  * through `Secretary::update_dictation`. Each dictation setting has one

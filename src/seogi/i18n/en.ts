@@ -980,6 +980,7 @@ const en: Strings = {
     },
     mic: {
       label: "Dictation",
+      labelKeys: "Dictation · {{keys}}",
       listening: "Listening",
       hide: "Hide this key",
       settings: "Dictation settings",

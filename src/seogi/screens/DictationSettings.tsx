@@ -1,4 +1,4 @@
-// Settings › 받아쓰기: dictation, Seogi's second job. The same rows as the
+// Settings › 말로 입력: dictation, Seogi's second job. The same rows as the
 // rest of the settings: a name, a line saying what it does, its value. Each
 // change is saved as it is made. Everything here comes from the backend
 // (seogiDictation, seogiDictationStatus); nothing is decided on the screen
@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { platform } from "@tauri-apps/plugin-os";
 import {
   commands,
+  events,
   type Dictation,
   type DictationStatus,
   type Press,
@@ -91,6 +92,18 @@ export default function DictationSettings({
     void look();
   }, [readBack, look]);
 
+  // Saved somewhere else (the tray's "말로 입력 켜 두기"): read again. A
+  // save of this screen still on its way reads back by itself.
+  const saving = useRef(0);
+  useEffect(() => {
+    const off = events.dictationChanged.listen(() => {
+      if (saving.current > 0) return;
+      void readBack();
+      void look();
+    });
+    return () => void off.then((stop) => stop());
+  }, [readBack, look]);
+
   // Waiting for the user to allow typing in System Settings: look again
   // every couple of seconds, so the line changes by itself.
   const waiting = !!dictation?.enabled && status?.permitted === false;
@@ -115,7 +128,10 @@ export default function DictationSettings({
     const before = dictation;
     const mine = ++saves.current;
     setDictation(next);
-    const result = await commands.seogiSetDictation(next);
+    saving.current += 1;
+    const result = await commands
+      .seogiSetDictation(next)
+      .finally(() => (saving.current -= 1));
     if (result.status === "error") {
       setDictation(before);
       const [code, by] = result.error.split(":");

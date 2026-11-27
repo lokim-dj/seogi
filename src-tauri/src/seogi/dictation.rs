@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use specta::Type;
 use tauri::{AppHandle, Manager};
+use tauri_specta::Event;
 
 use super::app::Secretary;
 use super::llm::{self, Provider};
@@ -307,6 +308,10 @@ pub fn write(app: &AppHandle, wanted: Dictation) -> Result<(), String> {
         .update_dictation(|dictation| put_seogi_choices(dictation, &wanted))
         .map_err(|e| format!("{e:#}"))?;
     apply(app);
+    // The tray's "말로 입력 켜 두기" and an open settings screen show the
+    // choice just saved, whichever of the two saved it.
+    crate::tray::rebuild_tray_menu(app);
+    let _ = super::app::DictationChanged {}.emit(app);
     Ok(())
 }
 

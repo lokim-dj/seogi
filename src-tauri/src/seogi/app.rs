@@ -91,6 +91,11 @@ pub enum Banner {
 #[derive(Clone, Debug, Serialize, Deserialize, Type, tauri_specta::Event)]
 pub struct BannerChanged {}
 
+/// The dictation choices were saved (from the settings or the tray), so a
+/// screen showing them reads them again.
+#[derive(Clone, Debug, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct DictationChanged {}
+
 /// The main window should show this meeting.
 #[derive(Clone, Debug, Serialize, Deserialize, Type, tauri_specta::Event)]
 pub struct OpenMeeting {
@@ -2688,10 +2693,14 @@ fn say<'a>(app: &AppHandle, korean: &'a str, english: &'a str) -> &'a str {
     }
 }
 
-/// The tray menu: recording first, the window second.
+/// The tray menu: recording first, dictation second, the window last.
 pub fn tray_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
-    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-    let recording = Secretary::of(app).is_some_and(|secretary| secretary.is_recording());
+    use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+    let secretary = Secretary::of(app);
+    let recording = secretary.as_ref().is_some_and(|s| s.is_recording());
+    let dictating = secretary
+        .as_ref()
+        .is_some_and(|s| s.config().dictation.enabled);
     let item = |id: &str, korean: &str, english: &str| {
         MenuItem::with_id(app, id, say(app, korean, english), true, None::<&str>)
     };
@@ -2702,6 +2711,16 @@ pub fn tray_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>
     } else {
         menu.append(&item("seogi_record", "녹음 시작", "Start recording")?)?;
     }
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&CheckMenuItem::with_id(
+        app,
+        "seogi_dictation",
+        say(app, "말로 입력 켜 두기", "Keep voice typing on"),
+        // Until the secretary is ready a click could not be saved.
+        secretary.is_some(),
+        dictating,
+        None::<&str>,
+    )?)?;
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&item("settings", "서기 열기", "Open Seogi")?)?;
     menu.append(&item("quit", "끝내기", "Quit")?)?;
@@ -2720,6 +2739,21 @@ pub fn tray_action(app: &AppHandle, id: &str) -> bool {
         }
         "seogi_mark" => {
             let _ = secretary.mark();
+            true
+        }
+        "seogi_dictation" => {
+            // The same path as the settings' switch, so the shortcut, the
+            // floating key, the tray and an open settings screen all follow.
+            let app = app.clone();
+            std::thread::spawn(move || {
+                let mut wanted = super::dictation::read(&app, &secretary.config().dictation);
+                wanted.enabled = !wanted.enabled;
+                if let Err(e) = super::dictation::write(&app, wanted) {
+                    warn!("Could not turn dictation on or off from the tray: {e}");
+                    // The item ticked itself; show the state as it is.
+                    crate::tray::rebuild_tray_menu(&app);
+                }
+            });
             true
         }
         _ => false,
