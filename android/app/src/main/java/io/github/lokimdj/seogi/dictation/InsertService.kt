@@ -32,10 +32,11 @@ class InsertService : AccessibilityService() {
 
     override fun onServiceConnected() {
         instance = this
+        // Bound again after an update or a restart: the key the user left on comes back.
+        lastResume = SystemClock.elapsedRealtime()
+        DictationService.resume(this, "accessibility bound")
         check()
         listener?.invoke()
-        // Bound again after an update or a restart: the key the user left on comes back.
-        DictationService.resume(this, "accessibility bound")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -137,7 +138,7 @@ class InsertService : AccessibilityService() {
         val choice = InsertTarget.pick(
             focused(), last,
             editable = { it.isEditable },
-            onScreen = { n -> n.refresh() && (shown.isEmpty() || n.windowId in shown) },
+            onScreen = { n -> n.refresh() && n.isVisibleToUser && (shown.isEmpty() || n.windowId in shown) },
         )
         val node = choice.field
         if (node == null) {
