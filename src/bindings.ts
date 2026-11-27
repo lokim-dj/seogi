@@ -1383,6 +1383,91 @@ async seogiEditLines(id: string, fromMs: number, toMs: number, text: string) : P
 }
 },
 /**
+ * How many places in a meeting fixing the misheard words `from` (picked
+ * at character `at` of the line starting at `at_ms`) as `to` would fix;
+ * `to` is empty while the user has not written it yet.
+ */
+async seogiWordPlaces(id: string, atMs: number, at: number, from: string, to: string) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_word_places", { id, atMs, at, from, to }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Reads the misheard words `from` as `to` in a meeting, where they were
+ * picked and everywhere else they safely can be; with `remember`, the
+ * vocabulary learns them for meetings from now on. The words as
+ * transcribed and `전사.txt` stay.
+ */
+async seogiFixWord(id: string, atMs: number, at: number, from: string, to: string, remember: boolean) : Promise<Result<WordFixOutcome, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_fix_word", { id, atMs, at, from, to, remember }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Undoes a fix of misheard words right after it was made: the lines as
+ * they were, and with `forget` the vocabulary without the words again.
+ */
+async seogiUnfixWords(id: string, before: Segment[], from: string, to: string, forget: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_unfix_words", { id, before, from, to, forget }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Reads words fixed from `from` to `to` in one paragraph on the screen
+ * (the line starting at `from_ms` up to `to_ms`) as transcribed again.
+ */
+async seogiUnfixWord(id: string, fromMs: number, toMs: number, from: string, to: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_unfix_word", { id, fromMs, toMs, from, to }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The user's vocabulary as one list, newest additions first.
+ */
+async seogiVocabulary() : Promise<Result<WordList, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_vocabulary") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Adds or changes a word of the user's vocabulary (`old` is its name
+ * before, when it is renamed) with the ways it is misheard.
+ */
+async seogiSaveWord(old: string | null, term: string, misheard: Misheard[]) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_save_word", { old, term, misheard }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Takes a word out of the user's vocabulary.
+ */
+async seogiRemoveWord(term: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_remove_word", { term }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * What the banner window shows now, if anything.
  */
 async seogiBanner() : Promise<Banner | null> {
@@ -2943,6 +3028,24 @@ export type MinutesSection = { key: string; title: string; kind: SectionKind; en
  */
 removed?: Removed[] }
 /**
+ * A way the speech model mishears a word of the vocabulary, and where the
+ * user found it.
+ */
+export type Misheard = { 
+/**
+ * What the speech model writes for the word.
+ */
+form: string; 
+/**
+ * The day it was added (`2026-11-27`); empty when the file does not say.
+ */
+added_on: string; 
+/**
+ * The title of the meeting it was fixed in; empty when it was written
+ * in by hand.
+ */
+meeting: string }
+/**
  * A model the user can pick from a list.
  */
 export type ModelChoice = { 
@@ -3442,7 +3545,17 @@ overlap?: boolean;
  * line's words out (they went into the line before, or were wrong).
  * Absent in meetings saved before lines could be fixed.
  */
-edited?: string | null }
+edited?: string | null; 
+/**
+ * Words fixed one at a time. The user's vocabulary fixes words as the
+ * recording is transcribed: those are in `text` already (as `전사.txt`
+ * has always had them), and their fix only remembers what was heard.
+ * The user's own fixes (picking a misheard word) are not: `edited` is
+ * `text` with them put in. Empty when the line is as transcribed or
+ * when the user rewrote it whole (then `edited` alone says what it
+ * reads). Absent in meetings saved before words could be fixed.
+ */
+fixes?: WordFix[] }
 /**
  * How the transcribe shortcut's key events drive a recording.
  */
@@ -3877,6 +3990,69 @@ template_id?: string;
  */
 since_ms?: number }
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }
+/**
+ * A word of the user's vocabulary, as the settings list it.
+ */
+export type Word = { term: string; 
+/**
+ * "이렇게 잘못 들려요": what the speech model writes instead, corrected
+ * in every meeting transcribed from now on.
+ */
+misheard: Misheard[]; 
+/**
+ * It is in the text file, so it can be changed here. A word only in a
+ * JSON vocabulary is the user's to change in that file.
+ */
+editable: boolean }
+/**
+ * A word fixed in one line, beside the line's words.
+ */
+export type WordFix = { 
+/**
+ * Where the word starts in `Segment::text`, in characters: the heard
+ * words `from` for the user's fix, the right words `to` for the
+ * vocabulary's (which `text` has already).
+ */
+at: number; 
+/**
+ * The words heard there.
+ */
+from: string; 
+/**
+ * What they read as.
+ */
+to: string; 
+/**
+ * The user's vocabulary fixed it as the recording was transcribed, in
+ * `text` itself; transcribing again fixes it again. Otherwise the user
+ * fixed it, in `edited` only.
+ */
+auto?: boolean }
+/**
+ * What fixing a misheard word did in a meeting.
+ */
+export type WordFixOutcome = { 
+/**
+ * How many places were fixed.
+ */
+places: number; 
+/**
+ * The lines as they were, to put back if the user undoes the fix.
+ */
+before: Segment[]; 
+/**
+ * The vocabulary learnt the misheard words, for meetings from now on.
+ */
+remembered: boolean }
+/**
+ * The user's vocabulary as one list, newest additions first.
+ */
+export type WordList = { words: Word[]; 
+/**
+ * Words can be added and changed here: the vocabulary is a text file
+ * or a folder, not a single JSON file.
+ */
+writable: boolean }
 
 /** tauri-specta globals **/
 

@@ -29,6 +29,7 @@ import { BackIcon, RightIcon } from "../components/icons";
 import DictationSettings from "./DictationSettings";
 import Permissions from "../components/Permissions";
 import PhoneRow from "../components/PhoneRow";
+import VocabularyWords from "../components/VocabularyWords";
 import SignInRows from "../components/SignInRows";
 import { NS } from "../i18n";
 import {
@@ -89,6 +90,9 @@ export default function Settings() {
   const part = useSeogi((s) => s.settingsPart);
   const setPart = useSeogi((s) => s.setSettingsPart);
   const [note, setNote] = useState("");
+  // The vocabulary's own page, within 녹음.
+  const [words, setWords] = useState(false);
+  useEffect(() => setWords(false), [part]);
   const [key, setKey] = useState("");
   const [hasKey, setHasKey] = useState(false);
   const [newUrl, setNewUrl] = useState("");
@@ -767,7 +771,19 @@ export default function Settings() {
                 </div>
               </>
             ) : null}
-            {part === "recording" ? (
+            {part === "recording" && words ? (
+              <VocabularyWords
+                path={readiness?.vocabulary_path ?? config.vocabulary_path}
+                onBack={() => setWords(false)}
+                onChanged={() => void refreshSetup()}
+                onPick={(directory) =>
+                  void pick(directory).then((path) => {
+                    if (path) void save({ ...config, vocabulary_path: path });
+                  })
+                }
+              />
+            ) : null}
+            {part === "recording" && !words ? (
               <>
                 <h2 className="set-h">{t("settings.speech")}</h2>
                 <div className="srow">
@@ -818,22 +834,14 @@ export default function Settings() {
                     </div>
                   </div>
                   <div className="v">
-                    <span className="t2" title={readiness?.vocabulary_path}>
-                      {friendlyPath(readiness?.vocabulary_path ?? "")
-                        .split(" › ")
-                        .pop()}
-                    </span>
                     <button
                       type="button"
-                      className="lnk"
-                      onClick={() =>
-                        void pick(true).then((path) => {
-                          if (path)
-                            void save({ ...config, vocabulary_path: path });
-                        })
-                      }
+                      className="lnk inline-flex items-center gap-1"
+                      aria-label={`${t("settings.vocabulary")} ${t("vocab.open")}`}
+                      onClick={() => setWords(true)}
                     >
-                      {t("settings.change")}
+                      {t("vocab.open")}
+                      <RightIcon />
                     </button>
                   </div>
                 </div>
@@ -937,28 +945,6 @@ export default function Settings() {
                       </div>
                     </div>
                   ) : null}
-                  <div className="srow">
-                    <div>
-                      <div className="l">{t("settings.vocabularyFile")}</div>
-                      <div className="h">
-                        {t("settings.vocabularyFileHint")}
-                      </div>
-                    </div>
-                    <div className="v">
-                      <button
-                        type="button"
-                        className="lnk"
-                        onClick={() =>
-                          void pick(false).then((path) => {
-                            if (path)
-                              void save({ ...config, vocabulary_path: path });
-                          })
-                        }
-                      >
-                        {t("settings.pickFile")}
-                      </button>
-                    </div>
-                  </div>
                   {(
                     [
                       ["record_shortcut", "settings.recordKey"],

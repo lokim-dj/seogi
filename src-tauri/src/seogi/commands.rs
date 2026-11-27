@@ -294,6 +294,134 @@ pub async fn seogi_edit_lines(
     .await
 }
 
+/// How many places in a meeting fixing the misheard words `from` (picked
+/// at character `at` of the line starting at `at_ms`) as `to` would fix;
+/// `to` is empty while the user has not written it yet.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_word_places(
+    secretary: State<'_, Arc<Secretary>>,
+    id: String,
+    at_ms: u64,
+    at: u32,
+    from: String,
+    to: String,
+) -> Result<u32, String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || {
+        secretary
+            .word_places(&id, at_ms, at as usize, &from, &to)
+            .map_err(text)
+    })
+    .await
+}
+
+/// Reads the misheard words `from` as `to` in a meeting, where they were
+/// picked and everywhere else they safely can be; with `remember`, the
+/// vocabulary learns them for meetings from now on. The words as
+/// transcribed and `전사.txt` stay.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_fix_word(
+    secretary: State<'_, Arc<Secretary>>,
+    id: String,
+    at_ms: u64,
+    at: u32,
+    from: String,
+    to: String,
+    remember: bool,
+) -> Result<super::app::WordFixOutcome, String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || {
+        secretary
+            .fix_word(&id, at_ms, at as usize, &from, &to, remember)
+            .map_err(text)
+    })
+    .await
+}
+
+/// Undoes a fix of misheard words right after it was made: the lines as
+/// they were, and with `forget` the vocabulary without the words again.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_unfix_words(
+    secretary: State<'_, Arc<Secretary>>,
+    id: String,
+    before: Vec<super::transcript::Segment>,
+    from: String,
+    to: String,
+    forget: bool,
+) -> Result<(), String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || {
+        secretary
+            .unfix_words(&id, &before, &from, &to, forget)
+            .map_err(text)
+    })
+    .await
+}
+
+/// Reads words fixed from `from` to `to` in one paragraph on the screen
+/// (the line starting at `from_ms` up to `to_ms`) as transcribed again.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_unfix_word(
+    secretary: State<'_, Arc<Secretary>>,
+    id: String,
+    from_ms: u64,
+    to_ms: u64,
+    from: String,
+    to: String,
+) -> Result<(), String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || {
+        secretary
+            .unfix_word(&id, from_ms, to_ms, &from, &to)
+            .map_err(text)
+    })
+    .await
+}
+
+/// The user's vocabulary as one list, newest additions first.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_vocabulary(
+    secretary: State<'_, Arc<Secretary>>,
+) -> Result<super::vocab::WordList, String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || secretary.vocabulary_words().map_err(text)).await
+}
+
+/// Adds or changes a word of the user's vocabulary (`old` is its name
+/// before, when it is renamed) with the ways it is misheard.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_save_word(
+    secretary: State<'_, Arc<Secretary>>,
+    old: Option<String>,
+    term: String,
+    misheard: Vec<super::vocab::Misheard>,
+) -> Result<(), String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || {
+        secretary
+            .save_word(old.as_deref(), &term, &misheard)
+            .map_err(text)
+    })
+    .await
+}
+
+/// Takes a word out of the user's vocabulary.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_remove_word(
+    secretary: State<'_, Arc<Secretary>>,
+    term: String,
+) -> Result<(), String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || secretary.remove_word(&term).map_err(text)).await
+}
+
 /// What the banner window shows now, if anything.
 #[tauri::command]
 #[specta::specta]

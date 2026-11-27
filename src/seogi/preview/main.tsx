@@ -9,7 +9,7 @@
 //            mic-idle | mic-listening | mic-working |
 //            indicator-listening | indicator-tidying | indicator-note |
 //            indicator-nowhere | card | card-empty | minutes-edited |
-//            minutes-editing
+//            minutes-editing | minutes-fixed | settings-vocabulary
 //   &claude=missing|signed_out|signed_in&codex=… sets where the two
 //   subscription tools stand (settings, onboarding).
 //   &summary=key starts on '내 API 키' (Anthropic); &key=anthropic has its
@@ -19,7 +19,9 @@
 //   &step=2 or &step=3 opens the first-run screen on that step.
 //   minutes-edited has a task changed, one taken out, one added and a
 //   transcript line fixed; minutes-editing opens the boxes for changing a
-//   task and a line.
+//   task and a line. minutes-fixed has a misheard word fixed by the user
+//   and one fixed by the vocabulary as the recording was transcribed;
+//   settings-vocabulary opens 설정 › 녹음 › 용어집.
 //   card opens the one-page summary of the made-up consultation; card-empty
 //   the same meeting with no decisions, no numbers, nothing to check and a
 //   long title. What the card's save keys would write is kept in
@@ -41,15 +43,19 @@ import type {
   FoundPlace,
   Meeting,
   MeetingSummary,
+  Misheard,
   Naming,
   PhoneStatus,
   Readiness,
   RecordingState,
+  Segment,
   SignIn,
   SignIns,
   Template,
   Tool,
   Upcoming,
+  Word,
+  WordFix,
 } from "@/bindings";
 import call from "../../../src-tauri/src/seogi/templates/call.json";
 import consult from "../../../src-tauri/src/seogi/templates/consult.json";
@@ -96,6 +102,20 @@ if (screen === "minutes-edited" || screen === "minutes-editing") {
     const line = done.transcript?.segments[1];
     if (line) line.edited = line.text.replace(/\s*$/, " 거실부터 볼게요.");
   }
+}
+if (screen === "minutes-fixed") {
+  // A word the user fixed, and one the vocabulary fixed as the recording was
+  // transcribed (src-tauri/src/seogi/transcript.rs, WordFix).
+  const segments = done.transcript?.segments ?? [];
+  const user = segments[5];
+  if (user) {
+    const at = Array.from(user.text).join("").indexOf("우물천장탄");
+    user.fixes = [{ at, from: "우물천장탄", to: "우물천장", auto: false }];
+    user.edited = user.text.replace("우물천장탄", "우물천장");
+  }
+  // The vocabulary's fix is in the words as transcribed already.
+  const auto = segments[9];
+  if (auto) auto.fixes = [{ at: 4, from: "삼연동", to: "3연동", auto: true }];
 }
 if (screen === "card-empty") {
   // Nothing decided, no amounts, nothing doubted, and a long title.
@@ -649,6 +669,102 @@ const templates = [
 
 const windows =
   new URLSearchParams(window.location.search).get("os") === "windows";
+
+// The vocabulary, as the settings list it: generic words, two learnt in a
+// meeting (src-tauri/src/seogi/vocab.rs).
+const todayIso = (() => {
+  const d = new Date(now);
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
+})();
+let vocabularyWords: Word[] = [
+  {
+    term: "우물천장",
+    misheard: [
+      { form: "우물천장탄", added_on: todayIso, meeting: done.title },
+      { form: "우물 천정", added_on: "", meeting: "" },
+    ],
+    editable: true,
+  },
+  { term: "간접등", misheard: [], editable: true },
+  { term: "포세린 타일", misheard: [], editable: true },
+  {
+    term: "3연동",
+    misheard: [{ form: "삼연동", added_on: "", meeting: "" }],
+    editable: true,
+  },
+  {
+    term: "방마루",
+    misheard: [{ form: "방마로", added_on: "", meeting: "" }],
+    editable: true,
+  },
+  ...[
+    "걸레받이",
+    "몰딩",
+    "중문",
+    "도배",
+    "줄눈",
+    "실리콘",
+    "붙박이장",
+    "아트월",
+  ].map((term) => ({ term, misheard: [], editable: true })),
+];
+
+/** How many characters of a line as transcribed a fix covers. */
+const covers = (fix: WordFix) =>
+  Array.from(fix.auto ? fix.to : fix.from).length;
+
+/** A line's words with the user's word fixes put in, as the backend reads
+ *  it (the vocabulary's are in its words already). */
+function refix(line: Segment) {
+  const fixes = [...(line.fixes ?? [])].sort((a, b) => a.at - b.at);
+  line.fixes = fixes;
+  const text = Array.from(line.text);
+  let out = "";
+  let next = 0;
+  for (const fix of fixes) {
+    out += text.slice(next, fix.at).join("") + fix.to;
+    next = fix.at + covers(fix);
+  }
+  out += text.slice(next).join("");
+  line.edited = out === line.text ? null : out;
+}
+
+/** The places a misheard word is fixed in the preview's meeting: where it
+ *  was picked, and where else it starts a word (simpler than the backend's
+ *  rules, enough to walk the flow). */
+function fixPlaces(atMs: number, at: number, from: string) {
+  const segments = done.transcript?.segments ?? [];
+  const n = Array.from(from).length;
+  const places: { line: Segment; at: number }[] = [];
+  for (const line of segments) {
+    const rewritten =
+      line.edited !== null &&
+      line.edited !== undefined &&
+      !(line.fixes ?? []).length;
+    if (rewritten) continue;
+    const text = Array.from(line.text);
+    // The picked place, from the line as read to the line as transcribed.
+    let picked = -1;
+    if (line.start_ms === atMs) {
+      picked = at;
+      for (const fix of line.fixes ?? []) {
+        if (fix.at < picked) picked += covers(fix) - Array.from(fix.to).length;
+      }
+    }
+    for (let i = 0; i + n <= text.length; i += 1) {
+      if (text.slice(i, i + n).join("") !== from) continue;
+      const taken = (line.fixes ?? []).some(
+        (fix) => i < fix.at + covers(fix) && fix.at < i + n,
+      );
+      const starts = i === 0 || !/[\p{L}\p{N}]/u.test(text[i - 1]);
+      if (!taken && (i === picked || (starts && n >= 2)))
+        places.push({ line, at: i });
+    }
+  }
+  return places;
+}
+
 mockWindows("main");
 mockConvertFileSrc(windows ? "windows" : "macos");
 Object.assign(window, {
@@ -916,6 +1032,111 @@ mockIPC(
         });
         return null;
       }
+      case "seogi_word_places":
+        return Math.max(
+          1,
+          fixPlaces(Number(args.atMs), Number(args.at), String(args.from))
+            .length,
+        );
+      case "seogi_fix_word": {
+        const from = String(args.from);
+        const to = String(args.to);
+        const places = fixPlaces(Number(args.atMs), Number(args.at), from);
+        const before: Segment[] = [];
+        for (const place of places) {
+          if (!before.some((line) => line.start_ms === place.line.start_ms))
+            before.push(structuredClone(place.line));
+          place.line.fixes = [
+            ...(place.line.fixes ?? []),
+            { at: place.at, from, to, auto: false },
+          ];
+          refix(place.line);
+        }
+        let remembered = false;
+        const known = vocabularyWords.some(
+          (word) =>
+            word.term === from || word.misheard.some((m) => m.form === from),
+        );
+        if (args.remember && Array.from(from).length >= 2 && !known) {
+          const word = vocabularyWords.find((one) => one.term === to);
+          const learnt = {
+            form: from,
+            added_on: todayIso,
+            meeting: done.title,
+          };
+          if (word) word.misheard = [...word.misheard, learnt];
+          else
+            vocabularyWords.unshift({
+              term: to,
+              misheard: [learnt],
+              editable: true,
+            });
+          remembered = true;
+        }
+        return { places: places.length, before, remembered };
+      }
+      case "seogi_unfix_words": {
+        for (const kept of args.before as Segment[]) {
+          const line = done.transcript?.segments.find(
+            (one) => one.start_ms === kept.start_ms,
+          );
+          if (line) {
+            line.edited = kept.edited;
+            line.fixes = kept.fixes;
+          }
+        }
+        if (args.forget) {
+          for (const word of vocabularyWords) {
+            if (word.term === args.to)
+              word.misheard = word.misheard.filter((m) => m.form !== args.from);
+          }
+        }
+        return null;
+      }
+      case "seogi_unfix_word": {
+        for (const line of done.transcript?.segments ?? []) {
+          if (
+            line.start_ms < Number(args.fromMs) ||
+            line.start_ms > Number(args.toMs)
+          )
+            continue;
+          const fixes = line.fixes ?? [];
+          const mine = (fix: WordFix) =>
+            fix.from === args.from && fix.to === args.to;
+          if (!fixes.some(mine)) continue;
+          // The vocabulary's fix is in the words as transcribed: the heard
+          // words come back as the user's fix over them.
+          line.fixes = fixes.flatMap((fix) =>
+            !mine(fix)
+              ? [fix]
+              : fix.auto
+                ? [{ at: fix.at, from: fix.to, to: fix.from, auto: false }]
+                : [],
+          );
+          refix(line);
+        }
+        return null;
+      }
+      case "seogi_vocabulary":
+        return { words: structuredClone(vocabularyWords), writable: true };
+      case "seogi_save_word": {
+        const term = String(args.term).trim();
+        const misheard = (args.misheard as Misheard[]).map((m) => ({
+          ...m,
+          added_on: m.added_on || todayIso,
+        }));
+        const old = args.old === null ? term : String(args.old);
+        const at = vocabularyWords.findIndex((word) => word.term === old);
+        const word = { term, misheard, editable: true };
+        if (at >= 0) vocabularyWords[at] = word;
+        else vocabularyWords.push(word);
+        return null;
+      }
+      case "seogi_remove_word":
+        vocabularyWords = vocabularyWords.filter(
+          (word) => word.term !== args.term,
+        );
+        return null;
       case "seogi_edit_lines": {
         // Simpler than the backend's: the paragraph's words go to its first
         // line, unless they are the words transcribed.
@@ -936,6 +1157,7 @@ mockIPC(
         const asTranscribed = lines.map((line) => line.text.trim()).join(" ");
         lines.forEach((line, index) => {
           line.edited = text === asTranscribed ? null : index === 0 ? text : "";
+          line.fixes = [];
         });
         return null;
       }
@@ -1296,6 +1518,18 @@ async function show() {
     if (screen === "settings") state.go({ name: "settings" });
     if (screen === "settings-dictation")
       state.go({ name: "settings", part: "dictation" });
+    if (screen === "settings-vocabulary") {
+      state.go({ name: "settings", part: "recording" });
+      // Press the vocabulary's "열기" once the settings are on the screen.
+      const press = window.setInterval(() => {
+        const key = document.querySelector<HTMLElement>(
+          'button[aria-label="용어집 열기"]',
+        );
+        if (!key) return;
+        window.clearInterval(press);
+        key.click();
+      }, 50);
+    }
     if (screen === "waiting") state.select("working");
   });
 }

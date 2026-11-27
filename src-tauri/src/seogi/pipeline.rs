@@ -7,7 +7,8 @@
 //! 4. Transcribe every chunk as its own run, with the vocabulary hints, so
 //!    the hints reach all of a long recording and not only its first window.
 //! 5. Drop what a model makes up over silence, undo loops, apply the user's
-//!    corrections, and note which lines the model was unsure of.
+//!    corrections (kept beside the words as transcribed, as word fixes),
+//!    and note which lines the model was unsure of.
 
 use std::ops::Range;
 use std::path::PathBuf;
@@ -25,9 +26,9 @@ use transcribe_cpp::{RunOptions, TimestampKind};
 use super::chunks::{self, Chunk, Rules, Turn, RATE};
 use super::diarize;
 use super::transcript::{
-    collapse_loops, is_hallucinated_line, number_speakers, Corrected, Segment, Transcript,
+    collapse_loops, is_hallucinated_line, number_speakers, Corrected, Segment, Transcript, WordFix,
 };
-use super::vocab::Vocabulary;
+use super::vocab::{Span, Vocabulary};
 use crate::audio_toolkit::chunking::speech_segments;
 use crate::audio_toolkit::{normalize_transcription_output, SileroVad, SpeechScorer};
 use crate::engine_supervisor::{DecodeWindow, EngineError, RunOutput};
@@ -505,6 +506,7 @@ fn lines_of(
                     unsure,
                     overlap: false,
                     edited: None,
+                    fixes: Vec::new(),
                 }
             })
             .collect()
@@ -521,6 +523,7 @@ fn lines_of(
             unsure,
             overlap: false,
             edited: None,
+            fixes: Vec::new(),
         }]
     };
 
@@ -532,13 +535,13 @@ fn lines_of(
         let looped = collapse_loops(&line.text);
         // A loop that had to be undone is itself a reason to listen.
         line.unsure |= looped != line.text;
-        let (text, made) = vocabulary.correct(&looped);
-        stats.corrected += made.len() as u32;
-        for correction in made {
-            let at = line.start_ms;
+        let spans = apply_vocabulary(line, &looped, vocabulary);
+        stats.corrected += spans.len() as u32;
+        let at = line.start_ms;
+        for span in spans {
             match corrections
                 .iter_mut()
-                .find(|c| c.from == correction.from && c.to == correction.to)
+                .find(|c| c.from == span.from && c.to == span.to)
             {
                 Some(logged) => {
                     if !logged.at_ms.contains(&at) {
@@ -546,16 +549,68 @@ fn lines_of(
                     }
                 }
                 None => corrections.push(Corrected {
-                    from: correction.from,
-                    to: correction.to,
+                    from: span.from,
+                    to: span.to,
                     at_ms: vec![at],
                 }),
             }
         }
-        line.text = normalize_transcription_output(&text);
         !line.text.is_empty()
     });
     lines
+}
+
+/// Applies the user's vocabulary to a transcribed line, `looped` being its
+/// words with loops undone. The corrected words go in `text`, cleaned after
+/// correcting, as they always have (so `전사.txt` keeps them). Each place is
+/// also kept as a word fix that remembers what was heard, for the screen to
+/// show; a line whose cleaning and correcting do not give the same words in
+/// either order keeps the corrections without the marks. Returns what was
+/// corrected, once for every place.
+pub(crate) fn apply_vocabulary(
+    line: &mut Segment,
+    looped: &str,
+    vocabulary: &Vocabulary,
+) -> Vec<Span> {
+    let spans = vocabulary.spans(looped);
+    line.text = normalize_transcription_output(&replaced(looped, &spans));
+    line.edited = None;
+    line.fixes = Vec::new();
+    if spans.is_empty() {
+        return spans;
+    }
+    let plain = normalize_transcription_output(looped);
+    let again = vocabulary.spans(&plain);
+    if replaced(&plain, &again) == line.text {
+        let mut shift: i64 = 0;
+        line.fixes = again
+            .iter()
+            .map(|span| {
+                let at = plain[..span.start].chars().count() as i64 + shift;
+                shift += span.to.chars().count() as i64 - span.from.chars().count() as i64;
+                WordFix {
+                    at: at as u32,
+                    from: span.from.clone(),
+                    to: span.to.clone(),
+                    auto: true,
+                }
+            })
+            .collect();
+    }
+    spans
+}
+
+/// `text` with every span's words put in.
+fn replaced(text: &str, spans: &[Span]) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut from = 0;
+    for span in spans {
+        out.push_str(&text[from..span.start]);
+        out.push_str(&span.to);
+        from = span.end;
+    }
+    out.push_str(&text[from..]);
+    out
 }
 
 /// How sure the speech model was of the text in `span` of a run (the whole
@@ -599,4 +654,59 @@ fn overlaps_another_speaker(line: &Segment, turns: &[Turn]) -> bool {
         // The line's own speaker covers it once.
         .saturating_sub(end - start);
     other * 2 > end - start
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_vocabulary_s_corrections_are_in_the_words_and_remember_what_was_heard() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("v.txt");
+        std::fs::write(&file, "걸레바지 => 걸레받이\n우물 천정 => 우물천장\n").unwrap();
+        let vocabulary = Vocabulary::load(&file).unwrap();
+        let mut line = Segment::default();
+        let spans = apply_vocabulary(
+            &mut line,
+            "그  걸레바지는 흰색, 바지는 검정 우물 천정",
+            &vocabulary,
+        );
+        assert_eq!(spans.len(), 2);
+        // Corrected, then cleaned, as before: what 전사.txt is written from.
+        assert_eq!(line.text, "그 걸레받이는 흰색, 바지는 검정 우물천장");
+        assert_eq!(line.edited, None);
+        assert_eq!(line.said(), line.text);
+        assert_eq!(
+            line.fixes,
+            vec![
+                WordFix {
+                    at: 2,
+                    from: "걸레바지".into(),
+                    to: "걸레받이".into(),
+                    auto: true
+                },
+                WordFix {
+                    at: 19,
+                    from: "우물 천정".into(),
+                    to: "우물천장".into(),
+                    auto: true
+                },
+            ]
+        );
+        let mut plain = Segment::default();
+        assert!(apply_vocabulary(&mut plain, "바지는 검정", &vocabulary).is_empty());
+        assert!(plain.fixes.is_empty() && plain.edited.is_none());
+        // Words cleaning would change across a correction: corrected the
+        // same as before, without the marks.
+        let mut stutter = Segment::default();
+        std::fs::write(&file, "우물천장탄 => 우물천장\n").unwrap();
+        let vocabulary = Vocabulary::load(&file).unwrap();
+        let spans = apply_vocabulary(&mut stutter, "우물천장 우물천장탄", &vocabulary);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(
+            stutter.text,
+            normalize_transcription_output("우물천장 우물천장")
+        );
+    }
 }

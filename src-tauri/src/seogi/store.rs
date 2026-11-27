@@ -10,7 +10,8 @@
 //! What the user changes is kept in `meeting.json` too: a task ticked off,
 //! a speaker's name, a task changed, taken out or added (`Entry::original`,
 //! `Entry::added`, `MinutesSection::removed`), a transcript line fixed
-//! (`Segment::edited`). New fields are only ever added, each with
+//! (`Segment::edited`), a misheard word fixed (`Segment::fixes`, also how
+//! the vocabulary's own corrections are kept). New fields are only ever added, each with
 //! `#[serde(default)]`, so a record saved by an older version still reads;
 //! nothing denies fields it does not know, so an older version reads a
 //! newer record too (and drops what it does not know if it saves it). The
@@ -854,6 +855,7 @@ mod tests {
                 unsure: false,
                 overlap: false,
                 edited: None,
+                fixes: Vec::new(),
             }],
             ..Default::default()
         });
@@ -1176,5 +1178,63 @@ mod tests {
         // A search finds the line in the user's words.
         let found = back.found("새로 고친 첫 줄").expect("found");
         assert_eq!(found.places[0].kind, FoundIn::Transcript);
+    }
+
+    #[test]
+    fn the_transcript_file_has_the_vocabulary_s_corrections_and_never_the_user_s_fixes() {
+        use crate::seogi::pipeline::apply_vocabulary;
+        use crate::seogi::transcript::{Segment, Transcript};
+        use crate::seogi::vocab::Vocabulary;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("v.txt");
+        std::fs::write(&file, "걸레바지 => 걸레받이\n").unwrap();
+        let vocabulary = Vocabulary::load(&file).unwrap();
+        let mut lines = Vec::new();
+        for (start_ms, heard) in [
+            (0, "그  걸레바지는 흰색으로"),
+            (5_000, "우물천장탄을 내리면"),
+        ] {
+            let mut line = Segment {
+                start_ms,
+                end_ms: start_ms + 900,
+                speaker: 1,
+                ..Default::default()
+            };
+            apply_vocabulary(&mut line, heard, &vocabulary);
+            lines.push(line);
+        }
+        let mut transcript = Transcript {
+            segments: lines,
+            ..Default::default()
+        };
+        // The vocabulary's correction is marked with what was heard.
+        assert_eq!(transcript.segments[0].fixes[0].from, "걸레바지");
+        // The user fixes a word, and rewrites the first line.
+        let none = Vocabulary::default();
+        transcript
+            .fix_word(
+                5_000,
+                0,
+                "우물천장탄",
+                "우물천장",
+                &Vocabulary::one_correction("우물천장탄", "우물천장", &none),
+            )
+            .unwrap();
+        transcript
+            .edit_lines(0, 900, "그 걸레받이는 회색으로")
+            .unwrap();
+        let mut meeting = Meeting::new(0, Origin::Recorded, "녹음.wav");
+        meeting.transcript = Some(transcript);
+        let folder = tempfile::tempdir().unwrap();
+        Library::save(&meeting, folder.path()).unwrap();
+        // Byte for byte what it was before words could be fixed: the speech
+        // model's words with the vocabulary's corrections, cleaned.
+        assert_eq!(
+            std::fs::read_to_string(folder.path().join(TRANSCRIPT_NAME)).unwrap(),
+            "[00:00:00] 그 걸레받이는 흰색으로\n[00:00:05] 우물천장탄을 내리면\n"
+        );
+        let read = meeting.transcript.as_ref().unwrap().as_read();
+        assert_eq!(read.segments[0].text, "그 걸레받이는 회색으로");
+        assert_eq!(read.segments[1].text, "우물천장을 내리면");
     }
 }
