@@ -400,6 +400,9 @@ pub struct Secretary {
     /// The meeting last moved to the trash, which can be brought back for a
     /// minute from the screen.
     trashed: Mutex<Option<Trashed>>,
+    /// Held while a meeting is read, changed and written back by the user
+    /// or by a change from the phone, so neither writes over the other.
+    edit_lock: Mutex<()>,
     /// Set when there may be work; the queue sleeps on it.
     wake: (Mutex<bool>, Condvar),
     recording: Mutex<Option<Active>>,
@@ -477,6 +480,7 @@ impl Secretary {
             phone: Phone::new(&data_dir, google.clone()),
             uploads: Uploads::new(&data_dir, google),
             trashed: Mutex::new(None),
+            edit_lock: Mutex::new(()),
             data_dir,
             config: Mutex::new(config),
             slots: Mutex::new(HashMap::new()),
@@ -821,6 +825,7 @@ impl Secretary {
             .uploads
             .losing_edit(id, key)
             .ok_or_else(|| anyhow!("there is nothing else to take"))?;
+        let _editing = lock(&self.edit_lock);
         let (mut meeting, folder) = self.editable(id)?;
         let old = key
             .strip_prefix("speaker:")
@@ -878,6 +883,7 @@ impl Secretary {
         from_ms: u64,
         to_ms: u64,
     ) -> Result<()> {
+        let _editing = lock(&self.edit_lock);
         let (mut meeting, folder) = self.editable(id)?;
         let transcript = meeting
             .transcript
@@ -896,6 +902,7 @@ impl Secretary {
     /// still as the screen saw it just after (`now`): any later change of a
     /// name, or minutes written again, keeps it as it is.
     pub fn restore_naming(&self, id: &str, kept: &Naming, now: &Naming) -> Result<()> {
+        let _editing = lock(&self.edit_lock);
         let (mut meeting, folder) = self.editable(id)?;
         put_back_naming(&mut meeting, kept, now)?;
         self.save_edit(&meeting, &folder)
@@ -1136,6 +1143,8 @@ impl Secretary {
         }
         if rewrite {
             meeting.minutes.clear();
+            // New minutes, new tasks: changes made to the old ones are set aside.
+            self.uploads.reset_edits(id, now_ms());
         }
         self.requeue(meeting, &folder, id)
     }
@@ -1152,6 +1161,9 @@ impl Secretary {
         meeting.transcript = None;
         meeting.stats = None;
         meeting.minutes.clear();
+        // A new transcript: changes made to the old one are set aside, here and
+        // on the phone.
+        self.uploads.reset_edits(id, now_ms());
         self.requeue(meeting, &folder, id)
     }
 
@@ -2785,6 +2797,7 @@ impl Secretary {
     /// Sets what the user knows about a meeting: its title, kind, customer,
     /// who was there. Used for the minutes when they are written (again).
     pub fn set_meeting_info(&self, id: &str, info: MeetingInfo) -> Result<()> {
+        let _editing = lock(&self.edit_lock);
         let (mut meeting, folder) = self.editable(id)?;
         if let Some(title) = info.title {
             let title = store::safe_name(&title);
@@ -2861,6 +2874,7 @@ impl Secretary {
 
     /// Ticks a task off, or back on.
     pub fn set_action_done(&self, id: &str, section: &str, index: usize, done: bool) -> Result<()> {
+        let _editing = lock(&self.edit_lock);
         let (mut meeting, folder) = self.editable(id)?;
         let entry = meeting
             .minutes
@@ -2890,6 +2904,7 @@ impl Secretary {
         if text.trim().is_empty() {
             bail!("a task needs words");
         }
+        let _editing = lock(&self.edit_lock);
         let (mut meeting, folder) = self.editable(id)?;
         Self::task_section(&mut meeting, section)?
             .entries
@@ -2901,6 +2916,7 @@ impl Secretary {
 
     /// Takes a task out of the minutes; it is kept so it can be put back.
     pub fn remove_task(&self, id: &str, section: &str, index: usize) -> Result<()> {
+        let _editing = lock(&self.edit_lock);
         let (mut meeting, folder) = self.editable(id)?;
         let tasks = Self::task_section(&mut meeting, section)?;
         if index >= tasks.entries.len() {
@@ -2920,6 +2936,7 @@ impl Secretary {
     /// Puts a task taken out back where it was; `removed` is its place
     /// among the ones taken out of that section.
     pub fn restore_task(&self, id: &str, section: &str, removed: usize) -> Result<()> {
+        let _editing = lock(&self.edit_lock);
         let (mut meeting, folder) = self.editable(id)?;
         let tasks = Self::task_section(&mut meeting, section)?;
         if removed >= tasks.removed.len() {
@@ -2941,6 +2958,7 @@ impl Secretary {
         if text.trim().is_empty() {
             bail!("a task needs words");
         }
+        let _editing = lock(&self.edit_lock);
         let (mut meeting, folder) = self.editable(id)?;
         let all_templates = templates::load(&self.data_dir.join("templates"));
         let minutes = meeting
@@ -3001,6 +3019,7 @@ impl Secretary {
     /// the line starting at `from_ms` to `to_ms`) the user's words. The
     /// words as transcribed are kept, and `전사.txt` keeps them.
     pub fn edit_lines(&self, id: &str, from_ms: u64, to_ms: u64, text: &str) -> Result<()> {
+        let _editing = lock(&self.edit_lock);
         let (mut meeting, folder) = self.editable(id)?;
         meeting
             .transcript
@@ -3052,6 +3071,7 @@ impl Secretary {
     ) -> Result<WordFixOutcome> {
         let path = self.config().vocabulary(&self.data_dir);
         let vocabulary = Vocabulary::load(&path).unwrap_or_default();
+        let _editing = lock(&self.edit_lock);
         let (mut meeting, folder) = self.editable(id)?;
         let elsewhere = Vocabulary::one_correction(from, to, &vocabulary);
         let fixed = meeting
@@ -3091,6 +3111,7 @@ impl Secretary {
         to: &str,
         forget: bool,
     ) -> Result<()> {
+        let _editing = lock(&self.edit_lock);
         let (mut meeting, folder) = self.editable(id)?;
         meeting
             .transcript
@@ -3116,6 +3137,7 @@ impl Secretary {
         from: &str,
         to: &str,
     ) -> Result<()> {
+        let _editing = lock(&self.edit_lock);
         let (mut meeting, folder) = self.editable(id)?;
         let undone = meeting
             .transcript
