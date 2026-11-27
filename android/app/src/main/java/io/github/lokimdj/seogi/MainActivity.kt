@@ -482,6 +482,8 @@ class MainActivity : ComponentActivity() {
                         else -> stringResource(R.string.off)
                     },
                     onDictation = { screen = Screen.DICTATION },
+                    onComputerApp = { open(ComputerApp.DOWNLOAD_URL) },
+                    onCopyComputerApp = { ComputerApp.copyLink(this@MainActivity) },
                 )
                 Screen.DICTATION -> DictationScreen(
                     state = dict,
