@@ -3,8 +3,9 @@
 // every screen in one go (scripts/seogi-screens.mjs). Not part of the app.
 //
 //   http://localhost:1420/src/seogi/preview/index.html?screen=home
-//   screen = home | home-going | home-many | minutes | recording | onboarding |
-//            settings | waiting | banner-starting | banner-ready | settings-dictation |
+//   screen = home | home-going | home-going-long | home-many | minutes |
+//            recording | onboarding | settings | waiting | banner-starting |
+//            banner-ready | settings-dictation |
 //            mic-idle | mic-listening | mic-working |
 //            indicator-listening | indicator-tidying | indicator-note |
 //            indicator-nowhere | card | card-empty
@@ -432,8 +433,9 @@ const upcoming: Upcoming[] = [
   },
 ];
 
-// An event going on since early afternoon, and the next one soon: the home
-// leads with the next one (screen=home-going).
+// An event going on since early afternoon, and the next one soon: the
+// record key names the going one, the next one is beside it
+// (screen=home-going; home-going-long gives the going one a long name).
 const going: Upcoming[] = [
   {
     event: {
@@ -458,6 +460,19 @@ const going: Upcoming[] = [
     muted: false,
   },
 ];
+
+const goingLong: Upcoming[] = going.map((upcoming, index) =>
+  index === 0
+    ? {
+        ...upcoming,
+        event: {
+          ...upcoming.event,
+          title:
+            "[회의실B] 한결 / 3차 디자인 검토 · 주방 상판 · 욕실 타일 · 조명 위치 최종 확인",
+        },
+      }
+    : upcoming,
+);
 
 // A full afternoon: one leads, three are listed, the rest counted
 // (screen=home-many).
@@ -864,9 +879,11 @@ mockIPC(
         return structuredClone(
           screen === "home-going"
             ? going
-            : screen === "home-many"
-              ? many
-              : upcoming,
+            : screen === "home-going-long"
+              ? goingLong
+              : screen === "home-many"
+                ? many
+                : upcoming,
         );
       case "seogi_upcoming":
         return [...upcoming, ...going, ...many].map((shown) => shown.event);

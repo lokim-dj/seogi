@@ -311,10 +311,19 @@
     gap: 14px;
     padding: 40px 0 44px;
   }
+  /* A long event name on the key is cut short; the whole is its title. */
   .a-rec .lbl {
     display: grid;
+    grid-template-columns: minmax(0, auto);
+    min-width: 0;
+    max-width: 300px;
     line-height: 1.35;
     text-align: left;
+  }
+  .a-rec .lbl > * {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .a-rec .lbl b {
     font-size: 16px;
@@ -356,6 +365,41 @@
   .a-row.on {
     background: var(--s1);
     filter: none;
+  }
+  /* A meeting's line and the ··· at its end, which shows only while the
+     pointer or the keyboard is on the line (or its menu is open); the
+     line's right side makes room for it then. */
+  .a-line {
+    position: relative;
+  }
+  .a-line:hover .a-row,
+  .a-line:has(:focus-visible) .a-row,
+  .a-line:has(.a-more[aria-expanded="true"]) .a-row {
+    padding-right: 48px;
+  }
+  .a-line:hover .a-row {
+    background: var(--s1);
+  }
+  .a-line .a-more {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 30px;
+    padding: 0;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .a-line:hover .a-more,
+  .a-line:has(:focus-visible) .a-more,
+  .a-line .a-more[aria-expanded="true"] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .a-line .a-more:hover,
+  .a-line .a-more[aria-expanded="true"] {
+    background: var(--s2);
   }
   .a-row .tm {
     color: var(--t2);

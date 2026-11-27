@@ -9,6 +9,30 @@ export const SOON_MS = 2 * 3_600_000;
 /** How many more of today's events are listed small under the first. */
 export const MORE_SHOWN = 3;
 
+/**
+ * The event going on now that the record key names, or null: of the events
+ * not turned off that have begun and not yet ended, the one that began
+ * last, as the backend picks for a recording started now.
+ */
+export function goingNow(today: Upcoming[], now: number): Upcoming | null {
+  let found: Upcoming | null = null;
+  for (const upcoming of today) {
+    const { start_ms, end_ms } = upcoming.event;
+    if (upcoming.muted || start_ms > now || end_ms <= now) continue;
+    if (!found || start_ms > found.event.start_ms) found = upcoming;
+  }
+  return found;
+}
+
+/** The first event not turned off that is still to begin, on any day. */
+export function nextAfter(today: Upcoming[], now: number): Upcoming | null {
+  return (
+    today.find(
+      (upcoming) => !upcoming.muted && upcoming.event.start_ms > now,
+    ) ?? null
+  );
+}
+
 export type Shown = {
   /** The event shown large, the one a press records. */
   main: Upcoming | null;
