@@ -3,30 +3,84 @@ package io.github.lokimdj.seogi.dictation
 import android.accessibilityservice.AccessibilityService
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.res.Configuration
 import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 
 /**
  * The accessibility part of dictation, switched on by the user in Android's
  * settings: it finds the text field that has the cursor in the app in front
- * and puts the spoken text there. It reads nothing else, keeps nothing and
- * sends nothing; it acts only when the floating key has text to put in.
- * Runs in the `:dictation` process beside [DictationService].
+ * and puts the spoken text there. It also notices when a field takes the
+ * cursor or the keyboard comes up, so the floating key shows only while the
+ * user types ([Typing]); for that it looks at the kind of window and whether
+ * the focused field takes text, never at what is written or shown. It keeps
+ * nothing and sends nothing. Runs in the `:dictation` process beside
+ * [DictationService].
  */
 class InsertService : AccessibilityService() {
 
     override fun onServiceConnected() {
         instance = this
+        check()
+        listener?.invoke()
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        when (event?.eventType) {
+            AccessibilityEvent.TYPE_VIEW_FOCUSED,
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED,
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> check()
+        }
+    }
+
+    /** Looks again whether the user is typing, and tells the key when that changed. */
+    private fun check() {
+        val now = try {
+            Typing.from(keyboardShowing(), editableFocused(), hardKeyboard())
+        } catch (e: Exception) {
+            false
+        }
+        if (now != typing) {
+            typing = now
+            listener?.invoke()
+        }
+    }
+
+    /** Null when Android does not give the window list. */
+    private fun keyboardShowing(): Boolean? {
+        val list = try { windows } catch (e: Exception) { null }
+        if (list.isNullOrEmpty()) return null
+        return list.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+    }
+
+    private fun editableFocused(): Boolean =
+        try { findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.isEditable == true } catch (e: Exception) { false }
+
+    private fun hardKeyboard(): Boolean {
+        val c = resources.configuration
+        return c.keyboard != Configuration.KEYBOARD_NOKEYS && c.hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO
+    }
 
     override fun onInterrupt() {}
 
+    override fun onUnbind(intent: android.content.Intent?): Boolean {
+        gone()
+        return super.onUnbind(intent)
+    }
+
     override fun onDestroy() {
-        if (instance === this) instance = null
+        gone()
         super.onDestroy()
+    }
+
+    /** Switched off: the key can no longer tell when the user types. */
+    private fun gone() {
+        if (instance !== this) return
+        instance = null
+        typing = false
+        listener?.invoke()
     }
 
     /**
@@ -72,5 +126,12 @@ class InsertService : AccessibilityService() {
         @Volatile
         var instance: InsertService? = null
             private set
+
+        /** Whether the user is typing now, as last seen. Main thread. */
+        var typing = false
+            private set
+
+        /** Told (on the main thread) when [instance] or [typing] changes; set by [DictationService]. */
+        var listener: (() -> Unit)? = null
     }
 }

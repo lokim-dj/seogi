@@ -100,3 +100,80 @@ class BubbleGesture(private val holdMs: Long = 400, private val slop: Float = 24
         else -> emptyList()
     }
 }
+
+/**
+ * Whether the user is typing somewhere, from what the accessibility service
+ * can see: the on-screen keyboard is up, or (with a keyboard plugged in, or
+ * when Android does not list its windows) a text field has the cursor.
+ */
+object Typing {
+    /**
+     * [keyboardShowing] is null when the window list could not be read.
+     * [editableFocused]: the field with the input focus takes text.
+     * [hardKeyboard]: a physical keyboard is in use, so no on-screen one comes up.
+     */
+    fun from(keyboardShowing: Boolean?, editableFocused: Boolean, hardKeyboard: Boolean): Boolean = when {
+        keyboardShowing == true -> true
+        keyboardShowing == null || hardKeyboard -> editableFocused
+        else -> false
+    }
+}
+
+/**
+ * Whether the floating key should be on the screen right now.
+ * - Hidden from the notification: hidden.
+ * - Listening or making the text: shown, whatever the focus does, so the
+ *   key the user is speaking into never vanishes.
+ * - Seogi is recording a meeting: hidden (dictation cannot listen then).
+ * - Without the accessibility service there is no way to tell when the user
+ *   types ([followsTyping] false): always shown, as before.
+ * - Otherwise: only while the user is typing.
+ */
+object KeyRule {
+    fun wanted(
+        mode: BubbleGesture.Mode,
+        userHidden: Boolean,
+        meeting: Boolean,
+        followsTyping: Boolean,
+        typing: Boolean,
+    ): Boolean = when {
+        userHidden -> false
+        mode != BubbleGesture.Mode.IDLE -> true
+        meeting -> false
+        !followsTyping -> true
+        else -> typing
+    }
+}
+
+/**
+ * Keeps the key from flickering: it comes up once the wish to show it has held
+ * for [showAfterMs] and goes once the wish to hide it has held for
+ * [hideAfterMs], so moving the cursor from one field to the next, or the
+ * keyboard closing and opening again, leaves it where it is.
+ */
+class KeyPresence(private val showAfterMs: Long = 120, private val hideAfterMs: Long = 900) {
+    /** Whether the key is (to be) on screen. */
+    var shown = false
+        private set
+    private var want = false
+    private var since = 0L
+
+    /**
+     * Feed what is wanted at [now]. Returns 0 when [shown] just changed (apply
+     * it), the milliseconds to wait before calling again, or null when
+     * nothing is pending. [atOnce] skips the wait (a choice from the user).
+     */
+    fun update(wanted: Boolean, now: Long, atOnce: Boolean = false): Long? {
+        if (wanted != want) {
+            want = wanted
+            since = now
+        }
+        if (want == shown) return null
+        val wait = (if (want) showAfterMs else hideAfterMs) - (now - since)
+        if (atOnce || wait <= 0) {
+            shown = want
+            return 0
+        }
+        return wait
+    }
+}

@@ -16,9 +16,11 @@ import android.content.pm.ServiceInfo
 import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.media.AudioManager
+import android.media.AudioRecordingConfiguration
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
@@ -44,6 +46,9 @@ import java.util.concurrent.Executors
  * The floating key: a round microphone over other apps. Touch it and speak;
  * the words become text on the phone (Qwen3-ASR through transcribe.cpp) and go
  * into the field with the cursor, through [InsertService], or to the clipboard.
+ * With the accessibility service on, the key comes up only while the user
+ * types (a field has the cursor or the keyboard is up) and goes shortly after;
+ * without it there is no way to know, so it stays up ([KeyRule]).
  *
  * Runs in its own process (`:dictation`): the speech engine is native code
  * holding 1.4 GB, and if it ever crashes or is killed for memory, a meeting
@@ -69,6 +74,20 @@ class DictationService : Service() {
     private var mic: Mic? = null
     private var hidden = false
     private var foreground = false
+    private val presence = KeyPresence()
+    private val settle = Runnable { refresh() }
+    private var followsShown: Boolean? = null
+    private var destroyed = false
+    private val recordings = object : AudioManager.AudioRecordingCallback() {
+        override fun onRecordingConfigChanged(configs: MutableList<AudioRecordingConfiguration>?) = refresh()
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        InsertService.listener = { refresh() }
+        // A meeting starting or ending changes whether the key may show.
+        getSystemService(AudioManager::class.java).registerAudioRecordingCallback(recordings, main)
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -90,9 +109,34 @@ class DictationService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (hidden) removeBubble() else showBubble()
+        refresh(atOnce = true)
         updateNotification()
         return START_STICKY
+    }
+
+    /**
+     * Puts the key on the screen or takes it off, by [KeyRule], after the
+     * wish has held a moment ([KeyPresence]) unless [atOnce].
+     */
+    private fun refresh(atOnce: Boolean = false) {
+        main.removeCallbacks(settle)
+        if (destroyed || !foreground) return
+        val follows = InsertService.instance != null
+        val meeting by lazy {
+            MeetingCheck.recording(
+                RecorderService.sessionDir(this), System.currentTimeMillis(),
+                getSystemService(AudioManager::class.java).activeRecordingConfigurations.isNotEmpty(),
+            )
+        }
+        val want = KeyRule.wanted(mode, hidden, meeting, follows, InsertService.typing)
+        val wait = presence.update(want, SystemClock.uptimeMillis(), atOnce)
+        if (wait != null && wait > 0) main.postDelayed(settle, wait)
+        if (presence.shown) showBubble() else removeBubble()
+        if (follows != followsShown) {
+            val first = followsShown == null
+            followsShown = follows
+            if (!first) updateNotification()
+        }
     }
 
     /** Started as a foreground service, it must say so within seconds, even when it is about to stop. */
@@ -153,10 +197,10 @@ class DictationService : Service() {
 
     private fun removeBubble() {
         val v = view ?: return
-        if (mode == BubbleGesture.Mode.LISTENING) cancelListening()
-        try { wm.removeView(v) } catch (_: Exception) {}
         view = null
         params = null
+        if (mode == BubbleGesture.Mode.LISTENING) cancelListening()
+        try { wm.removeView(v) } catch (_: Exception) {}
     }
 
     private fun screen(): Pair<Int, Int> {
@@ -227,6 +271,8 @@ class DictationService : Service() {
     private fun setMode(m: BubbleGesture.Mode) {
         mode = m
         view?.mode = m
+        // Listening or writing keeps the key up; back to idle, it follows the typing again.
+        refresh(atOnce = m != BubbleGesture.Mode.IDLE)
     }
 
     // --- listening and writing ---
@@ -335,7 +381,15 @@ class DictationService : Service() {
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_dictation)
             .setContentTitle(getString(R.string.notif_dictation))
-            .setContentText(getString(if (hidden) R.string.notif_dictation_hidden else R.string.notif_dictation_text))
+            .setContentText(
+                getString(
+                    when {
+                        hidden -> R.string.notif_dictation_hidden
+                        InsertService.instance != null -> R.string.notif_dictation_typing
+                        else -> R.string.notif_dictation_text
+                    },
+                ),
+            )
             .setOngoing(true)
             .setSilent(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
@@ -363,7 +417,11 @@ class DictationService : Service() {
     }
 
     override fun onDestroy() {
+        destroyed = true
         main.removeCallbacks(warm)
+        main.removeCallbacks(settle)
+        InsertService.listener = null
+        try { getSystemService(AudioManager::class.java).unregisterAudioRecordingCallback(recordings) } catch (_: Exception) {}
         mic?.cancel()
         mic = null
         removeBubble()

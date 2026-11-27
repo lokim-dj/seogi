@@ -6,6 +6,9 @@ import io.github.lokimdj.seogi.dictation.BubbleGesture.Mode
 import io.github.lokimdj.seogi.dictation.BubblePlace
 import io.github.lokimdj.seogi.dictation.DictationModel
 import io.github.lokimdj.seogi.dictation.Inserter
+import io.github.lokimdj.seogi.dictation.KeyPresence
+import io.github.lokimdj.seogi.dictation.KeyRule
+import io.github.lokimdj.seogi.dictation.Typing
 import io.github.lokimdj.seogi.dictation.TextField
 import io.github.lokimdj.seogi.dictation.Loaded
 import io.github.lokimdj.seogi.dictation.MeetingCheck
@@ -226,6 +229,81 @@ class DictationTest {
         val g = BubbleGesture()
         g.down(0, 0f, 0f, Mode.IDLE)
         assertEquals(listOf(Act.Cancel), g.cancel())
+    }
+
+    // --- when the key is on the screen ---
+
+    @Test fun typingMeansTheKeyboardIsUp() {
+        assertTrue(Typing.from(keyboardShowing = true, editableFocused = false, hardKeyboard = false))
+        // The keyboard closed, even with the cursor still in the field: the user stopped typing.
+        assertFalse(Typing.from(keyboardShowing = false, editableFocused = true, hardKeyboard = false))
+        assertFalse(Typing.from(keyboardShowing = false, editableFocused = false, hardKeyboard = false))
+        // No window list, or a keyboard plugged in: the focused field decides.
+        assertTrue(Typing.from(keyboardShowing = null, editableFocused = true, hardKeyboard = false))
+        assertFalse(Typing.from(keyboardShowing = null, editableFocused = false, hardKeyboard = false))
+        assertTrue(Typing.from(keyboardShowing = false, editableFocused = true, hardKeyboard = true))
+    }
+
+    @Test fun theKeyShowsOnlyWhileTyping() {
+        assertTrue(KeyRule.wanted(Mode.IDLE, userHidden = false, meeting = false, followsTyping = true, typing = true))
+        assertFalse(KeyRule.wanted(Mode.IDLE, userHidden = false, meeting = false, followsTyping = true, typing = false))
+    }
+
+    @Test fun listeningOrWritingKeepsTheKeyWhateverTheFocusDoes() {
+        for (m in listOf(Mode.LISTENING, Mode.WORKING)) {
+            assertTrue(KeyRule.wanted(m, userHidden = false, meeting = false, followsTyping = true, typing = false))
+            assertTrue(KeyRule.wanted(m, userHidden = false, meeting = true, followsTyping = true, typing = false))
+        }
+    }
+
+    @Test fun aMeetingOrTheNotificationHidesTheKey() {
+        assertFalse(KeyRule.wanted(Mode.IDLE, userHidden = false, meeting = true, followsTyping = true, typing = true))
+        assertFalse(KeyRule.wanted(Mode.IDLE, userHidden = false, meeting = true, followsTyping = false, typing = false))
+        assertFalse(KeyRule.wanted(Mode.IDLE, userHidden = true, meeting = false, followsTyping = true, typing = true))
+        assertFalse(KeyRule.wanted(Mode.LISTENING, userHidden = true, meeting = false, followsTyping = true, typing = true))
+    }
+
+    @Test fun withoutAccessibilityTheKeyStaysUp() {
+        assertTrue(KeyRule.wanted(Mode.IDLE, userHidden = false, meeting = false, followsTyping = false, typing = false))
+    }
+
+    @Test fun theKeyComesAfterAMomentAndGoesAfterALongerOne() {
+        val p = KeyPresence(showAfterMs = 100, hideAfterMs = 800)
+        assertEquals(100L, p.update(true, 0))
+        assertFalse(p.shown)
+        assertEquals(40L, p.update(true, 60))
+        assertEquals(0L, p.update(true, 100))
+        assertTrue(p.shown)
+        assertEquals(null, p.update(true, 150))
+        assertEquals(800L, p.update(false, 1000))
+        assertEquals(0L, p.update(false, 1800))
+        assertFalse(p.shown)
+    }
+
+    @Test fun movingFromFieldToFieldDoesNotFlicker() {
+        val p = KeyPresence(showAfterMs = 100, hideAfterMs = 800)
+        p.update(true, 0)
+        p.update(true, 100)
+        assertTrue(p.shown)
+        // Focus passes through a button on its way to the next field.
+        assertEquals(800L, p.update(false, 1000))
+        assertEquals(null, p.update(true, 1200))
+        assertEquals(null, p.update(true, 2500))
+        assertTrue(p.shown)
+        // A field that takes the cursor only for a blink never brings the key up.
+        val q = KeyPresence(showAfterMs = 100, hideAfterMs = 800)
+        assertEquals(100L, q.update(true, 0))
+        assertEquals(null, q.update(false, 30))
+        assertEquals(null, q.update(false, 500))
+        assertFalse(q.shown)
+    }
+
+    @Test fun aChoiceFromTheUserIsAtOnce() {
+        val p = KeyPresence(showAfterMs = 100, hideAfterMs = 800)
+        assertEquals(0L, p.update(true, 0, atOnce = true))
+        assertTrue(p.shown)
+        assertEquals(0L, p.update(false, 10, atOnce = true))
+        assertFalse(p.shown)
     }
 
     // --- the steps ---

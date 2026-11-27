@@ -1,15 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Dictation's accessibility service: it only looks for the focused text field
-    when the floating key has text to put in. No events are needed; it does not
-    read the screen otherwise.
+    Dictation's accessibility service: it puts the spoken text into the focused
+    text field, and it listens to focus and window changes only to know whether
+    a field has the cursor or the keyboard is up, so the floating key shows
+    only while the user types. It does not read what is written or shown.
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/a11y_description"
     android:summary="@string/a11y_summary"
-    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityEventTypes="typeViewFocused|typeWindowsChanged|typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagRetrieveInteractiveWindows"
     android:canRetrieveWindowContent="true"
     android:isAccessibilityTool="false"
-    android:notificationTimeout="1000" />
+    android:notificationTimeout="100" />

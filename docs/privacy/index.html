@@ -192,8 +192,9 @@
           </li>
           <li>
             <strong>접근성 서비스(켜면)</strong>: 말로 입력한 글자를 지금 커서가
-            있는 글자 칸에 넣는 데만 씁니다. 단추로 말했을 때 커서가 있는 칸을
-            찾아 글자를 넣을 뿐, 화면 내용을 읽어 두거나 저장하거나 밖으로
+            있는 글자 칸에 넣고, 글자를 쓸 때만 단추를 띄우는 데 씁니다. 자판이
+            열렸는지와 커서가 있는 칸이 글자 칸인지만 살피고, 단추로 말했을 때
+            그 칸에 글자를 넣을 뿐, 화면 내용을 읽어 두거나 저장하거나 밖으로
             보내지 않습니다. 켜지 않으면 글자를 클립보드에 복사합니다.
           </li>
           <li>
@@ -447,10 +448,12 @@
           </li>
           <li>
             <strong>Accessibility service (if you turn it on)</strong>: used
-            only to put the spoken text into the field that has the cursor. When
-            you speak with the key it finds that field and puts the text in; it
-            does not read, keep or send what is on the screen. Without it the
-            text is copied to the clipboard.
+            only to put the spoken text into the field that has the cursor, and
+            to show the key only while you type. It notices whether the keyboard
+            is open and whether the focused field takes text; when you speak
+            with the key it puts the text into that field. It does not read,
+            keep or send what is on the screen. Without it the text is copied to
+            the clipboard.
           </li>
           <li>
             <strong>Upload to your Google Drive</strong>: when a recording ends

@@ -171,12 +171,13 @@ private fun Ready(state: SetupState, on: Boolean, onSwitch: (Boolean) -> Unit, o
         T(stringResource(R.string.dict_ready_title), size = 23.sp, letterSpacing = (-0.03).em, lineHeight = 1.25f)
         Spacer(Modifier.height(18.dp))
         Hairline()
+        val direct = state.accessibility
         StepLine(
             stringResource(R.string.dict_key), stringResource(if (on) R.string.on else R.string.off),
-            stringResource(R.string.dict_key_why), done = false, onClick = { onSwitch(!on) },
+            stringResource(if (direct) R.string.dict_key_why else R.string.dict_key_why_always),
+            done = false, onClick = { onSwitch(!on) },
         )
         Hairline()
-        val direct = state.accessibility
         StepLine(
             stringResource(R.string.dict_insert),
             stringResource(if (direct) R.string.dict_insert_direct else R.string.dict_insert_copy),
