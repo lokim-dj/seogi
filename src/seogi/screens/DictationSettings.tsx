@@ -4,7 +4,7 @@
 // (seogiDictation, seogiDictationStatus); nothing is decided on the screen
 // except which keys are offered.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { platform } from "@tauri-apps/plugin-os";
 import {
@@ -75,10 +75,21 @@ export default function DictationSettings({
     if (result.status === "ok") setStatus(result.data);
   }, []);
 
+  // The choices as the app has them now. The app can move the model by
+  // itself (a stand-in gives way to the default once it is downloaded), so
+  // they are read back after each save and each download; a read that a
+  // newer save has overtaken is dropped, so it never undoes that save.
+  const saves = useRef(0);
+  const readBack = useCallback(async () => {
+    const asked = saves.current;
+    const now = await commands.seogiDictation();
+    if (saves.current === asked) setDictation(now);
+  }, []);
+
   useEffect(() => {
-    void commands.seogiDictation().then(setDictation);
+    void readBack();
     void look();
-  }, [look]);
+  }, [readBack, look]);
 
   // Waiting for the user to allow typing in System Settings: look again
   // every couple of seconds, so the line changes by itself.
@@ -92,13 +103,17 @@ export default function DictationSettings({
   // A model being downloaded is chosen once it is here.
   const downloading = Object.keys(downloads).length;
   useEffect(() => {
-    if (downloading === 0) void look();
-  }, [downloading, look]);
+    if (downloading === 0) {
+      void readBack();
+      void look();
+    }
+  }, [downloading, readBack, look]);
 
   if (!dictation || !status) return null;
 
   const save = async (next: Dictation) => {
     const before = dictation;
+    const mine = ++saves.current;
     setDictation(next);
     const result = await commands.seogiSetDictation(next);
     if (result.status === "error") {
@@ -113,6 +128,9 @@ export default function DictationSettings({
       return;
     }
     onNote(t("settings.saved"));
+    // Only the last save reads back: an earlier one could read before a
+    // later save has landed.
+    if (saves.current === mine) void readBack();
     void look();
   };
 

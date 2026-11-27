@@ -574,6 +574,19 @@ pub struct AppSettings {
     /// `overlay_position` (position `none` → style `None`).
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
+    /// Seogi: the dictation model put in `selected_model` to stand in while
+    /// the default dictation model downloads; empty for none. It stands in
+    /// only while `selected_model` is still this model, so any other choice
+    /// of model, by whatever path, ends it. Kept beside `selected_model`
+    /// (until 0.1.16 a flag in `seogi.json` said so, and a model changed
+    /// elsewhere left the flag behind).
+    #[serde(default)]
+    pub dictation_stand_in: String,
+    /// Seogi: the dictation shortcut has been moved off the first release's
+    /// default once. Kept beside the binding it is about (until 0.1.16 in
+    /// `seogi.json`).
+    #[serde(default)]
+    pub dictation_key_moved: bool,
 }
 
 fn default_model() -> String {
@@ -1084,6 +1097,8 @@ pub fn get_default_settings() -> AppSettings {
         language_detection: LanguageDetectionMode::default(),
         language_detection_window_secs: default_language_detection_window_secs(),
         overlay_style: default_overlay_style(),
+        dictation_stand_in: String::new(),
+        dictation_key_moved: false,
     }
 }
 
@@ -1180,7 +1195,27 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         store.set("settings", serde_json::to_value(&settings).unwrap());
     }
 
+    // Read, never stored here: the language belongs to seogi.json.
+    if let Some(language) = crate::seogi::app::Secretary::of(app).map(|s| s.language()) {
+        speak_seogi_language(&mut settings, &language);
+    }
     settings
+}
+
+/// Puts Seogi's language (`seogi.json`, the one place it is decided) into
+/// the settings the engine reads, so dictation listens for the same
+/// language meetings are transcribed in. Left to the engine's own "auto", a
+/// model can hear a drawn-out Korean "아아아" as Chinese and type 啊啊啊.
+///
+/// Until 0.1.16 this was copied into the store at every start and after
+/// every dictation change, so the store held a second language that a
+/// stale copy could disagree with. Now the store's `selected_language` is
+/// not read in Seogi; an empty Seogi language leaves the engine's value.
+pub fn speak_seogi_language(settings: &mut AppSettings, language: &str) {
+    let language = language.trim();
+    if !language.is_empty() {
+        settings.selected_language = language.to_string();
+    }
 }
 
 /// Rebuilds settings from a store value that failed to deserialize as a whole.
@@ -1495,12 +1530,40 @@ pub fn update_checks_effectively_enabled(settings: &AppSettings) -> bool {
     settings.update_checks_enabled && !update_checks_forced_disabled()
 }
 
-pub fn write_settings(app: &AppHandle, settings: AppSettings) {
+pub fn write_settings(app: &AppHandle, mut settings: AppSettings) {
     let store = app
         .store(crate::portable::store_path(SETTINGS_STORE_PATH))
         .expect("Failed to initialize store");
 
+    // What `get_settings` put in from seogi.json goes no further: the store
+    // keeps what it had, so it never holds a copy of Seogi's language.
+    if crate::seogi::app::Secretary::of(app).is_some() {
+        keep_stored_language(&mut settings, store.get("settings").as_ref());
+    }
     store.set("settings", serde_json::to_value(&settings).unwrap());
+}
+
+/// Puts back the language the store holds (`stored`, its "settings" value)
+/// before `settings` is written, so the language read from seogi.json is
+/// not stored here. Nothing stored yet leaves the engine's default.
+fn keep_stored_language(settings: &mut AppSettings, stored: Option<&serde_json::Value>) {
+    settings.selected_language = stored
+        .and_then(|value| value.get("selected_language"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(default_selected_language);
+}
+
+/// Writes the store to disk now, rather than when it next saves by itself.
+pub fn flush_settings(app: &AppHandle) {
+    match app.store(crate::portable::store_path(SETTINGS_STORE_PATH)) {
+        Ok(store) => {
+            if let Err(e) = store.save() {
+                warn!("Could not write the settings to disk: {e}");
+            }
+        }
+        Err(e) => warn!("Could not open the settings: {e}"),
+    }
 }
 
 pub fn get_bindings(app: &AppHandle) -> HashMap<String, ShortcutBinding> {
@@ -1572,6 +1635,55 @@ mod tests {
 
     /// A new install opens at login; a store that already says either way
     /// keeps what it says.
+    /// Seogi's language, read into the settings from seogi.json, is not
+    /// written back into the store: the store keeps its own value, so it
+    /// never holds a second copy that could go stale.
+    #[test]
+    fn seogis_language_is_not_written_into_the_store() {
+        let stored = serde_json::json!({ "selected_language": "auto", "history_limit": 3 });
+        let mut settings: AppSettings = serde_json::from_value(stored.clone()).unwrap();
+        speak_seogi_language(&mut settings, "ko");
+        assert_eq!(settings.selected_language, "ko");
+        settings.history_limit = 9;
+        keep_stored_language(&mut settings, Some(&stored));
+        assert_eq!(settings.selected_language, "auto");
+        assert_eq!(settings.history_limit, 9, "other changes are kept");
+
+        let mut fresh = get_default_settings();
+        speak_seogi_language(&mut fresh, "ko");
+        keep_stored_language(&mut fresh, None);
+        assert_eq!(fresh.selected_language, default_selected_language());
+    }
+
+    /// The two dictation marks Seogi keeps in this store: off for a new
+    /// store and for one written before they existed, kept when stored, and
+    /// a store from a newer version (fields this one does not know) still
+    /// loads with what it says.
+    #[test]
+    fn seogis_dictation_marks_load_from_old_and_new_stores() {
+        let fresh = get_default_settings();
+        assert!(!fresh.dictation_key_moved);
+        assert!(fresh.dictation_stand_in.is_empty());
+
+        let old: AppSettings = serde_json::from_value(serde_json::json!({
+            "selected_model": "a/b-gguf/c.gguf",
+            "history_limit": 9,
+        }))
+        .unwrap();
+        assert!(!old.dictation_key_moved);
+        assert_eq!(old.history_limit, 9);
+
+        let newer: AppSettings = serde_json::from_value(serde_json::json!({
+            "dictation_key_moved": true,
+            "dictation_stand_in": "a/b-gguf/c.gguf",
+            "selected_model": "a/b-gguf/c.gguf",
+            "a_field_from_later": {"x": 1},
+        }))
+        .unwrap();
+        assert!(newer.dictation_key_moved);
+        assert_eq!(newer.dictation_stand_in, "a/b-gguf/c.gguf");
+    }
+
     #[test]
     fn autostart_is_on_for_a_new_store_and_kept_from_a_stored_one() {
         assert!(get_default_settings().autostart_enabled);

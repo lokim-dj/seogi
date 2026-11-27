@@ -1,0 +1,46 @@
+{
+  "library_dir": "/Users/someone/Documents/서기",
+  "watched": [
+    {
+      "path": "/Users/someone/녹음함",
+      "enabled": true,
+      "template_id": "",
+      "since_ms": 1764000000000
+    }
+  ],
+  "language": "ko",
+  "diarize": true,
+  "speech_model": "",
+  "summary": {
+    "kind": "claude_cli",
+    "model": "opus"
+  },
+  "vocabulary_path": "",
+  "input_device": "",
+  "calendar_urls": [],
+  "mac_calendars": [],
+  "remind": true,
+  "remind_minutes_before": 1,
+  "set_up": true,
+  "record_shortcut": "Ctrl+Alt+R",
+  "mark_shortcut": "Ctrl+Alt+M",
+  "muted_events": [],
+  "minutes_beside_source": true,
+  "dictation": {
+    "enabled": false,
+    "tidy": false,
+    "tidy_with": {
+      "kind": "ollama",
+      "base_url": "http://localhost:11434",
+      "model": "gemma3:4b"
+    },
+    "numbers": true,
+    "button": true,
+    "button_at": {
+      "x": 1200,
+      "y": 700
+    },
+    "key_moved": true,
+    "model_standing_in": true
+  }
+}

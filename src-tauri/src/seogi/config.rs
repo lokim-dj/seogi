@@ -163,6 +163,21 @@ impl Config {
         super::store::write_atomically(&data_dir.join(FILE_NAME), json.as_bytes())
     }
 
+    /// Takes the dictation settings from `current`, the saved ones: they
+    /// change only through `Secretary::update_dictation`, so a screen that
+    /// sends every setting back (holding a copy from before a change) cannot
+    /// undo one.
+    pub fn keep_dictation_of(&mut self, current: &Config) {
+        self.dictation = current.dictation.clone();
+    }
+
+    /// The file as it is on disk, for moving a value that no longer lives
+    /// here (`None` when there is no readable file).
+    pub fn raw(data_dir: &Path) -> Option<serde_json::Value> {
+        let text = std::fs::read_to_string(data_dir.join(FILE_NAME)).ok()?;
+        serde_json::from_str(&text).ok()
+    }
+
     /// The speech model recordings are transcribed with.
     pub fn speech_model(&self) -> &str {
         if self.speech_model.trim().is_empty() {
@@ -434,6 +449,42 @@ mod tests {
             picked.speech_model_now(with(&[TURBO, QWEN])),
             now(QWEN, Some(FUNASR))
         );
+    }
+
+    /// A file written by a newer version (a field this one does not know)
+    /// or an older one (fields missing) loads with every known value kept,
+    /// so going back a version neither fails nor resets anything.
+    #[test]
+    fn fields_from_another_version_are_ignored_not_fatal() {
+        let dir = tempfile::tempdir().unwrap();
+        let text = r#"{"language": "en", "remind_minutes_before": 5,
+            "something_new": {"a": 1},
+            "dictation": {"enabled": false, "key_moved": true, "model_standing_in": true,
+                          "also_new": [1, 2]}}"#;
+        std::fs::write(dir.path().join(FILE_NAME), text).unwrap();
+        let loaded = Config::load(dir.path());
+        assert_eq!(loaded.language, "en");
+        assert_eq!(loaded.remind_minutes_before, 5);
+        assert!(!loaded.dictation.enabled);
+        assert!(Config::raw(dir.path()).is_some());
+    }
+
+    /// The screen sends every setting back with a copy it read earlier; the
+    /// dictation settings it holds (and where the floating key was dragged
+    /// since) must not undo the saved ones.
+    #[test]
+    fn the_settings_screen_cannot_undo_dictation() {
+        let mut saved = Config::default();
+        saved.dictation.enabled = false;
+        saved.dictation.button_at = Some(super::super::dictation::Spot { x: 10, y: 20 });
+        let mut from_screen = Config {
+            remind: false,
+            ..Config::default()
+        };
+        assert!(from_screen.dictation.enabled);
+        from_screen.keep_dictation_of(&saved);
+        assert_eq!(from_screen.dictation, saved.dictation);
+        assert!(!from_screen.remind);
     }
 
     #[test]

@@ -212,12 +212,10 @@ fn moved(app: &AppHandle, position: tauri::PhysicalPosition<i32>) {
         let Some(secretary) = Secretary::of(&app) else {
             return;
         };
-        let mut dictation = secretary.config().dictation;
-        if dictation.button_at == Some(spot) {
+        if secretary.config().dictation.button_at == Some(spot) {
             return;
         }
-        dictation.button_at = Some(spot);
-        if let Err(e) = secretary.set_dictation(dictation) {
+        if let Err(e) = secretary.update_dictation(|dictation| dictation.button_at = Some(spot)) {
             log::warn!("Where the microphone key is could not be saved: {e:#}");
         }
     });
@@ -241,9 +239,7 @@ fn menu_chosen(app: &AppHandle, id: &str) {
     match id {
         "mic_hide" => {
             if let Some(secretary) = Secretary::of(app) {
-                let mut dictation = secretary.config().dictation;
-                dictation.button = false;
-                if let Err(e) = secretary.set_dictation(dictation) {
+                if let Err(e) = secretary.update_dictation(|dictation| dictation.button = false) {
                     log::warn!("Could not hide the microphone key: {e:#}");
                 }
             }

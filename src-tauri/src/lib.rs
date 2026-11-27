@@ -254,6 +254,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     };
     match seogi_data_dir {
         Ok(data_dir) => {
+            // Before anything saves seogi.json, which drops them.
+            seogi::dictation::move_marks_from_seogi_json(app_handle, &data_dir);
             let mut config = seogi::config::Config::load(&data_dir);
             // A model name typed in by hand that the tool does not take
             // would fail every minutes run: the listed model it names, or
