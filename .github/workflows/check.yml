@@ -103,5 +103,10 @@ jobs:
           restore-keys: robolectric-
       # The runner image carries the Android SDK (platform 35, build-tools
       # 35.0.0). The wrapper checks the Gradle download against its SHA-256.
+      # Phone dictation's speech engine is native code: the NDK and CMake
+      # versions android/app/build.gradle.kts names (Gradle does not fetch a
+      # named CMake by itself).
+      - name: NDK and CMake
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;29.0.14206865" "cmake;3.31.6" > /dev/null
       - name: Unit tests and debug build
         run: ./gradlew --no-daemon testDebugUnitTest assembleDebug

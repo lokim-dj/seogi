@@ -180,7 +180,22 @@
         <ul>
           <li>
             <strong>녹음</strong>: 내 폰의 <code>Recordings/서기</code> 폴더에
-            저장합니다. 앱에는 AI가 없고, 폰에서 받아쓰지 않습니다.
+            저장합니다. 녹음은 폰에서 받아쓰지 않고 컴퓨터의 서기가 정리합니다.
+          </li>
+          <li>
+            <strong>말로 입력(켜면)</strong>: 떠 있는 서기 단추를 누르는 동안
+            들은 소리를 폰 안의 음성 인식 모델로 글자로 바꿉니다. 소리는
+            메모리에만 있다가 글자가 되면 버리고, 파일로 남기거나 밖으로 보내지
+            않습니다. 모델(약 850 MB)은 처음 쓸 때 내가 받기를 누르면 Hugging
+            Face 에서 한 번 받습니다. 이때 모델 파일만 받고 내 정보는 보내지
+            않습니다.
+          </li>
+          <li>
+            <strong>접근성 서비스(켜면)</strong>: 말로 입력한 글자를 지금 커서가
+            있는 글자 칸에 넣고, 글자를 쓸 때만 단추를 띄우는 데 씁니다. 자판이
+            열렸는지와 커서가 있는 칸이 글자 칸인지만 살피고, 단추로 말했을 때
+            그 칸에 글자를 넣을 뿐, 화면 내용을 읽어 두거나 저장하거나 밖으로
+            보내지 않습니다. 켜지 않으면 글자를 클립보드에 복사합니다.
           </li>
           <li>
             <strong>내 구글 드라이브로 올리기</strong>: 녹음이 끝나면 내가
@@ -419,8 +434,25 @@
         <ul>
           <li>
             <strong>Recordings</strong> are saved on your phone in
-            <code>Recordings/서기</code>. The phone app has no AI and does not
-            transcribe.
+            <code>Recordings/서기</code>. Recordings are not transcribed on the
+            phone; Seogi on your computer writes them up.
+          </li>
+          <li>
+            <strong>Voice typing (말로 입력, if you turn it on)</strong>: while
+            you press the floating Seogi key, the sound is turned into text by a
+            speech model on the phone. The sound stays in memory, is dropped
+            once it has become text, and is never saved or sent. The model
+            (about 850 MB) is downloaded once from Hugging Face when you ask for
+            it; only the model file is fetched, nothing about you is sent.
+          </li>
+          <li>
+            <strong>Accessibility service (if you turn it on)</strong>: used
+            only to put the spoken text into the field that has the cursor, and
+            to show the key only while you type. It notices whether the keyboard
+            is open and whether the focused field takes text; when you speak
+            with the key it puts the text into that field. It does not read,
+            keep or send what is on the screen. Without it the text is copied to
+            the clipboard.
           </li>
           <li>
             <strong>Upload to your Google Drive</strong>: when a recording ends

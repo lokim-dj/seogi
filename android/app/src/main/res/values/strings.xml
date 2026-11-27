@@ -46,12 +46,12 @@
     <string name="onb_cal_why">지금 일정 이름을 회의 이름으로 붙입니다.</string>
     <string name="onb_drive">구글 드라이브</string>
     <string name="onb_drive_why">\'서기 폰 녹음\' 폴더를 만들어 거기에만 올립니다. 내 다른 파일은 보지 못합니다. 컴퓨터 드라이브와 같은 계정으로.</string>
-    <string name="onb_dictation_later">받아쓰기(떠 있는 단추)는 처음 켤 때 따로 묻습니다.</string>
+    <string name="onb_dictation_later">말로 입력(떠 있는 단추)은 처음 켤 때 따로 묻습니다.</string>
     <string name="onb_done_count">4개 중 %1$d개 완료</string>
     <string name="onb_start">시작하기</string>
 
     <!-- home -->
-    <string name="dictation">받아쓰기</string>
+    <string name="dictation">말로 입력</string>
     <string name="settings">설정</string>
     <string name="next_event">다음 일정 · %1$s</string>
     <string name="now_event">지금 일정 · %1$s</string>
@@ -128,18 +128,82 @@
     <string name="set_quality_value">권장</string>
     <string name="set_quality_why">회의 말소리에 맞춘 AAC 64 kbps 모노. 한 시간에 약 29 MB.</string>
     <string name="set_calendar_why">지금 일정 이름을 회의 이름으로 붙입니다. 폰 안에서만 읽어요.</string>
-    <string name="set_dictation_value">다음 판</string>
-    <string name="set_dictation_why">떠 있는 단추를 누르고 말하면 지금 쓰는 칸에 글자가 들어갑니다. 처음 켤 때 따로 묻습니다.</string>
+    <string name="set_dictation_setup">설정하기</string>
+    <string name="set_dictation_why">떠 있는 서기 단추를 누르고 말하면 지금 쓰는 칸에 글자가 들어갑니다. 소리는 폰 밖으로 나가지 않아요.</string>
     <string name="set_privacy">개인정보처리방침</string>
     <string name="set_feedback">불편해요</string>
     <string name="set_feedback_why">GitHub 이슈로 보내 주세요. 녹음이나 이름은 쓰지 마세요.</string>
     <string name="set_version">버전</string>
     <string name="set_licenses">오픈소스 라이선스</string>
 
-    <!-- dictation (next version) -->
-    <string name="dict_title">받아쓰기는\n다음 판에 들어옵니다</string>
-    <string name="dict_body">떠 있는 단추를 누르고 말하면, 지금 쓰는 칸에 글자가 들어갑니다. 소리는 폰 안에서만 글자로 바뀌고 밖으로 나가지 않습니다.</string>
-    <string name="dict_steps">켤 때 마이크 · 알림 · 다른 앱 위에 표시 · 접근성 · 배터리 제한 없음을 차례로 묻습니다.</string>
+    <!-- dictation: the floating key -->
+    <string name="channel_dictation">말로 입력</string>
+    <string name="notif_dictation">말로 입력 켜짐</string>
+    <string name="notif_dictation_text">떠 있는 단추를 누르고 말하세요</string>
+    <string name="notif_dictation_typing">글자를 쓸 때 단추가 떠요 · 누르고 말하세요</string>
+    <string name="notif_dictation_hidden">단추를 숨겼어요 · \'보이기\'로 다시 띄웁니다</string>
+    <string name="action_hide_key">숨기기</string>
+    <string name="action_show_key">보이기</string>
+    <string name="action_dictation_off">끄기</string>
+    <string name="bubble_idle">말로 입력 · 눌러서 말하기</string>
+    <string name="bubble_listening">말로 입력 · 듣는 중 · 다시 누르면 끝</string>
+    <string name="bubble_working">말로 입력 · 글자로 바꾸는 중</string>
+    <string name="dict_copied">복사했어요, 붙여 넣으세요</string>
+    <string name="dict_heard_nothing">말소리를 듣지 못했어요</string>
+    <string name="dict_err_failed">글자로 바꾸지 못했어요. 다시 해 보세요.</string>
+    <string name="dict_err_mic_permission">마이크를 허용해야 말로 입력할 수 있어요. 서기를 열어 허용해 주세요.</string>
+    <string name="dict_err_no_model">글자로 바꾸는 모델이 아직 없어요. 서기 › 설정 › 말로 입력에서 받아 주세요.</string>
+    <string name="dict_err_cpu">이 폰에서는 말로 입력을 쓸 수 없어요.</string>
+    <string name="dict_err_meeting">회의 녹음 중에는 말로 입력을 쓸 수 없어요.</string>
+    <string name="dict_err_mic_busy">마이크를 다른 앱이 쓰고 있어요. 통화나 녹음을 끝내고 다시 눌러 주세요.</string>
+    <string name="dict_err_mic_silenced">마이크 소리가 들어오지 않아요. 서기를 한 번 열었다가 다시 해 보세요.</string>
+
+    <!-- dictation: the accessibility service, as Android's settings show it -->
+    <string name="a11y_label">서기</string>
+    <string name="a11y_summary">말한 글자를 지금 쓰는 칸에 넣습니다</string>
+    <string name="a11y_description">서기의 떠 있는 서기 단추로 말한 글자를, 지금 커서가 있는 글자 칸에 넣는 데만 씁니다.\n\n켜면 서기가 화면에서 커서가 있는 칸을 찾아 글자를 넣을 수 있습니다. 자판이 열렸는지, 커서가 글자 칸에 있는지, 손으로 글자를 치는 중인지만 살펴 단추를 띄우거나 작게 합니다. 쓴 내용은 읽지 않고, 글자는 단추로 말했을 때만 넣습니다. 화면 내용을 저장하거나 밖으로 보내지 않습니다. 소리는 폰 안에서만 글자로 바뀝니다.</string>
+
+    <!-- dictation: setting it up, one step a screen -->
+    <string name="dict_step">%1$d / %2$d</string>
+    <string name="dict_mic_title">마이크와 알림을\n허용해 주세요</string>
+    <string name="dict_mic_body">말한 것을 듣는 데 마이크를 씁니다. 단추가 켜져 있다는 것은 알림 줄에 보이고, 거기서 단추를 숨기거나 끌 수 있어요.</string>
+    <string name="dict_mic_action">허용하기</string>
+    <string name="dict_overlay_title">다른 앱 위에\n단추를 띄울게요</string>
+    <string name="dict_overlay_body">메시지 · 메모 · 메일 같은 다른 앱을 쓰는 중에도 둥근 서기 단추를 화면 가장자리에 띄웁니다. 손가락으로 끌어 옮길 수 있어요.</string>
+    <string name="dict_overlay_how">누르면 안드로이드 설정이 열립니다. \'서기\'의 \'다른 앱 위에 표시\'를 켜고 돌아오세요.</string>
+    <string name="dict_open_settings">설정 열기</string>
+    <string name="dict_a11y_title">말한 글자를\n칸에 바로 넣을게요</string>
+    <string name="dict_a11y_body">이 단계는 안드로이드의 \'접근성\' 기능을 씁니다. 켜면 서기가 지금 커서가 있는 글자 칸을 찾아 말한 글자를 넣고, 자판이 열릴 때만 단추를 띄웁니다.</string>
+    <string name="dict_a11y_promise">· 자판이 열렸는지, 커서가 글자 칸에 있는지, 손으로 글자를 치는 중인지만 보고 단추를 띄우거나 작게 합니다. 쓴 내용은 읽지 않아요.\n· 글자는 단추로 말했을 때만 넣습니다.\n· 화면 내용을 저장하거나 밖으로 보내지 않습니다.\n· 언제든 같은 곳에서 끌 수 있습니다.</string>
+    <string name="dict_a11y_how">설정 › 접근성 › 설치된 앱 › 서기 › 켜기</string>
+    <string name="dict_a11y_agree">동의하고 설정 열기</string>
+    <string name="dict_a11y_skip">켜지 않고 쓰기 · 글자는 복사만</string>
+    <string name="dict_model_title">글자로 바꾸는 모델을\n받을게요</string>
+    <string name="dict_model_body">약 850 MB 입니다. 한 번만 받으면, 그 뒤로는 인터넷 없이 폰 안에서 말을 글자로 바꿉니다. 소리는 밖으로 나가지 않아요. 와이파이에서 받기를 권해요.</string>
+    <string name="dict_model_metered">지금 모바일 데이터에 연결돼 있어요. 받으면 약 850 MB 를 씁니다.</string>
+    <string name="dict_model_space">저장 공간이 모자라요. %1$d MB 를 더 비워 주세요.</string>
+    <string name="dict_model_get">받기 · 850 MB</string>
+    <string name="dict_model_progress">받는 중 %1$d%%</string>
+    <string name="dict_model_waiting">인터넷을 기다리는 중</string>
+    <string name="dict_model_waiting_wifi">와이파이를 기다리는 중 · 와이파이에서 시작해 와이파이에서만 받아요</string>
+    <string name="dict_model_unavailable">모델을 받을 곳에 닿지 못했어요. 나중에 다시 받아 주세요. 계속 안 되면 GitHub 이슈로 알려 주세요.</string>
+    <string name="dict_model_checking">받은 파일을 확인하는 중</string>
+    <string name="dict_model_note">화면을 나가도 계속 받습니다. 끊기면 받은 곳부터 이어 받아요.</string>
+    <string name="dict_model_stop">멈추기</string>
+    <string name="dict_model_wrong">받은 파일이 맞지 않아 지웠어요. 다시 받아 주세요.</string>
+    <string name="dict_cpu_title">이 폰에서는\n쓸 수 없어요</string>
+    <string name="dict_cpu_body">말로 입력은 최근 몇 년 안에 나온 폰의 계산 기능이 있어야 합니다. 녹음은 그대로 쓸 수 있어요.</string>
+    <string name="dict_ready_title">말로 입력</string>
+    <string name="dict_key">떠 있는 단추</string>
+    <string name="dict_key_why">켜면 다른 앱에서 글자를 쓸 때(자판이 열리면)만 둥근 서기 단추가 뜨고, 다 쓰면 사라집니다.</string>
+    <string name="dict_key_why_always">복사만 쓰는 동안은 언제 글자를 쓰는지 알 수 없어 단추가 늘 떠 있어요(회의 녹음 중에는 숨어요). 숨기기는 알림 줄에서. 접근성을 켜면 글자를 쓸 때만 뜹니다.</string>
+    <string name="dict_how">· 누른 채 말하고 떼면 글자가 들어갑니다.\n· 한 번 눌러 말하고, 다시 한 번 누르면 끝.\n· 끌어서 자리를 옮기면 그 자리에 다시 뜹니다. 숨기기 · 끄기는 알림 줄에서.</string>
+    <string name="dict_insert">글자 넣기</string>
+    <string name="dict_insert_direct">칸에 바로</string>
+    <string name="dict_insert_copy">복사만</string>
+    <string name="dict_insert_copy_why">접근성을 켜면 칸에 바로 넣습니다. 눌러서 켜기.</string>
+    <string name="dict_insert_direct_why">커서가 있는 칸이 없으면 복사해 둡니다.</string>
+    <string name="dict_privacy">소리는 폰 안에서만 글자로 바뀌고, 저장하지도 밖으로 보내지도 않습니다.</string>
 
     <!-- login errors -->
     <string name="login_not_finished">로그인을 마치지 못했어요. 구글 화면에 \'액세스 차단됨\'이 떴다면 이 계정은 아직 쓸 수 없어요. 서기는 지금 시험 중이라 등록된 시험 계정만 연결됩니다.</string>

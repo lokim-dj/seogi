@@ -30,14 +30,6 @@ class Settings(context: Context) {
         get() = prefs.getString(KEY_FOLDER, null)
         set(v) = prefs.edit().putString(KEY_FOLDER, v).apply()
 
-    /**
-     * Dictation (the floating key) comes in the next version. The switch is
-     * here so the settings screen and the first-run flow have their place.
-     */
-    var dictationEnabled: Boolean
-        get() = prefs.getBoolean(KEY_DICTATION, false)
-        set(v) = prefs.edit().putBoolean(KEY_DICTATION, v).apply()
-
     fun setEmail(value: String?) {
         if (value != _email.value) driveFolderId = null
         prefs.edit().putString(KEY_EMAIL, value).apply()
@@ -54,6 +46,5 @@ class Settings(context: Context) {
         const val KEY_WIFI_ONLY = "wifi_only"
         const val KEY_ONBOARDED = "onboarded"
         const val KEY_FOLDER = "drive_folder_id"
-        const val KEY_DICTATION = "dictation_enabled"
     }
 }

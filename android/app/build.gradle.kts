@@ -32,6 +32,27 @@ android {
         // needs only the Android OAuth client (package name + SHA-1).
         val webClientId = localValue("seogi.googleWebClientId", "SEOGI_GOOGLE_WEB_CLIENT_ID") ?: ""
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$webClientId\"")
+
+        // Dictation's speech engine (transcribe.cpp) is built for arm64 only
+        // (see src/main/cpp/CMakeLists.txt); the app itself installs everywhere.
+        val tarball = localValue("seogi.transcribeTarball", "SEOGI_TRANSCRIBE_TARBALL") ?: ""
+        externalNativeBuild {
+            cmake {
+                arguments += listOf(
+                    "-DANDROID_STL=c++_shared",
+                    // The engine is far too slow unoptimised, so debug builds compile it optimised too.
+                    "-DCMAKE_BUILD_TYPE=Release",
+                    "-DSEOGI_TRANSCRIBE_TARBALL=$tarball",
+                )
+            }
+        }
+    }
+    ndkVersion = "29.0.14206865"
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.31.6"
+        }
     }
 
     val storeFile = localValue("seogi.signing.storeFile", "SEOGI_SIGNING_STORE_FILE")
