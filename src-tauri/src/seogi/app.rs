@@ -417,6 +417,15 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// Clears a "being done" flag when it goes out of scope, a panic included.
+struct ClearOnDrop<'a>(&'a std::sync::atomic::AtomicBool);
+
+impl Drop for ClearOnDrop<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+
 fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
@@ -2136,8 +2145,10 @@ impl Secretary {
                 read_at = Some(Instant::now());
                 let me = self.clone();
                 std::thread::spawn(move || {
+                    // Let go of even if the read panics, or the calendars
+                    // would never be read again.
+                    let _done = ClearOnDrop(&me.calendar_reading);
                     me.read_calendars();
-                    me.calendar_reading.store(false, Ordering::Release);
                 });
             }
             let trouble = self.calendar_trouble();
@@ -3301,6 +3312,18 @@ fn put_back_naming(meeting: &mut Meeting, kept: &Naming, now: &Naming) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_read_that_panics_still_lets_the_calendars_be_read_again() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let reading = AtomicBool::new(true);
+        let read = std::panic::catch_unwind(|| {
+            let _done = ClearOnDrop(&reading);
+            panic!("the read broke");
+        });
+        assert!(read.is_err());
+        assert!(!reading.load(Ordering::Acquire));
+    }
 
     /// The path a recording takes in `Secretary::transcribe`: the chosen
     /// model when it is here; while it is not, the best stand-in, named in
