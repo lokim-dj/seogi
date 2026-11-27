@@ -1,12 +1,14 @@
 package io.github.lokimdj.seogi.dictation
 
 import android.accessibilityservice.AccessibilityService
+import android.app.KeyguardManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.res.Configuration
+import android.graphics.Rect
 import android.os.Bundle
 import android.os.IBinder
 import android.os.SystemClock
@@ -89,14 +91,26 @@ class InsertService : AccessibilityService() {
     /** Looks again whether the user is typing, and tells the key when that changed. */
     private fun check() {
         val now = try {
-            Typing.from(keyboardShowing(), editableFocused(), hardKeyboard())
+            Typing.from(keyboardShowing(), editableFocused(), hardKeyboard(), locked())
         } catch (e: Exception) {
             false
         }
-        if (now != typing) {
+        val top = try { keyboardEdge() } catch (e: Exception) { null }
+        if (now != typing || top != keyboardTop) {
             typing = now
+            keyboardTop = top
             listener?.invoke()
         }
+    }
+
+    private fun locked() = getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
+
+    /** The top edge of the on-screen keyboard on the screen, or null when none is up. */
+    private fun keyboardEdge(): Int? {
+        val ime = windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD } ?: return null
+        val r = Rect()
+        ime.getBoundsInScreen(r)
+        return if (r.isEmpty) null else r.top
     }
 
     /** Null when Android does not give the window list. */
@@ -152,6 +166,7 @@ class InsertService : AccessibilityService() {
         if (instance !== this) return
         instance = null
         typing = false
+        keyboardTop = null
         listener?.invoke()
     }
 
@@ -219,7 +234,11 @@ class InsertService : AccessibilityService() {
         var typing = false
             private set
 
-        /** Told (on the main thread) when [instance] or [typing] changes; set by [DictationService]. */
+        /** The top edge of the on-screen keyboard, as last seen; null when none is up. Main thread. */
+        var keyboardTop: Int? = null
+            private set
+
+        /** Told (on the main thread) when [instance], [typing] or [keyboardTop] changes; set by [DictationService]. */
         var listener: (() -> Unit)? = null
 
         /** Told (on the main thread) when the user changed a field by hand; set by [DictationService]. */

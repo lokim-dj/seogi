@@ -167,7 +167,7 @@
     <!-- dictation: setting it up, one step a screen -->
     <string name="dict_step">%1$d / %2$d</string>
     <string name="dict_mic_title">마이크와 알림을\n허용해 주세요</string>
-    <string name="dict_mic_body">말한 것을 듣는 데 마이크를 씁니다. 듣는 동안에는 화면 위에 마이크 표시가 뜨고, 길게 말하면 알림 줄에도 잠깐 보여요.</string>
+    <string name="dict_mic_body">말한 것을 듣는 데 마이크를 씁니다. 접근성을 켜 두면 듣는 동안에만 마이크 표시가 뜨고, 복사만 쓰면 단추가 켜져 있다는 알림이 알림 줄에 늘 보여요.</string>
     <string name="dict_mic_action">허용하기</string>
     <string name="dict_overlay_title">다른 앱 위에\n단추를 띄울게요</string>
     <string name="dict_overlay_body">메시지 · 메모 · 메일 같은 다른 앱을 쓰는 중에도 둥근 서기 단추를 화면 가장자리에 띄웁니다. 손가락으로 끌어 옮길 수 있어요.</string>

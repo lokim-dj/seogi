@@ -113,7 +113,9 @@ start and tap to stop; the words go into the field that has the cursor.
 - No notification while the key waits, when accessibility is on: the
   accessibility service holds the key's service bound (Android keeps an
   accessibility service running) and shows the key as its own overlay
-  (`TYPE_ACCESSIBILITY_OVERLAY`). Only while the microphone is open is it a
+  (`TYPE_ACCESSIBILITY_OVERLAY`; that sits above the keyboard and the lock
+  screen, so the key keeps above the keyboard's top edge and never shows on
+  the lock screen). Only while the microphone is open is it a
   microphone foreground service, started from the key the user is touching:
   Android lets an app with a window on screen start one from behind another
   app. That notification has no buttons, so Android holds it back for ten

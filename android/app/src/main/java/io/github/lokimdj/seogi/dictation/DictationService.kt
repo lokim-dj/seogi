@@ -120,9 +120,11 @@ class DictationService : Service() {
     override fun onUnbind(intent: Intent?): Boolean {
         bound = false
         // Accessibility went off. Started as a foreground service as well, the
-        // key goes on that way; otherwise Android ends this service now and
-        // opening Seogi brings the key back, with its notification.
+        // key goes on that way, with that way's notification (hide and off);
+        // otherwise Android ends this service now and opening Seogi brings the
+        // key back, with its notification.
         refresh(atOnce = true)
+        if (foreground) updateNotification()
         return true
     }
 
@@ -225,6 +227,8 @@ class DictationService : Service() {
         // Put up again when the way changed: the accessibility overlay belongs to that service.
         if (view != null && viewWay != way) removeBubble()
         if (presence.shown) showBubble() else removeBubble()
+        // The keyboard came up, went or changed height: keep the key off it.
+        if (view != null && floor() != placedFloor) placeAt(DictationPrefs.place(this))
         if (follows != followsShown) {
             val first = followsShown == null
             followsShown = follows
@@ -283,16 +287,17 @@ class DictationService : Service() {
             PixelFormat.TRANSLUCENT,
         ).apply { gravity = Gravity.TOP or Gravity.START }
         params = p
+        viewWay = way
         placeAt(DictationPrefs.place(this))
         try {
             host.addView(v, p)
             view = v
             keyWm = host
-            viewWay = way
             if (steppedBack) v.stepBack(true, animate = false)
         } catch (e: Exception) {
             Log.w(TAG, "could not show the key", e)
             params = null
+            viewWay = null
         }
     }
 
@@ -324,10 +329,18 @@ class DictationService : Service() {
         return maxOf(least, g?.left ?: 0, g?.right ?: 0)
     }
 
+    /**
+     * The keyboard's top edge, when the key is the accessibility overlay: that
+     * sits above the keyboard, so it is kept out of the keyboard's way.
+     */
+    private fun floor(): Int? = if (viewWay == KeyKeeper.Way.ACCESSIBILITY) InsertService.keyboardTop else null
+    private var placedFloor: Int? = null
+
     private fun placeAt(place: BubblePlace) {
         val p = params ?: return
         val (w, h) = screen()
-        val (x, y) = place.toPixels(w, h, p.width, sideMargin())
+        placedFloor = floor()
+        val (x, y) = place.toPixels(w, h, p.width, sideMargin(), placedFloor)
         p.x = x
         p.y = y
         view?.let { try { (keyWm ?: wm).updateViewLayout(it, p) } catch (_: Exception) {} }
@@ -395,7 +408,7 @@ class DictationService : Service() {
                 val (w, h) = dragScreen
                 val m = dragMargin.coerceIn(0, ((w - p.width) / 2).coerceAtLeast(0))
                 p.x = (dragFromX + a.dx.toInt()).coerceIn(m, (w - p.width - m).coerceAtLeast(m))
-                p.y = (dragFromY + a.dy.toInt()).coerceIn(0, (h - p.height).coerceAtLeast(0))
+                p.y = BubblePlace.above((dragFromY + a.dy.toInt()).coerceIn(0, (h - p.height).coerceAtLeast(0)), p.height, floor())
                 view?.let { try { (keyWm ?: wm).updateViewLayout(it, p) } catch (_: Exception) {} }
             }
             BubbleGesture.Act.DragEnd -> {
@@ -630,7 +643,7 @@ class DictationService : Service() {
         private const val ACTION_SHOW = "io.github.lokimdj.seogi.dictation.SHOW"
         private const val ACTION_OFF = "io.github.lokimdj.seogi.dictation.OFF"
         /** Set on an intent sent with startForegroundService: the service must go into the foreground. */
-        private const val EXTRA_FOREGROUND = "io.github.lokimdj.seogi.dictation.FOREGROUND"
+        internal const val EXTRA_FOREGROUND = "io.github.lokimdj.seogi.dictation.FOREGROUND"
 
         /**
          * Turns the key on, or brings it back if Android stopped it. Call while
