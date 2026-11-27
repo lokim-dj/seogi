@@ -13,6 +13,8 @@
     <!-- Uploading to the user's own Google Drive. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Dictation (opt-in in Seogi's settings): the floating microphone key over other apps. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:name=".SeogiApp"
@@ -39,5 +41,33 @@
             android:name=".record.RecorderService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <!--
+            Dictation runs in its own process, so its native speech engine can
+            never take a meeting recording down with it.
+        -->
+        <service
+            android:name=".dictation.DictationService"
+            android:exported="false"
+            android:foregroundServiceType="microphone"
+            android:process=":dictation" />
+
+        <!--
+            Puts the spoken text into the field with the cursor. Switched on by
+            the user in Android's accessibility settings, after Seogi explains it.
+        -->
+        <service
+            android:name=".dictation.InsertService"
+            android:exported="true"
+            android:label="@string/a11y_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:process=":dictation">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/insert_service" />
+        </service>
     </application>
 </manifest>

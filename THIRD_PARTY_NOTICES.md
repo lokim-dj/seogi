@@ -48,6 +48,21 @@ SOFTWARE.
   `transcribe-cpp` 0.4.2 crate with one accessor added for Whisper's decode
   measures. Its license file is kept in that folder.
 
+## transcribe.cpp in the phone app
+
+- Project: <https://github.com/handy-computer/transcribe.cpp>
+- License: MIT, Copyright (c) 2026 The transcribe.cpp authors; it carries ggml
+  (MIT, Copyright (c) 2023-2026 The ggml authors), Silero VAD (MIT) and miniz
+  (MIT)
+- What Seogi uses: the Android app's dictation builds transcribe.cpp 0.4.2
+  from its source tarball (downloaded at build time, checked by SHA-256) into
+  `libseogi_asr.so`; `android/app/src/main/cpp/transcribe_jni.c` is Seogi's
+  own bridge to it. All four license texts ship in the app
+  (`res/raw/license_transcribe_cpp.txt`, shown under 오픈소스 라이선스).
+- The speech model (Qwen3-ASR 0.6B, Apache 2.0) is not part of the app; it is
+  downloaded on first use from the same Hugging Face repository and revision as
+  the desktop catalog.
+
 ## Libraries
 
 Seogi links many Rust crates and npm packages, each under its own license. The

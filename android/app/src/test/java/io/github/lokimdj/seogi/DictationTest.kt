@@ -1,0 +1,288 @@
+package io.github.lokimdj.seogi
+
+import io.github.lokimdj.seogi.dictation.BubbleGesture
+import io.github.lokimdj.seogi.dictation.BubbleGesture.Act
+import io.github.lokimdj.seogi.dictation.BubbleGesture.Mode
+import io.github.lokimdj.seogi.dictation.BubblePlace
+import io.github.lokimdj.seogi.dictation.DictationModel
+import io.github.lokimdj.seogi.dictation.Inserter
+import io.github.lokimdj.seogi.dictation.TextField
+import io.github.lokimdj.seogi.dictation.Loaded
+import io.github.lokimdj.seogi.dictation.SetupState
+import io.github.lokimdj.seogi.dictation.SetupStep
+import io.github.lokimdj.seogi.dictation.Speech
+import io.github.lokimdj.seogi.dictation.SpeechEngine
+import io.github.lokimdj.seogi.dictation.TextInsert
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.io.File
+
+class DictationTest {
+    private val rate = SpeechEngine.RATE
+
+    // --- sound in pieces, text joined ---
+
+    @Test fun shortSpeechIsOnePiece() {
+        val pcm = FloatArray(rate * 5) { 0.1f }
+        val pieces = Speech.pieces(pcm)
+        assertEquals(1, pieces.size)
+        assertEquals(pcm.size, pieces[0].size)
+    }
+
+    @Test fun longSpeechIsCutAtTheQuietPart() {
+        // 40 s of "speech" with a silent half second at 18 s.
+        val pcm = FloatArray(rate * 40) { 0.3f }
+        for (i in rate * 18 until rate * 18 + rate / 2) pcm[i] = 0f
+        val pieces = Speech.pieces(pcm)
+        assertEquals(2, pieces.size)
+        assertEquals(pcm.size, pieces.sumOf { it.size })
+        val cut = pieces[0].size
+        assertTrue("cut at ${cut.toDouble() / rate} s", cut in rate * 18..rate * 18 + rate / 2)
+        assertTrue(pieces.all { it.size <= Speech.MAX_PIECE_SAMPLES })
+    }
+
+    @Test fun twoMinutesStayUnderTheWindow() {
+        val pcm = FloatArray(Speech.MAX_SAMPLES) { if (it % 7 == 0) 0.5f else -0.2f }
+        val pieces = Speech.pieces(pcm)
+        assertEquals(pcm.size, pieces.sumOf { it.size })
+        assertTrue(pieces.all { it.size in 1..Speech.MAX_PIECE_SAMPLES })
+    }
+
+    @Test fun joinKeepsPunctuationAndDropsEmptyPieces() {
+        assertEquals("안녕하세요. 내일 세 시에 봬요!", Speech.join(listOf(" 안녕하세요. ", "", "내일 세 시에 봬요!")))
+        assertEquals("", Speech.join(listOf(" ", "")))
+    }
+
+    // --- putting text into a field ---
+
+    @Test fun insertAtTheCursorWithASpace() {
+        val m = TextInsert.merge("회의는 끝", 3, 3, "내일")
+        assertEquals("회의는 내일 끝", m.text)
+        assertEquals(6, m.cursor)
+    }
+
+    @Test fun insertIntoAnEmptyField() {
+        assertEquals(TextInsert.merge("", -1, -1, "안녕하세요.").text, "안녕하세요.")
+    }
+
+    @Test fun unknownCursorMeansTheEnd() {
+        val m = TextInsert.merge("메모", -1, -1, "추가")
+        assertEquals("메모 추가", m.text)
+        assertEquals(5, m.cursor)
+    }
+
+    @Test fun selectionIsReplaced() {
+        val m = TextInsert.merge("오늘 회의", 3, 5, "점심")
+        assertEquals("오늘 점심", m.text)
+        assertEquals(5, m.cursor)
+    }
+
+    @Test fun noExtraSpaceAfterASpaceOrBeforePunctuation() {
+        assertEquals("오늘 내일", TextInsert.merge("오늘 ", 3, 3, "내일").text)
+        assertEquals("오늘.", TextInsert.merge("오늘", 2, 2, ".").text)
+        assertEquals("첫 줄\n둘째", TextInsert.merge("첫 줄\n", 5, 5, "둘째").text)
+    }
+
+    @Test fun reversedOrOutOfRangeSelectionIsSafe() {
+        // Start after end: read as the same selection the right way round (the space is replaced).
+        assertEquals("가 나다", TextInsert.merge("가 다", 2, 1, "나").text)
+        assertEquals("abc 끝", TextInsert.merge("abc", 10, 20, "끝").text)
+    }
+
+    /** A field in another app that can refuse a whole new text, a paste, or both. */
+    private class FakeField(
+        override var text: String,
+        override val selectionStart: Int,
+        override val selectionEnd: Int = selectionStart,
+        override val editable: Boolean = true,
+        val takesText: Boolean = true,
+        val takesPaste: Boolean = true,
+    ) : TextField {
+        var cursorAt = -1
+        var pasted: String? = null
+        override fun setText(text: String): Boolean {
+            if (takesText) this.text = text
+            return takesText
+        }
+        override fun setCursor(at: Int) { cursorAt = at }
+        override fun paste(text: String): Boolean {
+            pasted = text
+            if (takesPaste) this.text = this.text.substring(0, selectionStart) + text + this.text.substring(selectionEnd)
+            return takesPaste
+        }
+    }
+
+    @Test fun textLandsAtTheCursorOfTheFocusedField() {
+        val f = FakeField("내일 보자", 2)
+        assertTrue(Inserter.insert(f, "아침에"))
+        assertEquals("내일 아침에 보자", f.text)
+        assertEquals(6, f.cursorAt)
+    }
+
+    @Test fun aFieldThatRefusesNewTextGetsAPaste() {
+        val f = FakeField("", 0, takesText = false)
+        assertTrue(Inserter.insert(f, "안녕하세요."))
+        assertEquals("안녕하세요.", f.pasted)
+        assertEquals("안녕하세요.", f.text)
+    }
+
+    @Test fun noFieldToTakeItMeansCopy() {
+        assertFalse(Inserter.insert(FakeField("글", 1, editable = false), "말"))
+        assertFalse(Inserter.insert(FakeField("글", 1, takesText = false, takesPaste = false), "말"))
+    }
+
+    // --- the key's place ---
+
+    @Test fun placeStaysOnScreenAndSurvivesTheFold() {
+        val p = BubblePlace(1f, 0.5f)
+        assertEquals(Pair(1000 - 100, 450), p.toPixels(1000, 1000, 100))
+        // Unfolded: wider screen, still on the right edge at the same height.
+        assertEquals(Pair(2000 - 100, 450), p.toPixels(2000, 1000, 100))
+    }
+
+    @Test fun dragSnapsToTheNearerSide() {
+        assertEquals(0f, BubblePlace.afterDrag(100, 450, 1000, 1000, 100).x)
+        val right = BubblePlace.afterDrag(700, 900, 1000, 1000, 100)
+        assertEquals(1f, right.x)
+        assertEquals(1f, right.y)
+    }
+
+    @Test fun placeReadsBackAndBadTextGivesTheDefault() {
+        assertEquals(BubblePlace(0f, 0.25f), BubblePlace.decode(BubblePlace(0f, 0.25f).encode()))
+        assertEquals(BubblePlace.Default, BubblePlace.decode(null))
+        assertEquals(BubblePlace.Default, BubblePlace.decode("x,y"))
+        assertEquals(BubblePlace(1f, 0f), BubblePlace.decode("3,-2"))
+    }
+
+    // --- what a touch means ---
+
+    @Test fun holdToTalk() {
+        val g = BubbleGesture(holdMs = 400, slop = 10f)
+        assertEquals(listOf(Act.Start), g.down(0, 50f, 50f, Mode.IDLE))
+        assertEquals(emptyList<Act>(), g.move(53f, 52f)) // a finger is never still
+        assertEquals(listOf(Act.Stop), g.up(1500))
+    }
+
+    @Test fun tapToStartTapToStop() {
+        val g = BubbleGesture(holdMs = 400, slop = 10f)
+        assertEquals(listOf(Act.Start), g.down(0, 50f, 50f, Mode.IDLE))
+        assertEquals(emptyList<Act>(), g.up(120))
+        assertEquals(emptyList<Act>(), g.down(3000, 50f, 50f, Mode.LISTENING))
+        assertEquals(emptyList<Act>(), g.move(80f, 80f)) // the stopping touch does not drag
+        assertEquals(listOf(Act.Stop), g.up(3100))
+    }
+
+    @Test fun dragThrowsAwayTheListeningItBegan() {
+        val g = BubbleGesture(holdMs = 400, slop = 10f)
+        g.down(0, 50f, 50f, Mode.IDLE)
+        assertEquals(listOf(Act.Cancel, Act.Move(0f, 40f)), g.move(50f, 90f))
+        assertEquals(listOf(Act.Move(0f, 60f)), g.move(50f, 110f))
+        assertEquals(listOf(Act.DragEnd), g.up(2000))
+    }
+
+    @Test fun whileWritingATouchOnlyDrags() {
+        val g = BubbleGesture(holdMs = 400, slop = 10f)
+        assertEquals(emptyList<Act>(), g.down(0, 50f, 50f, Mode.WORKING))
+        assertEquals(emptyList<Act>(), g.up(1000))
+        g.down(0, 50f, 50f, Mode.WORKING)
+        assertEquals(listOf(Act.Move(30f, 0f)), g.move(80f, 50f))
+        assertEquals(listOf(Act.DragEnd), g.up(500))
+    }
+
+    @Test fun aCancelledTouchDropsItsListening() {
+        val g = BubbleGesture()
+        g.down(0, 0f, 0f, Mode.IDLE)
+        assertEquals(listOf(Act.Cancel), g.cancel())
+    }
+
+    // --- the steps ---
+
+    @Test fun stepsComeInOrderAndSkipWhatIsDone() {
+        val none = SetupState(mic = false, notifications = true, overlay = false, accessibility = false, copyOnly = false, modelReady = false)
+        assertEquals(SetupStep.MIC, none.current())
+        assertEquals(listOf(SetupStep.MIC, SetupStep.OVERLAY, SetupStep.ACCESSIBILITY, SetupStep.MODEL), none.missing())
+        val noA11y = none.copy(mic = true, overlay = true)
+        assertEquals(SetupStep.ACCESSIBILITY, noA11y.current())
+        assertEquals(Pair(3, 4), noA11y.position(SetupStep.ACCESSIBILITY))
+        assertEquals(SetupStep.MODEL, noA11y.copy(copyOnly = true).current())
+        assertEquals(SetupStep.READY, noA11y.copy(accessibility = true, modelReady = true).current())
+    }
+
+    @Test fun cpuNeedsDotProductAndInt8Matrix() {
+        val good = "processor\t: 0\nFeatures\t: fp asimd evtstrm aes asimddp i8mm bf16\nprocessor\t: 1\nFeatures\t: fp asimd asimddp i8mm\n"
+        assertTrue(SpeechEngine.cpuSupported(good))
+        assertFalse(SpeechEngine.cpuSupported("Features\t: fp asimd asimddp\n"))
+        assertFalse(SpeechEngine.cpuSupported(good + "Features\t: fp asimd\n"))
+        assertFalse(SpeechEngine.cpuSupported(""))
+    }
+
+    // --- the model ---
+
+    /** The phone downloads exactly what the desktop catalog lists, so both read the same model. */
+    @Test fun modelMatchesTheDesktopCatalog() {
+        val catalog = File("../../src-tauri/src/catalog/catalog.json")
+        assertTrue("catalog at ${catalog.absolutePath}", catalog.exists())
+        val root = Json.parseToJsonElement(catalog.readText()).jsonObject
+        val models = root["models"]?.jsonArray ?: root.values.first { it is kotlinx.serialization.json.JsonArray }.jsonArray
+        val qwen = models.map { it.jsonObject }.first { it["id"]?.jsonPrimitive?.content == "Qwen3-ASR-0.6B" }
+        assertEquals(DictationModel.REPOSITORY, qwen["repository"]!!.jsonPrimitive.content)
+        assertEquals(DictationModel.REVISION, qwen["revision"]!!.jsonPrimitive.content)
+        val q8 = qwen["files"]!!.jsonObject["Q8_0"]!!.jsonObject
+        assertEquals(DictationModel.FILE_NAME, q8["filename"]!!.jsonPrimitive.content)
+        assertEquals(DictationModel.SIZE, q8["size"]!!.jsonPrimitive.long)
+        assertEquals(DictationModel.SHA256, q8["sha256"]!!.jsonPrimitive.content)
+        assertEquals(
+            "https://huggingface.co/${DictationModel.REPOSITORY}/resolve/${DictationModel.REVISION}/${DictationModel.FILE_NAME}",
+            DictationModel.URL,
+        )
+    }
+
+    // --- loaded once, let go when idle ---
+
+    private class Thing(val n: Int) : AutoCloseable {
+        var closed = false
+        override fun close() { closed = true }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun modelLoadsOnceAndIsLetGoWhenIdle() = runTest {
+        val opened = mutableListOf<Thing>()
+        val loaded = Loaded(backgroundScope, idleMs = 180_000) { Thing(opened.size).also { opened += it } }
+        loaded.warm()
+        assertEquals(1, loaded.use { it.n + 1 })
+        advanceTimeBy(170_000)
+        loaded.use { }
+        assertEquals("used again before the idle time: not reopened", 1, opened.size)
+        advanceTimeBy(179_000)
+        runCurrent()
+        assertTrue(loaded.isOpen)
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertFalse(loaded.isOpen)
+        assertTrue(opened[0].closed)
+        loaded.use { }
+        assertEquals(2, opened.size)
+        loaded.close()
+        assertTrue(opened[1].closed)
+    }
+
+    @Test fun aFailedOpenLeavesNothingHalfOpen() = runTest {
+        var tries = 0
+        val loaded = Loaded(backgroundScope, idleMs = 1000) { tries++; if (tries == 1) error("no memory") else Thing(tries) }
+        assertTrue(runCatching { loaded.warm() }.isFailure)
+        assertFalse(loaded.isOpen)
+        loaded.warm()
+        assertTrue(loaded.isOpen)
+    }
+}
