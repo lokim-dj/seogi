@@ -32,6 +32,8 @@ const screens = [
   "mic-idle",
   "mic-listening",
   "mic-working",
+  "mic-target",
+  "mic-target-over",
   "indicator-listening",
   "indicator-tidying",
   "indicator-note",

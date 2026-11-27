@@ -3003,6 +3003,9 @@ pub fn tray_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>
     let dictating = secretary
         .as_ref()
         .is_some_and(|s| s.config().dictation.enabled);
+    let key_wanted = secretary
+        .as_ref()
+        .is_some_and(|s| s.config().dictation.button);
     let item = |id: &str, korean: &str, english: &str| {
         MenuItem::with_id(app, id, say(app, korean, english), true, None::<&str>)
     };
@@ -3021,6 +3024,17 @@ pub fn tray_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>
         // Until the secretary is ready a click could not be saved.
         secretary.is_some(),
         dictating,
+        None::<&str>,
+    )?)?;
+    // The same choice as the settings' "떠 있는 마이크 단추"; the key only
+    // shows while voice typing is on, so the item waits for that too.
+    menu.append(&CheckMenuItem::with_id(
+        app,
+        "seogi_mic_key",
+        say(app, "마이크 단추 보이기", "Show microphone key"),
+        secretary.is_some() && dictating,
+        // Ticked only while a key is really on screen.
+        dictating && key_wanted,
         None::<&str>,
     )?)?;
     menu.append(&PredefinedMenuItem::separator(app)?)?;
@@ -3053,6 +3067,19 @@ pub fn tray_action(app: &AppHandle, id: &str) -> bool {
                 if let Err(e) = super::dictation::write(&app, wanted) {
                     warn!("Could not turn dictation on or off from the tray: {e}");
                     // The item ticked itself; show the state as it is.
+                    crate::tray::rebuild_tray_menu(&app);
+                }
+            });
+            true
+        }
+        "seogi_mic_key" => {
+            // The same choice as the settings' switch and the key's own
+            // "hide": the key, the tray and an open settings screen follow.
+            let app = app.clone();
+            std::thread::spawn(move || {
+                let wanted = !secretary.config().dictation.button;
+                if let Err(e) = super::dictation::show_key(&app, wanted, None) {
+                    warn!("Could not show or hide the microphone key from the tray: {e}");
                     crate::tray::rebuild_tray_menu(&app);
                 }
             });

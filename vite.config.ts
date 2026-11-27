@@ -27,6 +27,7 @@ export default defineConfig(async () => ({
         overlay: resolve(__dirname, "src/overlay/index.html"),
         seogiBanner: resolve(__dirname, "src/seogi/banner/index.html"),
         seogiMic: resolve(__dirname, "src/seogi/mic/index.html"),
+        seogiMicTarget: resolve(__dirname, "src/seogi/mic/target.html"),
       },
     },
   },

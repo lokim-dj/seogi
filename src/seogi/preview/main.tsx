@@ -6,7 +6,8 @@
 //   screen = home | home-going | home-going-long | home-many | minutes |
 //            recording | onboarding | settings | waiting | banner-starting |
 //            banner-ready | settings-dictation |
-//            mic-idle | mic-listening | mic-working |
+//            mic-idle | mic-listening | mic-working | mic-target |
+//            mic-target-over |
 //            indicator-listening | indicator-tidying | indicator-note |
 //            indicator-nowhere | card | card-empty | minutes-edited |
 //            minutes-editing | minutes-fixed | settings-vocabulary
@@ -1387,6 +1388,18 @@ async function show() {
   const root = ReactDOM.createRoot(
     document.getElementById("root") as HTMLElement,
   );
+  if (screen.startsWith("mic-target")) {
+    const { default: DropTarget } = await import("../mic/DropTarget");
+    document.body.style.background = "#d9dbdf";
+    if (screen === "mic-target-over")
+      document.documentElement.toggleAttribute("data-over", true);
+    root.render(
+      <div style={{ width: 72, height: 72, position: "relative" }}>
+        <DropTarget />
+      </div>,
+    );
+    return;
+  }
   if (screen.startsWith("mic-")) {
     await import("../i18n");
     await import("../seogi.css");

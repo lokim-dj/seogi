@@ -1026,6 +1026,7 @@ pub fn run(cli_args: CliArgs) {
             seogi::commands::seogi_forget_dictations,
             seogi::commands::seogi_download_dictation_model,
             seogi::commands::seogi_mic_menu,
+            seogi::commands::seogi_mic_drag,
             seogi::commands::seogi_open_typing_permission,
             seogi::commands::seogi_open_calendar_permission,
             seogi::commands::seogi_login_item,

@@ -1660,6 +1660,13 @@ async seogiMicMenu(hide: string, settings: string) : Promise<Result<null, string
 }
 },
 /**
+ * The floating key is being dragged: the system moves it, and the × to drop
+ * it on shows until the button is let go.
+ */
+async seogiMicDrag() : Promise<void> {
+    await TAURI_INVOKE("seogi_mic_drag");
+},
+/**
  * Opens the system's page where Seogi is allowed to type into other apps.
  * Only opens it: the user turns Seogi on there themselves.
  */

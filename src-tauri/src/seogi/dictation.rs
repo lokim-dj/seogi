@@ -315,6 +315,29 @@ pub fn write(app: &AppHandle, wanted: Dictation) -> Result<(), String> {
     Ok(())
 }
 
+/// Shows or hides the floating key from outside the settings screen: its own
+/// menu, dropping it on the × while dragging it, the tray. Saves the same
+/// choice as the settings' switch ([`write`]), and the tray and an open
+/// settings screen follow, whichever way it was changed. `at` is where the
+/// key should come back when shown again (the drop puts back where the drag
+/// began).
+pub fn show_key(app: &AppHandle, shown: bool, at: Option<Spot>) -> Result<(), String> {
+    let secretary = Secretary::of(app).ok_or("the app is still starting")?;
+    secretary
+        .update_dictation(|dictation| {
+            dictation.button = shown;
+            if at.is_some() {
+                dictation.button_at = at;
+            }
+        })
+        .map_err(|e| format!("{e:#}"))?;
+    let enabled = secretary.config().dictation.enabled;
+    super::mic_button::set_shown(app, enabled && shown);
+    crate::tray::rebuild_tray_menu(app);
+    let _ = super::app::DictationChanged {}.emit(app);
+    Ok(())
+}
+
 /// The engine's part of the choices, into its settings. The shortcut and
 /// the model go their own ways ([`set_shortcut`], [`choose_model`]): one is
 /// registered with the system, the other may need a download first.

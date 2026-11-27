@@ -1294,6 +1294,14 @@ pub fn seogi_mic_menu(app: AppHandle, hide: String, settings: String) -> Result<
     mic_button::show_menu(&app, &hide, &settings).map_err(text)
 }
 
+/// The floating key is being dragged: the system moves it, and the × to drop
+/// it on shows until the button is let go.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_mic_drag(app: AppHandle) {
+    mic_button::drag(&app);
+}
+
 /// Opens the system's page where Seogi is allowed to type into other apps.
 /// Only opens it: the user turns Seogi on there themselves.
 #[tauri::command]

@@ -1,14 +1,15 @@
 // The floating microphone key: Seogi's mark on an ink circle, above every
 // other app. A press starts listening, a second press ends it and the words
 // go where the cursor is. While it listens the mark's red dot blinks and a
-// red ring shows; while the words are being written down a faint dot
-// breathes. It can be dragged anywhere (the app remembers where), and a right
-// click offers to hide it or open the settings. It never takes the keyboard.
+// red ring shows; while the words are being written down a thin arc turns
+// inside the ring (held still when the system asks for less motion). It can
+// be dragged anywhere (the app remembers where); while it is dragged a × shows
+// at the bottom of the screen and dropping it there hides it. A right click
+// offers to hide it or open the settings. It never takes the keyboard.
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { platform } from "@tauri-apps/plugin-os";
 import { commands, events } from "@/bindings";
 import { Mark } from "../components/Mark";
@@ -80,8 +81,10 @@ export default function MicButton({
       Math.abs(event.screenY - start.y) > DRAG_PX;
     if (far) {
       start.dragged = true;
-      void getCurrentWindow()
-        .startDragging()
+      // The system drags the window; the app shows the × meanwhile and
+      // hides the key if it is let go there.
+      void commands
+        .seogiMicDrag()
         .catch((error: unknown) =>
           console.warn("The microphone key could not be dragged:", error),
         );
@@ -122,16 +125,12 @@ export default function MicButton({
         onPointerUp={onPointerUp}
         onContextMenu={onContextMenu}
       >
-        <Mark
-          size={22}
-          state={
-            state === "listening"
-              ? "rec"
-              : state === "working"
-                ? "busy"
-                : "idle"
-          }
-        />
+        <Mark size={22} state={state === "listening" ? "rec" : "idle"} />
+        {state === "working" ? (
+          <svg className="mic-arc" viewBox="0 0 32 32" aria-hidden="true">
+            <circle cx="16" cy="16" r="14" />
+          </svg>
+        ) : null}
       </button>
       <style>{MIC_CSS}</style>
     </div>
@@ -160,6 +159,7 @@ const MIC_CSS = `
   border-radius: 50%;
   border: 1px solid var(--edge);
   background: var(--ink);
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -173,5 +173,28 @@ const MIC_CSS = `
 .mic-key:focus { outline: none; }
 .mic-key.listening {
   border: 2px solid var(--red);
+}
+/* A quarter of a thin circle just inside the ring, turning once a second
+   while the words are being written down. */
+.mic-arc {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  animation: mic-arc-turn 1.1s linear infinite;
+}
+.mic-arc circle {
+  fill: none;
+  stroke: oklch(0.93 0.008 75 / 0.75);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 22 66;
+}
+@keyframes mic-arc-turn {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mic-arc { animation: none; }
 }
 `;
