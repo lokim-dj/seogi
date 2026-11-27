@@ -16,8 +16,10 @@ import android.view.accessibility.AccessibilityWindowInfo
  * settings: it finds the text field that has the cursor in the app in front
  * and puts the spoken text there. It also notices when a field takes the
  * cursor or the keyboard comes up, so the floating key shows only while the
- * user types ([Typing]); for that it looks at the kind of window and whether
- * the focused field takes text, never at what is written or shown. It keeps
+ * user types ([Typing]), and that a field was changed by hand, so the key
+ * steps back while the user types; for that it looks at the kind of window,
+ * whether the focused field takes text and that a field changed, never at
+ * what is written or shown. It keeps
  * nothing and sends nothing. Runs in the `:dictation` process beside
  * [DictationService].
  */
