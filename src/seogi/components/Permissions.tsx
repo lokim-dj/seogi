@@ -1,8 +1,8 @@
 // What the computer has to allow before Seogi can do its work, one row
 // each: what it is for, whether it is allowed, and the one button that
-// allows it. The first-run screen shows it so a new user can allow
-// everything in one place; Settings shows the same rows for later. Nothing
-// here opens a window by itself: every system question comes from a press.
+// allows it. Settings shows every row; the first-run steps show a few rows
+// each (`only`), under their own heading. Nothing here opens a window by
+// itself: every system question comes from a press.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -16,13 +16,67 @@ import { commands } from "@/bindings";
 import { NS } from "../i18n";
 import { useSeogi } from "../store";
 
-type Allowed = "checking" | "yes" | "no";
+export type Allowed = "checking" | "yes" | "no";
 
 /** How often the rows look again while something still needs allowing:
  *  the user allows it in System Settings, and the row changes by itself. */
 const LOOK_EVERY_MS = 2000;
 
-export default function Permissions({ firstRun }: { firstRun: boolean }) {
+/** Whether Seogi may type into other apps (macOS's Accessibility), looked
+ *  at again while it is not allowed, so it changes by itself once the user
+ *  allows it in System Settings. Elsewhere it stays "checking". */
+export function useTypingPermission(mac: boolean): Allowed {
+  const [typing, setTyping] = useState<Allowed>("checking");
+  const looking = useRef(false);
+  const before = useRef<Allowed>("checking");
+
+  const look = useCallback(async () => {
+    if (!mac || looking.current) return;
+    looking.current = true;
+    try {
+      const typed = await checkAccessibilityPermission().catch(() => false);
+      setTyping(typed ? "yes" : "no");
+      // Just allowed: the dictation status starts dictation listening
+      // (asked once, not on every look; it does more work).
+      if (typed && before.current === "no") {
+        void commands.seogiDictationStatus();
+      }
+      before.current = typed ? "yes" : "no";
+    } finally {
+      looking.current = false;
+    }
+  }, [mac]);
+
+  useEffect(() => {
+    void look();
+  }, [look]);
+
+  useEffect(() => {
+    if (typing !== "no") return;
+    const timer = window.setInterval(() => void look(), LOOK_EVERY_MS);
+    return () => window.clearInterval(timer);
+  }, [typing, look]);
+
+  return typing;
+}
+
+/** The rows this component can show. */
+export type PermissionRow =
+  | "microphone"
+  | "typing"
+  | "calendar"
+  | "notify"
+  | "documents";
+
+export default function Permissions({
+  firstRun,
+  only,
+}: {
+  firstRun: boolean;
+  /** Only these rows, without the heading: the first run's steps give
+   *  their own. All rows (and the heading) when left out. */
+  only?: PermissionRow[];
+}) {
   const { t } = useTranslation(NS);
   const os = platform();
   const mac = os === "macos";
@@ -35,31 +89,20 @@ export default function Permissions({ firstRun }: { firstRun: boolean }) {
   );
   const [microphone, setMicrophone] = useState<Allowed>("checking");
   const [micAsked, setMicAsked] = useState(false);
-  const [typing, setTyping] = useState<Allowed>("checking");
+  const typing = useTypingPermission(mac);
   const [calendar, setCalendar] = useState("");
   const [notified, setNotified] = useState<"no" | "sent" | "failed">("no");
   const [calendarTrouble, setCalendarTrouble] = useState(false);
   // One look at a time: a slow answer is not asked again on top of itself.
   const looking = useRef(false);
-  const typingBefore = useRef<Allowed>("checking");
 
   const look = useCallback(async () => {
     if (looking.current) return;
     looking.current = true;
     try {
       if (mac) {
-        const [mic, typed] = await Promise.all([
-          checkMicrophonePermission().catch(() => false),
-          checkAccessibilityPermission().catch(() => false),
-        ]);
+        const mic = await checkMicrophonePermission().catch(() => false);
         setMicrophone(mic ? "yes" : "no");
-        setTyping(typed ? "yes" : "no");
-        // Just allowed: the dictation status starts dictation listening
-        // (asked once, not on every look; it does more work).
-        if (typed && typingBefore.current === "no") {
-          void commands.seogiDictationStatus();
-        }
-        typingBefore.current = typed ? "yes" : "no";
         setCalendar(await commands.seogiMacCalendarAccess());
       } else if (windows) {
         const status = await commands.getWindowsMicrophonePermissionStatus();
@@ -86,6 +129,7 @@ export default function Permissions({ firstRun }: { firstRun: boolean }) {
   }, [waiting, look]);
 
   if (!mac && !windows) return null;
+  const shows = (row: PermissionRow) => !only || only.includes(row);
 
   const askMicrophone = async () => {
     // macOS asks once; after that only System Settings can allow it.
@@ -162,129 +206,128 @@ export default function Permissions({ firstRun }: { firstRun: boolean }) {
     calendar === "" ? "checking" : calendar === "granted" ? "yes" : "no";
   const calendarBlocked = calendar === "denied" || calendar === "restricted";
 
+  const rows = (
+    <>
+      {shows("microphone") ? (
+        <div className="srow">
+          <div>
+            {name(t("permissions.microphone"), true)}
+            <div className="h">{t("permissions.microphoneFor")}</div>
+          </div>
+          <div className="v">
+            {state(microphone, true)}
+            {microphone === "no" ? (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void askMicrophone()}
+              >
+                {mac && !micAsked ? t("permissions.allow") : openLabel}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {mac && shows("typing") ? (
+        <div className="srow">
+          <div>
+            {name(t("permissions.typing"), "typing")}
+            <div className="h">{t("permissions.typingFor")}</div>
+          </div>
+          <div className="v">
+            {state(typing, dictating)}
+            {typing === "no" ? (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void commands.seogiOpenTypingPermission()}
+              >
+                {openLabel}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {mac && shows("calendar") && calendar !== "unsupported" ? (
+        <div className="srow">
+          <div>
+            {name(t("permissions.calendar"), false)}
+            <div className="h">
+              {t("permissions.calendarFor")}
+              {calendarTrouble ? (
+                <span className="block rt">{t("permissions.askFailed")}</span>
+              ) : calendarBlocked ? (
+                <span className="block">
+                  {t("permissions.calendarBlocked")}
+                </span>
+              ) : null}
+            </div>
+          </div>
+          <div className="v">
+            {state(
+              calendarAllowed,
+              false,
+              calendarBlocked ? t("permissions.off") : undefined,
+            )}
+            {calendar === "not_determined" ? (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void askCalendar()}
+              >
+                {t("permissions.allow")}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {mac && shows("notify") ? (
+        <div className="srow">
+          <div>
+            {name(t("permissions.notify"), false)}
+            <div className="h">
+              {t("permissions.notifyFor")}
+              {notified === "sent" ? (
+                <span className="block">{t("permissions.notifySent")}</span>
+              ) : notified === "failed" ? (
+                <span className="block rt">{t("permissions.askFailed")}</span>
+              ) : null}
+            </div>
+          </div>
+          <div className="v">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void tryNotification()}
+            >
+              {t("permissions.notifyTry")}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {mac && firstRun && shows("documents") ? (
+        <div className="srow">
+          <div>
+            <div className="l">{t("permissions.documents")}</div>
+            <div className="h">{t("permissions.documentsFor")}</div>
+          </div>
+          <div className="v" />
+        </div>
+      ) : null}
+    </>
+  );
+
+  if (only) return <div>{rows}</div>;
   return (
     <section aria-labelledby="permissions-title">
       <h2 id="permissions-title" className="set-h">
         {t("permissions.title")}
       </h2>
-      {firstRun ? (
-        <p className="m-0 mb-1 text-[13px] t3">{t("permissions.lead")}</p>
-      ) : null}
-
-      <div className="srow">
-        <div>
-          {name(t("permissions.microphone"), true)}
-          <div className="h">{t("permissions.microphoneFor")}</div>
-        </div>
-        <div className="v">
-          {state(microphone, true)}
-          {microphone === "no" ? (
-            <button
-              type="button"
-              className="btn"
-              onClick={() => void askMicrophone()}
-            >
-              {mac && !micAsked ? t("permissions.allow") : openLabel}
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      {mac ? (
-        <>
-          <div className="srow">
-            <div>
-              {name(t("permissions.typing"), "typing")}
-              <div className="h">{t("permissions.typingFor")}</div>
-            </div>
-            <div className="v">
-              {state(typing, dictating)}
-              {typing === "no" ? (
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => void commands.seogiOpenTypingPermission()}
-                >
-                  {openLabel}
-                </button>
-              ) : null}
-            </div>
-          </div>
-
-          {calendar !== "unsupported" ? (
-            <div className="srow">
-              <div>
-                {name(t("permissions.calendar"), false)}
-                <div className="h">
-                  {t("permissions.calendarFor")}
-                  {calendarTrouble ? (
-                    <span className="block rt">
-                      {t("permissions.askFailed")}
-                    </span>
-                  ) : calendarBlocked ? (
-                    <span className="block">
-                      {t("permissions.calendarBlocked")}
-                    </span>
-                  ) : calendar === "granted" && firstRun ? (
-                    <span className="block">
-                      {t("permissions.calendarPick")}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              <div className="v">
-                {state(
-                  calendarAllowed,
-                  false,
-                  calendarBlocked ? t("permissions.off") : undefined,
-                )}
-                {calendar === "not_determined" ? (
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => void askCalendar()}
-                  >
-                    {t("permissions.allow")}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-
-          <div className="srow">
-            <div>
-              {name(t("permissions.notify"), false)}
-              <div className="h">
-                {t("permissions.notifyFor")}
-                {notified === "sent" ? (
-                  <span className="block">{t("permissions.notifySent")}</span>
-                ) : notified === "failed" ? (
-                  <span className="block rt">{t("permissions.askFailed")}</span>
-                ) : null}
-              </div>
-            </div>
-            <div className="v">
-              <button
-                type="button"
-                className="btn"
-                onClick={() => void tryNotification()}
-              >
-                {t("permissions.notifyTry")}
-              </button>
-            </div>
-          </div>
-
-          {firstRun ? (
-            <div className="srow">
-              <div>
-                <div className="l">{t("permissions.documents")}</div>
-                <div className="h">{t("permissions.documentsFor")}</div>
-              </div>
-              <div className="v" />
-            </div>
-          ) : null}
-        </>
-      ) : null}
+      {rows}
     </section>
   );
 }

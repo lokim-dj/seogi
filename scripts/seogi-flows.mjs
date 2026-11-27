@@ -52,10 +52,26 @@ const expect = (ok, what) => {
   if (!ok) throw new Error(what);
 };
 
+/** Walks the first run forward to step 3 (있으면 좋은 것). */
+const toNiceToHave = async (page) => {
+  for (let i = 0; i < 2; i += 1) {
+    await page.getByRole("button", { name: "다음", exact: true }).click();
+    await page.waitForTimeout(150);
+  }
+  await page
+    .getByRole("heading", { name: "있으면 더 편한 것들" })
+    .waitFor({ timeout: 3000 });
+};
+
 await flow(
   "first run: start saves the choice and watches the folder",
   "onboarding",
   async (page, called) => {
+    expect(
+      (await page.getByRole("button", { name: "서기 시작하기" }).count()) === 0,
+      "the first step can already start",
+    );
+    await toNiceToHave(page);
     await page.getByRole("button", { name: "서기 시작하기" }).click();
     await page
       .getByRole("region", { name: "회의함" })
@@ -81,6 +97,7 @@ await flow(
   "first run: making the folder in the chosen Drive",
   "onboarding",
   async (page, called) => {
+    await toNiceToHave(page);
     await page
       .getByRole("button", { name: "이 드라이브에 녹음함 만들기" })
       .click();
@@ -614,6 +631,8 @@ await flow(
   "first run: a calendar pasted just before start is kept",
   "onboarding",
   async (page, called) => {
+    await toNiceToHave(page);
+    await page.getByRole("radio", { name: "주소로 넣기" }).click();
     await page
       .getByRole("textbox", { name: "구글 캘린더 비공개 주소" })
       .fill("https://calendar.example/private-3/basic.ics");
@@ -629,6 +648,144 @@ await flow(
       ),
       "the calendar address was lost",
     );
+  },
+);
+
+await flow(
+  "first run: deciding later goes on to the permissions and keeps the way",
+  "onboarding",
+  async (page, called) => {
+    await page.getByRole("radio", { name: "내 컴퓨터" }).check();
+    await page.getByRole("button", { name: "나중에 정하기" }).click();
+    await page
+      .getByRole("heading", { name: "먼저 이것만 허락해 주세요" })
+      .waitFor({ timeout: 3000 });
+    expect(
+      (await page.getByText("회의를 녹음하거나 말로 입력할 때 써요.").count()) >
+        0,
+      "deciding later skipped the microphone",
+    );
+    expect(
+      !(await called("seogi_set_config")),
+      "deciding later saved before the last step",
+    );
+    await page.getByRole("button", { name: "다음", exact: true }).click();
+    await page.getByRole("button", { name: "서기 시작하기" }).click();
+    await page
+      .getByRole("region", { name: "회의함" })
+      .waitFor({ timeout: 5000 });
+    expect(
+      await called(
+        "seogi_set_config",
+        (a) =>
+          a.config.set_up === true && a.config.summary.kind === "claude_cli",
+      ),
+      "the way of writing the minutes did not stay as it was",
+    );
+  },
+);
+
+await flow(
+  "first run: going back a step keeps what was chosen",
+  "onboarding",
+  async (page) => {
+    await page.getByRole("radio", { name: "내 컴퓨터" }).check();
+    await toNiceToHave(page);
+    await page.getByRole("radio", { name: "주소로 넣기" }).click();
+    const field = page.getByRole("textbox", {
+      name: "구글 캘린더 비공개 주소",
+    });
+    await field.fill("https://calendar.example/private-4/basic.ics");
+    await page.getByRole("button", { name: "이전" }).click();
+    await page.getByRole("button", { name: "이전" }).click();
+    expect(
+      await page.getByRole("radio", { name: "내 컴퓨터" }).isChecked(),
+      "the way of writing the minutes was forgotten",
+    );
+    await toNiceToHave(page);
+    expect(
+      (await field.inputValue()) ===
+        "https://calendar.example/private-4/basic.ics",
+      "the calendar address was forgotten",
+    );
+  },
+);
+
+await flow(
+  "first run: skipping step 3 keeps the choice and connects nothing",
+  "onboarding",
+  async (page, called) => {
+    await toNiceToHave(page);
+    await page.getByRole("radio", { name: "주소로 넣기" }).click();
+    await page
+      .getByRole("textbox", { name: "구글 캘린더 비공개 주소" })
+      .fill("https://calendar.example/private-5/basic.ics");
+    await page.getByRole("button", { name: "건너뛰고 시작하기" }).click();
+    await page
+      .getByRole("region", { name: "회의함" })
+      .waitFor({ timeout: 5000 });
+    expect(
+      await called(
+        "seogi_set_config",
+        (a) =>
+          a.config.set_up === true && a.config.summary.kind === "claude_cli",
+      ),
+      "the chosen way of writing the minutes was not saved",
+    );
+    expect(
+      !(await called("seogi_set_config", (a) =>
+        a.config.calendar_urls.includes(
+          "https://calendar.example/private-5/basic.ics",
+        ),
+      )),
+      "a skipped calendar address was saved",
+    );
+    expect(
+      !(await called("seogi_watch_folder")),
+      "a skipped folder was watched",
+    );
+  },
+);
+
+await flow(
+  "first run: the Mac's Calendar is the first choice and asks the Mac",
+  "onboarding",
+  async (page, called) => {
+    await toNiceToHave(page);
+    expect(
+      await page.getByRole("radio", { name: "맥 캘린더" }).isChecked(),
+      "the Mac's Calendar is not the first choice",
+    );
+    expect(
+      (await page
+        .getByRole("textbox", { name: "구글 캘린더 비공개 주소" })
+        .count()) === 0,
+      "the address field shows without '주소로 넣기'",
+    );
+    await page
+      .getByRole("table", { name: "일정과 폰 녹음 연결" })
+      .getByRole("button", { name: "허락하기" })
+      .click();
+    await page.waitForTimeout(300);
+    expect(
+      await called("seogi_mac_calendar_request"),
+      "the Mac was not asked for the calendar",
+    );
+  },
+);
+
+await flow(
+  "first run on Windows: the calendar is an address",
+  "onboarding&os=windows",
+  async (page) => {
+    await toNiceToHave(page);
+    expect(
+      (await page.getByRole("radio", { name: "맥 캘린더" }).count()) === 0,
+      "Windows is offered the Mac's Calendar",
+    );
+    await page
+      .getByRole("textbox", { name: "구글 캘린더 비공개 주소" })
+      .waitFor({ timeout: 2000 });
   },
 );
 

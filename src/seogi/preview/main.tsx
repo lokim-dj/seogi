@@ -12,6 +12,9 @@
 //   subscription tools stand (settings, onboarding).
 //   &summary=key starts on '내 API 키' (Anthropic); &key=anthropic has its
 //   key saved.
+//   &os=windows shows the screens as on Windows (no Mac Calendar, no
+//   macOS permission rows).
+//   &step=2 or &step=3 opens the first-run screen on that step.
 //   card opens the one-page summary of the made-up consultation; card-empty
 //   the same meeting with no decisions, no numbers, nothing to check and a
 //   long title. What the card's save keys would write is kept in
@@ -594,18 +597,30 @@ const templates = [
   memo,
 ] as unknown as Template[];
 
+const windows =
+  new URLSearchParams(window.location.search).get("os") === "windows";
 mockWindows("main");
-mockConvertFileSrc("macos");
+mockConvertFileSrc(windows ? "windows" : "macos");
 Object.assign(window, {
-  __TAURI_OS_PLUGIN_INTERNALS__: {
-    platform: "macos",
-    os_type: "macos",
-    family: "unix",
-    arch: "aarch64",
-    eol: "\n",
-    version: "15.0.0",
-    exe_extension: "",
-  },
+  __TAURI_OS_PLUGIN_INTERNALS__: windows
+    ? {
+        platform: "windows",
+        os_type: "windows",
+        family: "windows",
+        arch: "x86_64",
+        eol: "\r\n",
+        version: "10.0.26100",
+        exe_extension: "exe",
+      }
+    : {
+        platform: "macos",
+        os_type: "macos",
+        family: "unix",
+        arch: "aarch64",
+        eol: "\n",
+        version: "15.0.0",
+        exe_extension: "",
+      },
 });
 
 // Where the two subscription tools stand: `&claude=missing&codex=signed_in`
@@ -935,6 +950,14 @@ mockIPC(
         return null;
       case "seogi_try_notification":
         return null;
+      case "get_windows_microphone_permission_status":
+        return {
+          supported: true,
+          app_access: "allowed",
+          desktop_app_access: "allowed",
+          device_access: "allowed",
+          overall_access: micAllowed ? "allowed" : "denied",
+        };
       case "seogi_check_calendar": {
         const source = String(args.source ?? "").trim();
         const good = source.endsWith(".ics");
@@ -1109,6 +1132,19 @@ async function show() {
         const key = document.querySelector<HTMLElement>("[data-card-open]");
         if (!key) return;
         window.clearInterval(press);
+        key.click();
+      }, 50);
+    }
+    if (screen === "onboarding") {
+      // `&step=2` or `&step=3`: press "다음" that many times less one.
+      let presses = Number(query.get("step") ?? 1) - 1;
+      const press = window.setInterval(() => {
+        const key = document.querySelector<HTMLElement>("[data-step-next]");
+        if (presses <= 0 || !key) {
+          if (presses <= 0) window.clearInterval(press);
+          return;
+        }
+        presses -= 1;
         key.click();
       }, 50);
     }

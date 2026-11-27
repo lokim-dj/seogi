@@ -507,6 +507,12 @@ const ko = {
   },
   onboarding: {
     once: "처음 한 번만 정하면 됩니다. 나중에 설정에서 바꿀 수 있어요.",
+    steps: "처음 설정 단계",
+    step: {
+      how: "정리 방법",
+      needed: "꼭 필요한 허락",
+      nice: "있으면 좋은 것",
+    },
     title: "회의록 정리를 어디에 맡길까요?",
     lead: "녹음을 글로 받아쓰는 일은 늘 이 컴퓨터 안에서 합니다. 받아쓴 글을 회의록으로 정리하는 방법만 골라 주세요.",
     local: "내 컴퓨터",
@@ -548,8 +554,17 @@ const ko = {
     keySaved: "키가 저장되어 있습니다.",
     geminiWarn:
       "Gemini 무료 키는 보낸 글이 학습에 쓰일 수 있습니다. 고객 이야기가 든 회의에는 권하지 않습니다.",
+    neededTitle: "먼저 이것만 허락해 주세요",
+    neededLeadMic:
+      "서기가 녹음하려면 마이크 허락이 필요해요. 지금 하지 않아도 시작할 수 있고, 설정에서 언제든 다시 볼 수 있어요.",
+    niceTitle: "있으면 더 편한 것들",
+    niceLead:
+      "지금 하지 않아도 돼요. 건너뛴 것은 설정에서 언제든 할 수 있어요.",
     links: "일정과 폰 녹음 연결",
     calendar: "캘린더",
+    calendarWay: "일정을 읽어 올 곳",
+    calendarMac: "맥 캘린더",
+    calendarAddress: "주소로 넣기",
     calendarField: "구글 캘린더 비공개 주소",
     calendarHow: "주소 찾는 법",
     calendarHowText:
@@ -576,7 +591,8 @@ const ko = {
     inboxNoDrive:
       "이 컴퓨터에서 구글 드라이브를 찾지 못했습니다. 홈 폴더의 녹음함을 쓰거나 다른 폴더를 고르세요.",
     inboxNew: "폴더를 새로 만들어요",
-    inboxNewHint: "아직 없는 폴더입니다. 시작하기를 눌러도 만들어집니다.",
+    inboxNewHint:
+      "아직 없는 폴더입니다. '서기 시작하기'를 눌러도 만들어집니다.",
     speech: "받아쓰기",
     speechHint:
       "회의 받아쓰기 모델, 말한 사람을 나누는 모델, 말로 입력 모델을 한 번 내려받습니다(모두 약 3.2 GB).",
@@ -597,7 +613,15 @@ const ko = {
       "어느 앱에서든 {{keys}} 키를 누르고 말하면 글자가 들어가요. 설정에서 끌 수 있어요.",
     dictationKeyTrouble:
       "{{keys}} 키를 다른 프로그램이 쓰고 있어 등록하지 못했어요. 설정 › 말로 입력에서 다른 키를 고를 수 있어요.",
+    typingHint:
+      "커서 자리에 글자를 넣으려면 시스템 설정 › 개인정보 보호 및 보안 › 손쉬운 사용에서 '서기'를 켜 주세요. 켜면 여기가 저절로 바뀌어요.",
+    typingOk: "글자 넣기 허락됨",
+    typingNo: "손쉬운 사용 허락 필요",
+    atLoginLabel: "켜질 때",
     later: "나중에 정하기",
+    back: "이전",
+    next: "다음",
+    skip: "건너뛰고 시작하기",
     start: "서기 시작하기",
   },
   signIn: {
