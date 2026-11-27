@@ -66,6 +66,9 @@ const NOTICE_DISPLAY: Record<NoticeCode, NoticeDisplay> = {
   CalendarPermissionLost: {
     title: "errors.calendarPermissionLostTitle",
   },
+  CalendarUnreadable: {
+    title: "errors.calendarUnreadableTitle",
+  },
 };
 
 export const noticeDisplay = (code: NoticeCode) => NOTICE_DISPLAY[code];

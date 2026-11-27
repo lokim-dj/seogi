@@ -42,6 +42,12 @@ fn main() {
         std::process::exit(seogi_lib::seogi::diarize::run_worker());
     }
 
+    // Calendar worker: one read of the Calendar app over a fresh connection,
+    // for when the app's own has gone stale.
+    if seogi_lib::seogi::mac_calendar::is_worker_invocation() {
+        std::process::exit(seogi_lib::seogi::mac_calendar::run_worker());
+    }
+
     let cli_args = CliArgs::parse();
     seogi_lib::run(cli_args)
 }

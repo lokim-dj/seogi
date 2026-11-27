@@ -932,6 +932,7 @@
   "errors": {
     "loadDirectory": "เกิดข้อผิดพลาดในการโหลดโฟลเดอร์: {{error}}",
     "calendarPermissionLostTitle": "Allow Seogi again in Calendars to read your events",
+    "calendarUnreadableTitle": "Calendar cannot be read, so no start reminders · Restart Seogi",
     "typingPermissionLostTitle": "Allow Seogi again in Accessibility to use dictation",
     "micPermissionDeniedTitle": "การเข้าถึงไมโครโฟนถูกปฏิเสธ",
     "micPermissionDenied": {

@@ -791,11 +791,20 @@ pub async fn seogi_mac_calendar_request() -> Result<String, String> {
     off_screen(move || mac_calendar::request().map(str::to_string).map_err(text)).await
 }
 
-/// The calendars in macOS's Calendar app.
+/// The calendars in macOS's Calendar app. The error is `mac_unreadable`
+/// when the Calendar app has accounts but none of their calendars came
+/// back (restarting Seogi reads them again); an empty list means it has no
+/// account at all.
 #[tauri::command]
 #[specta::specta]
 pub async fn seogi_mac_calendars() -> Result<Vec<MacCalendar>, String> {
-    off_screen(move || mac_calendar::calendars().map_err(text)).await
+    off_screen(move || {
+        mac_calendar::calendars().map_err(|e| match mac_calendar::unread(&e) {
+            Some(why @ mac_calendar::Unread::Empty) => why.reason().to_string(),
+            _ => text(e),
+        })
+    })
+    .await
 }
 
 /// Moves a meeting's folder to the system's trash (it can be brought back

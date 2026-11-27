@@ -104,6 +104,8 @@ export default function Settings() {
   });
   const [macAccess, setMacAccess] = useState("");
   const [macCalendars, setMacCalendars] = useState<MacCalendar[]>([]);
+  // The Calendar app has accounts but gave no calendars: not "add one".
+  const [macUnreadable, setMacUnreadable] = useState(false);
   const [asking, setAsking] = useState(false);
   const [microphones, setMicrophones] = useState<Microphone[]>([]);
   // Whether Seogi opens when the user logs in: what the setting wants, and
@@ -177,6 +179,9 @@ export default function Settings() {
   const listMac = async () => {
     const result = await commands.seogiMacCalendars();
     if (result.status === "ok") setMacCalendars(result.data);
+    setMacUnreadable(
+      result.status === "error" && result.error === "mac_unreadable",
+    );
   };
   useEffect(() => {
     if (!mac) return;
@@ -1161,7 +1166,16 @@ export default function Settings() {
                               {describe(calendars.mac)}
                             </p>
                           ) : null}
-                          {macCalendars.length === 0 ? (
+                          {macCalendars.length === 0 && macUnreadable ? (
+                            // Said once: the read status above may already
+                            // say the same for chosen calendars.
+                            calendars.mac?.reason === "mac_unreadable" &&
+                            macChosen ? null : (
+                              <p className="m-0 rt">
+                                {t("settings.macUnreadable")}
+                              </p>
+                            )
+                          ) : macCalendars.length === 0 ? (
                             <p className="m-0 t3">{t("settings.macNone")}</p>
                           ) : (
                             <div className="grid gap-1">

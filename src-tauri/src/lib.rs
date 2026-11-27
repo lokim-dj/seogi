@@ -397,6 +397,17 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                             let _ = seogi::commands::seogi_open_calendar_permission();
                         }
                     }
+                    // EventKit's connection in this process went stale; a
+                    // new process reads the calendars again. Never in the
+                    // middle of a recording: the window says why instead.
+                    Some(n) if n.code == notices::NoticeCode::CalendarUnreadable => {
+                        let recording = app
+                            .try_state::<Arc<seogi::app::Secretary>>()
+                            .is_some_and(|secretary| secretary.is_recording());
+                        if !recording {
+                            app.restart();
+                        }
+                    }
                     _ => {}
                 }
                 show_main_window(app);
