@@ -12,6 +12,7 @@ pub mod audio_in;
 pub mod banner;
 pub mod calendar;
 pub mod chunks;
+pub mod claims;
 pub mod cli;
 pub mod commands;
 pub mod config;
