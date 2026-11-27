@@ -6,7 +6,11 @@
 //!
 //! Accepted forms:
 //! - a text file: one term per line (or several separated by commas), `#`
-//!   starts a comment, and `틀린 말 => 바른 말` is a correction;
+//!   starts a comment, and `틀린 말 => 바른 말` is a correction (a way the
+//!   speech model mishears the word). A correction added from a meeting
+//!   carries when and where in its comment,
+//!   `틀린 말 => 바른 말  # 2026-11-27 「회의 제목」`: only a comment, so
+//!   every version of the app reads the file the same;
 //! - a JSON file: a list of terms, or of entries like
 //!   `{"term": "걸레받이", "category": "용어", "aliases": [...],
 //!   "common_mishearings": [...], "freq": 12}`, bare or under an `entries` /
@@ -18,7 +22,9 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use specta::Type;
 
 /// What a new user's vocabulary file starts as: generic interior terms and a
 /// sample correction, so the format explains itself.
@@ -75,6 +81,16 @@ pub struct Entry {
 /// A change the vocabulary made to transcribed text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Correction {
+    pub from: String,
+    pub to: String,
+}
+
+/// One place a correction applies: `text[start..end]` is `from`, to be
+/// read as `to`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
     pub from: String,
     pub to: String,
 }
@@ -391,6 +407,30 @@ impl Vocabulary {
 
     /// Applies the corrections to transcribed text, and says what it changed,
     /// once for every place.
+    pub fn correct(&self, text: &str) -> (String, Vec<Correction>) {
+        let spans = self.spans(text);
+        let mut out = String::with_capacity(text.len());
+        let mut from = 0;
+        for span in &spans {
+            out.push_str(&text[from..span.start]);
+            out.push_str(&span.to);
+            from = span.end;
+        }
+        out.push_str(&text[from..]);
+        let made = spans
+            .into_iter()
+            .map(|span| Correction {
+                from: span.from,
+                to: span.to,
+            })
+            .collect();
+        (out, made)
+    }
+
+    /// Where the corrections apply in `text`, in order and never
+    /// overlapping, as byte ranges of `text` itself: a longer wrong form is
+    /// placed before a shorter one inside it, and what is put in is never
+    /// looked at again.
     ///
     /// A correction must never turn a real word into a wrong one, so a wrong
     /// form is replaced only:
@@ -400,48 +440,56 @@ impl Vocabulary {
     /// - when the word it starts is not a longer term the vocabulary knows;
     /// - and, for a wrong form of two letters, when the word ends there or
     ///   goes on with particles only.
-    pub fn correct(&self, text: &str) -> (String, Vec<Correction>) {
-        let mut corrected = text.to_string();
-        let mut made: Vec<Correction> = Vec::new();
+    pub fn spans(&self, text: &str) -> Vec<Span> {
+        let mut spans: Vec<Span> = Vec::new();
         for (wrong, right) in &self.corrections {
-            if !corrected.contains(wrong.as_str()) {
-                continue;
-            }
             let short = wrong.chars().count() <= 2;
-            let mut out = String::with_capacity(corrected.len());
-            let mut rest = corrected.as_str();
-            let mut changed = false;
-            while let Some(at) = rest.find(wrong.as_str()) {
-                let before = out.chars().chain(rest[..at].chars()).next_back();
-                let after = &rest[at + wrong.len()..];
+            for (at, _) in text.match_indices(wrong.as_str()) {
+                let end = at + wrong.len();
+                if spans.iter().any(|span| at < span.end && span.start < end) {
+                    continue;
+                }
+                let before = text[..at].chars().next_back();
+                let after = &text[end..];
                 // The rest of the word the wrong form starts.
                 let tail: &str = after
                     .find(|c: char| !c.is_alphanumeric())
-                    .map_or(after, |end| &after[..end]);
+                    .map_or(after, |stop| &after[..stop]);
                 let at_word_start = before.is_none_or(|c| !c.is_alphanumeric());
-                let is_known_word = tail.char_indices().any(|(index, c)| {
-                    let end = at + wrong.len() + index + c.len_utf8();
-                    self.known.contains(&rest[at..end])
-                });
-                out.push_str(&rest[..at]);
+                let is_known_word = tail
+                    .char_indices()
+                    .any(|(index, c)| self.known.contains(&text[at..end + index + c.len_utf8()]));
                 if at_word_start && !is_known_word && (!short || only_particles(tail)) {
-                    out.push_str(right);
-                    changed = true;
-                    made.push(Correction {
+                    spans.push(Span {
+                        start: at,
+                        end,
                         from: wrong.clone(),
                         to: right.clone(),
                     });
-                } else {
-                    out.push_str(wrong);
                 }
-                rest = after;
-            }
-            out.push_str(rest);
-            if changed {
-                corrected = out;
             }
         }
-        (corrected, made)
+        spans.sort_by_key(|span| span.start);
+        spans
+    }
+
+    /// A vocabulary that corrects only `wrong` to `right`, knowing the right
+    /// forms `known` knows (so a longer word of the user's is left alone).
+    /// Empty of corrections when `wrong` is too short or is itself a right
+    /// form, the same as in the user's vocabulary.
+    pub fn one_correction(wrong: &str, right: &str, known: &Vocabulary) -> Self {
+        let mut vocabulary = Vocabulary {
+            core: vec![right.trim().to_string()],
+            corrections: vec![(wrong.trim().to_string(), right.trim().to_string())],
+            ..Default::default()
+        };
+        vocabulary.finish();
+        vocabulary.known.extend(known.known.iter().cloned());
+        let known = &vocabulary.known;
+        vocabulary
+            .corrections
+            .retain(|(wrong, right)| wrong != right && !known.contains(wrong));
+        vocabulary
     }
 
     pub fn is_empty(&self) -> bool {
@@ -494,6 +542,7 @@ pub fn append_terms(path: &Path, terms: &[String], heading: &str) -> Result<usiz
     if file.extension().is_some_and(|ext| ext == "json") {
         anyhow::bail!("the vocabulary is a JSON file, which is not written to");
     }
+    let _writing = writing();
     let vocabulary = Vocabulary::load(path)?;
     let mut new: Vec<&str> = Vec::new();
     for term in terms.iter().map(|term| term.trim()) {
@@ -524,6 +573,527 @@ pub fn append_terms(path: &Path, terms: &[String], heading: &str) -> Result<usiz
     }
     super::store::write_atomically(&file, text.as_bytes())?;
     Ok(new.len())
+}
+
+/// A way the speech model mishears a word of the vocabulary, and where the
+/// user found it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct Misheard {
+    /// What the speech model writes for the word.
+    pub form: String,
+    /// The day it was added (`2026-11-27`); empty when the file does not say.
+    pub added_on: String,
+    /// The title of the meeting it was fixed in; empty when it was written
+    /// in by hand.
+    pub meeting: String,
+}
+
+/// A word of the user's vocabulary, as the settings list it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct Word {
+    pub term: String,
+    /// "이렇게 잘못 들려요": what the speech model writes instead, corrected
+    /// in every meeting transcribed from now on.
+    pub misheard: Vec<Misheard>,
+    /// It is in the text file, so it can be changed here. A word only in a
+    /// JSON vocabulary is the user's to change in that file.
+    pub editable: bool,
+}
+
+/// The user's vocabulary as one list, newest additions first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct WordList {
+    pub words: Vec<Word>,
+    /// Words can be added and changed here: the vocabulary is a text file
+    /// or a folder, not a single JSON file.
+    pub writable: bool,
+}
+
+/// One line of the vocabulary's text file, as written and as read.
+#[derive(Debug, Clone)]
+struct Line {
+    raw: String,
+    kind: LineKind,
+}
+
+#[derive(Debug, Clone)]
+enum LineKind {
+    /// A blank line, a comment, or something not understood: kept as it is.
+    Other,
+    /// Terms, one or several separated by commas, and the comment after them.
+    Terms { terms: Vec<String>, note: String },
+    /// `틀린 말 => 바른 말`, and the comment after it (`# 2026-11-27 「회의」`).
+    Misheard {
+        wrong: String,
+        right: String,
+        note: String,
+    },
+}
+
+impl Line {
+    fn parse(raw: &str) -> Line {
+        let (body, note) = match raw.find('#') {
+            Some(at) => (&raw[..at], raw[at..].trim().to_string()),
+            None => (raw, String::new()),
+        };
+        let body = body.trim();
+        let kind = if body.is_empty() {
+            LineKind::Other
+        } else if let Some((wrong, right)) = body.split_once("=>") {
+            let (wrong, right) = (wrong.trim(), right.trim());
+            if wrong.is_empty() || right.is_empty() || wrong == right {
+                LineKind::Other
+            } else {
+                LineKind::Misheard {
+                    wrong: wrong.to_string(),
+                    right: right.to_string(),
+                    note,
+                }
+            }
+        } else {
+            let terms: Vec<String> = body
+                .split([',', '，', '、'])
+                .map(str::trim)
+                .filter(|term| !term.is_empty())
+                .map(str::to_string)
+                .collect();
+            if terms.is_empty() {
+                LineKind::Other
+            } else {
+                LineKind::Terms { terms, note }
+            }
+        };
+        Line {
+            raw: raw.to_string(),
+            kind,
+        }
+    }
+
+    /// The line written again after its parts changed.
+    fn rewrite(&mut self) {
+        let with_note = |body: String, note: &str| {
+            if note.is_empty() {
+                body
+            } else {
+                format!("{body}  {note}")
+            }
+        };
+        self.raw = match &self.kind {
+            LineKind::Other => return,
+            LineKind::Terms { terms, note } => with_note(terms.join(", "), note),
+            LineKind::Misheard { wrong, right, note } => {
+                with_note(format!("{wrong} => {right}"), note)
+            }
+        };
+    }
+
+    fn misheard(wrong: &str, right: &str, added_on: &str, meeting: &str) -> Line {
+        let meeting: String = meeting
+            .chars()
+            .map(|c| if c.is_control() { ' ' } else { c })
+            .collect();
+        let meeting = meeting.trim();
+        let note = match (added_on.is_empty(), meeting.is_empty()) {
+            (true, true) => String::new(),
+            (false, true) => format!("# {added_on}"),
+            (true, false) => format!("# 「{meeting}」"),
+            (false, false) => format!("# {added_on} 「{meeting}」"),
+        };
+        let mut line = Line {
+            raw: String::new(),
+            kind: LineKind::Misheard {
+                wrong: wrong.to_string(),
+                right: right.to_string(),
+                note,
+            },
+        };
+        line.rewrite();
+        line
+    }
+}
+
+/// When and from which meeting a misheard form was added, from the comment
+/// after it: `# 2026-11-27 「주간 회의」`. Anything else in the comment is
+/// the user's own and says neither.
+fn provenance(note: &str) -> (String, String) {
+    let note = note.trim_start_matches('#').trim();
+    let is_day = |text: &str| {
+        text.len() == 10
+            && text.char_indices().all(|(at, c)| {
+                if at == 4 || at == 7 {
+                    c == '-'
+                } else {
+                    c.is_ascii_digit()
+                }
+            })
+    };
+    let (day, rest) = match note.get(..10) {
+        Some(day) if is_day(day) => (day.to_string(), note[10..].trim()),
+        _ => (String::new(), note),
+    };
+    let meeting = rest
+        .strip_prefix('「')
+        .and_then(|rest| rest.strip_suffix('」'))
+        .map(str::trim)
+        .unwrap_or("")
+        .to_string();
+    (day, meeting)
+}
+
+/// The vocabulary's text file: the file itself, or a folder's
+/// `hints_core.txt`. `None` for a JSON vocabulary, which is not written to.
+fn text_file(path: &Path) -> Option<std::path::PathBuf> {
+    if path.is_dir() {
+        Some(path.join("hints_core.txt"))
+    } else if path.extension().is_some_and(|ext| ext == "json") {
+        None
+    } else {
+        Some(path.to_path_buf())
+    }
+}
+
+/// The vocabulary's text file read line by line, to change some lines and
+/// keep every other line (the user's comments, blank lines, order) as it is.
+struct TextFile {
+    file: std::path::PathBuf,
+    lines: Vec<Line>,
+    /// The file's lines end in CR LF (written on Windows): kept so.
+    crlf: bool,
+    /// The file ends with a line ending: kept so, and kept without.
+    final_newline: bool,
+}
+
+/// One change of the vocabulary's file at a time: a fix in one window and
+/// a word saved in another would otherwise read the same file, and the
+/// later write would drop the earlier change (or both would race for the
+/// same temporary file).
+static WRITING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Holds the vocabulary's file for one read, change and write.
+fn writing() -> std::sync::MutexGuard<'static, ()> {
+    WRITING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+impl TextFile {
+    fn open(path: &Path) -> Result<Self> {
+        let file = text_file(path).ok_or_else(|| {
+            anyhow::anyhow!("the vocabulary is a JSON file, which is not written to")
+        })?;
+        let text = if file.is_file() {
+            read(&file)?
+        } else if path.is_dir() {
+            String::new()
+        } else {
+            // A vocabulary not made yet starts as the example, as when
+            // words are added from documents.
+            EXAMPLE_FILE.to_string()
+        };
+        Ok(TextFile {
+            file,
+            lines: text.lines().map(Line::parse).collect(),
+            crlf: text.contains("\r\n"),
+            final_newline: text.is_empty() || text.ends_with('\n'),
+        })
+    }
+
+    fn save(&self) -> Result<()> {
+        let ending = if self.crlf { "\r\n" } else { "\n" };
+        let mut text: String = self
+            .lines
+            .iter()
+            .map(|line| line.raw.as_str())
+            .collect::<Vec<_>>()
+            .join(ending);
+        if self.final_newline {
+            text.push_str(ending);
+        }
+        if let Some(dir) = self.file.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        super::store::write_atomically(&self.file, text.as_bytes())
+    }
+
+    /// Whether `term` is a term of the file, on its own or as the right
+    /// form of a misheard one.
+    fn has(&self, term: &str) -> bool {
+        self.lines.iter().any(|line| match &line.kind {
+            LineKind::Terms { terms, .. } => terms.iter().any(|t| t == term),
+            LineKind::Misheard { right, .. } => right == term,
+            LineKind::Other => false,
+        })
+    }
+
+    fn push(&mut self, line: Line) {
+        self.lines.push(line);
+    }
+}
+
+/// A word or misheard form as it may be written in the text file: one
+/// line's worth, without the marks the file's lines are read by.
+fn clean_word(word: &str) -> Result<String> {
+    let word = word.trim();
+    if word.is_empty() {
+        anyhow::bail!("a word is needed");
+    }
+    if word.contains(['#', ',', '，', '、', '\n', '\r']) || word.contains("=>") {
+        anyhow::bail!("a word cannot have # , or =>");
+    }
+    Ok(word.to_string())
+}
+
+/// The user's vocabulary as one list: each word with the ways it is
+/// misheard, the ones added most recently first, the rest in the file's
+/// order. Words of a JSON vocabulary are listed too, not to be changed here.
+pub fn list(path: &Path) -> Result<WordList> {
+    let mut words: Vec<Word> = Vec::new();
+    fn word<'a>(words: &'a mut Vec<Word>, term: &str, editable: bool) -> &'a mut Word {
+        let at = match words.iter().position(|word| word.term == term) {
+            Some(at) => at,
+            None => {
+                words.push(Word {
+                    term: term.to_string(),
+                    misheard: Vec::new(),
+                    editable,
+                });
+                words.len() - 1
+            }
+        };
+        let word = &mut words[at];
+        word.editable |= editable;
+        word
+    }
+    let writable = text_file(path).is_some();
+    if writable {
+        // A vocabulary not made yet lists what it starts as.
+        for line in &TextFile::open(path)?.lines {
+            match &line.kind {
+                LineKind::Terms { terms, .. } => {
+                    for term in terms {
+                        word(&mut words, term, true);
+                    }
+                }
+                LineKind::Misheard { wrong, right, note } => {
+                    let (added_on, meeting) = provenance(note);
+                    let entry = word(&mut words, right, true);
+                    if !entry.misheard.iter().any(|m| &m.form == wrong) {
+                        entry.misheard.push(Misheard {
+                            form: wrong.clone(),
+                            added_on,
+                            meeting,
+                        });
+                    }
+                }
+                LineKind::Other => {}
+            }
+        }
+    }
+    let json = if path.is_dir() {
+        Some(path.join("vocabulary.json"))
+    } else if !writable {
+        Some(path.to_path_buf())
+    } else {
+        None
+    };
+    if let Some(json) = json.filter(|json| json.is_file()) {
+        let mut vocabulary = Vocabulary::default();
+        vocabulary.add_json(&read(&json)?)?;
+        for entry in &vocabulary.entries {
+            word(&mut words, &entry.term, false);
+        }
+        for (wrong, right) in &vocabulary.corrections {
+            let entry = word(&mut words, right, false);
+            if !entry.misheard.iter().any(|m| &m.form == wrong) {
+                entry.misheard.push(Misheard {
+                    form: wrong.clone(),
+                    added_on: String::new(),
+                    meeting: String::new(),
+                });
+            }
+        }
+    }
+    let newest = |word: &Word| {
+        word.misheard
+            .iter()
+            .map(|m| m.added_on.clone())
+            .max()
+            .unwrap_or_default()
+    };
+    words.sort_by_key(|word| std::cmp::Reverse(newest(word)));
+    Ok(WordList { words, writable })
+}
+
+/// Writes a word of the user's vocabulary: `term` with exactly the misheard
+/// forms `misheard`, in place of `old` when it is being renamed. A form new
+/// to the word is written with when it was added (`today` when `added_on`
+/// is empty) and the meeting it came from. Lines about other words, and the
+/// user's comments, stay as they are.
+pub fn save_word(
+    path: &Path,
+    old: Option<&str>,
+    term: &str,
+    misheard: &[Misheard],
+    today: &str,
+) -> Result<()> {
+    let term = clean_word(term)?;
+    let _writing = writing();
+    let mut forms: Vec<Misheard> = Vec::new();
+    for item in misheard {
+        let form = clean_word(&item.form)?;
+        if form.chars().count() < 2 {
+            anyhow::bail!("a misheard form needs two letters or more");
+        }
+        if form != term && !forms.iter().any(|f| f.form == form) {
+            forms.push(Misheard {
+                form,
+                ..item.clone()
+            });
+        }
+    }
+    let mut file = TextFile::open(path)?;
+
+    if let Some(old) = old.map(str::trim).filter(|old| *old != term) {
+        for line in &mut file.lines {
+            let changed = match &mut line.kind {
+                LineKind::Terms { terms, .. } if terms.iter().any(|t| t == old) => {
+                    let mut seen = HashSet::new();
+                    *terms = terms
+                        .iter()
+                        .map(|t| if t == old { term.clone() } else { t.clone() })
+                        .filter(|t| seen.insert(t.clone()))
+                        .collect();
+                    true
+                }
+                LineKind::Misheard { right, .. } if right == old => {
+                    *right = term.clone();
+                    true
+                }
+                _ => false,
+            };
+            if changed {
+                line.rewrite();
+            }
+        }
+    }
+
+    // A form is the word's alone: the same form for another word would
+    // leave which one it becomes to the file's order.
+    file.lines.retain(|line| match &line.kind {
+        LineKind::Misheard { wrong, right, .. } => {
+            let mine = *right == term;
+            let wanted = forms.iter().any(|f| &f.form == wrong);
+            if mine {
+                wanted
+            } else {
+                !wanted && *wrong != term
+            }
+        }
+        _ => true,
+    });
+    for form in &forms {
+        let there = file.lines.iter().any(|line| {
+            matches!(&line.kind, LineKind::Misheard { wrong, right, .. }
+                if *wrong == form.form && *right == term)
+        });
+        if !there {
+            let day = if form.added_on.is_empty() {
+                today
+            } else {
+                form.added_on.as_str()
+            };
+            file.push(Line::misheard(&form.form, &term, day, &form.meeting));
+        }
+    }
+    if !file.has(&term) {
+        file.push(Line::parse(&term));
+    }
+    file.save()
+}
+
+/// Takes `term` and the ways it is misheard out of the user's vocabulary.
+pub fn remove_word(path: &Path, term: &str) -> Result<()> {
+    let _writing = writing();
+    let term = term.trim();
+    let mut file = TextFile::open(path)?;
+    let before = file.lines.len();
+    let mut changed = false;
+    file.lines.retain_mut(|line| match &mut line.kind {
+        LineKind::Terms { terms, note } if terms.iter().any(|t| t == term) => {
+            terms.retain(|t| t != term);
+            changed = true;
+            if terms.is_empty() {
+                if note.is_empty() {
+                    return false;
+                }
+                // The user's comment stays, on its own.
+                line.raw = note.clone();
+                line.kind = LineKind::Other;
+            } else {
+                line.rewrite();
+            }
+            true
+        }
+        LineKind::Misheard { right, .. } => *right != term,
+        _ => true,
+    });
+    if !changed && file.lines.len() == before {
+        anyhow::bail!("the word is not in the vocabulary's text file");
+    }
+    file.save()
+}
+
+/// Adds one way `term` is misheard to the user's vocabulary, from a fix in
+/// a meeting. Returns whether it was added: not when the vocabulary already
+/// corrects it so, when it could not be used (one letter, or a word the
+/// vocabulary knows as right), or when the vocabulary corrects the same
+/// words to another word (that is the user's to change in the settings;
+/// taking it over here could not be undone).
+pub fn add_misheard(
+    path: &Path,
+    term: &str,
+    form: &str,
+    added_on: &str,
+    meeting: &str,
+) -> Result<bool> {
+    let (term, form) = (clean_word(term)?, clean_word(form)?);
+    if form == term || form.chars().count() < 2 {
+        return Ok(false);
+    }
+    let _writing = writing();
+    let vocabulary = Vocabulary::load(path)?;
+    if vocabulary.knows(&form)
+        || vocabulary
+            .corrections
+            .iter()
+            .any(|(wrong, _)| *wrong == form)
+    {
+        return Ok(false);
+    }
+    let mut file = TextFile::open(path)?;
+    if file
+        .lines
+        .iter()
+        .any(|line| matches!(&line.kind, LineKind::Misheard { wrong, .. } if *wrong == form))
+    {
+        return Ok(false);
+    }
+    file.push(Line::misheard(&form, &term, added_on, meeting));
+    file.save()?;
+    Ok(true)
+}
+
+/// Takes one misheard form of `term` out of the user's vocabulary (a fix
+/// undone right after it was made).
+pub fn remove_misheard(path: &Path, term: &str, form: &str) -> Result<()> {
+    let _writing = writing();
+    let (term, form) = (term.trim(), form.trim());
+    let mut file = TextFile::open(path)?;
+    file.lines.retain(|line| {
+        !matches!(&line.kind, LineKind::Misheard { wrong, right, .. }
+            if wrong == form && right == term)
+    });
+    file.save()
 }
 
 #[cfg(test)]
@@ -737,5 +1307,207 @@ mod tests {
         assert!(Vocabulary::load(&dir.path().join("없는파일.txt"))
             .unwrap()
             .is_empty());
+    }
+
+    #[test]
+    fn spans_point_into_the_text_as_transcribed() {
+        let vocabulary = from_text("한빗아파트 => 한빛 아파트\n한빗 => 한빛\n");
+        let text = "그 한빗아파트, 한빗은";
+        let spans = vocabulary.spans(text);
+        assert_eq!(spans.len(), 2);
+        assert_eq!(&text[spans[0].start..spans[0].end], "한빗아파트");
+        assert_eq!(spans[0].to, "한빛 아파트");
+        assert_eq!(&text[spans[1].start..spans[1].end], "한빗");
+        // What a correction puts in is never corrected again.
+        let vocabulary = from_text("우물천 => 우물천 장\n");
+        assert_eq!(vocabulary.correct("우물천 위").0, "우물천 장 위");
+    }
+
+    #[test]
+    fn a_word_s_misheard_forms_are_listed_added_changed_and_taken_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("용어집.txt");
+        std::fs::write(
+            &file,
+            "# 내 용어집\n몰딩, 중문 # 문\n걸래받이 => 걸레받이\n",
+        )
+        .unwrap();
+        // Learnt in a meeting: kept with the day and the meeting.
+        assert!(add_misheard(&file, "우물천장", "우물천장탄", "2026-11-27", "주간 회의").unwrap());
+        // Known already, too short, or the same: not added.
+        assert!(!add_misheard(&file, "우물천장", "우물천장탄", "2026-11-28", "").unwrap());
+        assert!(!add_misheard(&file, "우물천장", "탄", "2026-11-28", "").unwrap());
+        assert!(!add_misheard(&file, "몰딩", "중문", "2026-11-28", "").unwrap());
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(text.ends_with("우물천장탄 => 우물천장  # 2026-11-27 「주간 회의」\n"));
+        // An older app reads it as a plain correction.
+        let vocabulary = Vocabulary::load(&file).unwrap();
+        assert_eq!(vocabulary.correct("우물천장탄을").0, "우물천장을");
+
+        let words = list(&file).unwrap();
+        assert!(words.writable);
+        let terms: Vec<&str> = words.words.iter().map(|w| w.term.as_str()).collect();
+        assert_eq!(terms, vec!["우물천장", "몰딩", "중문", "걸레받이"]);
+        assert_eq!(
+            words.words[0].misheard,
+            vec![Misheard {
+                form: "우물천장탄".into(),
+                added_on: "2026-11-27".into(),
+                meeting: "주간 회의".into(),
+            }]
+        );
+
+        // Renamed, with one form kept (its note too) and one new.
+        let kept = words.words[0].misheard[0].clone();
+        save_word(
+            &file,
+            Some("우물천장"),
+            "우물 천장",
+            &[
+                kept,
+                Misheard {
+                    form: "우물 천정".into(),
+                    added_on: String::new(),
+                    meeting: String::new(),
+                },
+            ],
+            "2026-11-28",
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(text.contains("우물천장탄 => 우물 천장  # 2026-11-27 「주간 회의」\n"));
+        assert!(text.contains("우물 천정 => 우물 천장  # 2026-11-28\n"));
+        assert!(text.starts_with("# 내 용어집\n몰딩, 중문 # 문\n"));
+        // A form taken off the list goes; a word in a line of several is
+        // renamed in its place.
+        save_word(&file, Some("중문"), "현관 중문", &[], "2026-11-28").unwrap();
+        save_word(&file, None, "걸레받이", &[], "2026-11-28").unwrap();
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(text.contains("몰딩, 현관 중문  # 문\n"));
+        assert!(!text.contains("걸래받이"));
+        // The word stays a word without its misheard forms.
+        assert!(Vocabulary::load(&file).unwrap().knows("걸레받이"));
+        // A new word goes at the end.
+        save_word(&file, None, "아트월", &[], "2026-11-28").unwrap();
+        assert!(std::fs::read_to_string(&file)
+            .unwrap()
+            .ends_with("아트월\n"));
+        // Taken out: its line, or its place in a line of several.
+        remove_word(&file, "몰딩").unwrap();
+        remove_word(&file, "우물 천장").unwrap();
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(text.contains("\n현관 중문  # 문\n"));
+        assert!(!text.contains("우물"));
+        assert!(remove_word(&file, "없는 말").is_err());
+        // A form undone right after it was learnt.
+        add_misheard(&file, "아트월", "아트얼", "2026-11-28", "").unwrap();
+        remove_misheard(&file, "아트월", "아트얼").unwrap();
+        assert!(!std::fs::read_to_string(&file).unwrap().contains("아트얼"));
+        // Marks the file is read by cannot be part of a word.
+        assert!(save_word(&file, None, "가, 나", &[], "").is_err());
+        assert!(save_word(&file, None, "가#", &[], "").is_err());
+    }
+
+    #[test]
+    fn a_new_vocabulary_starts_as_the_example_and_a_json_one_is_only_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("vocabulary.txt");
+        let words = list(&file).unwrap();
+        assert_eq!(words.words.len(), 17);
+        assert!(words
+            .words
+            .iter()
+            .any(|w| w.term == "이노솔" && w.misheard.len() == 1));
+        assert!(add_misheard(&file, "걸레받이", "걸레바지", "2026-11-27", "").unwrap());
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(text.starts_with(EXAMPLE_FILE));
+
+        let json = dir.path().join("v.json");
+        std::fs::write(
+            &json,
+            r#"[{"term": "걸레받이", "common_mishearings": ["걸래받이"]}]"#,
+        )
+        .unwrap();
+        let words = list(&json).unwrap();
+        assert!(!words.writable);
+        assert!(!words.words[0].editable);
+        assert_eq!(words.words[0].misheard[0].form, "걸래받이");
+        assert!(save_word(&json, None, "몰딩", &[], "").is_err());
+        assert!(add_misheard(&json, "몰딩", "몰땅", "", "").is_err());
+
+        // A folder: the text file is written, its JSON is listed.
+        std::fs::write(dir.path().join("vocabulary.json"), r#"["줄눈"]"#).unwrap();
+        std::fs::write(dir.path().join("hints_core.txt"), "타일\n").unwrap();
+        save_word(dir.path(), None, "마루", &[], "").unwrap();
+        let words = list(dir.path()).unwrap();
+        let terms: Vec<(&str, bool)> = words
+            .words
+            .iter()
+            .map(|w| (w.term.as_str(), w.editable))
+            .collect();
+        assert_eq!(terms, vec![("타일", true), ("마루", true), ("줄눈", false)]);
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("hints_core.txt")).unwrap(),
+            "타일\n마루\n"
+        );
+    }
+
+    #[test]
+    fn a_comment_says_when_and_where_or_nothing() {
+        assert_eq!(
+            provenance("# 2026-11-27 「주간 회의」"),
+            ("2026-11-27".to_string(), "주간 회의".to_string())
+        );
+        assert_eq!(
+            provenance("# 2026-11-27"),
+            ("2026-11-27".into(), String::new())
+        );
+        assert_eq!(provenance("# 문"), (String::new(), String::new()));
+        assert_eq!(provenance(""), (String::new(), String::new()));
+    }
+
+    #[test]
+    fn a_file_keeps_its_line_endings_and_its_last_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("v.txt");
+        std::fs::write(&file, "# 용어집\r\n몰딩\r\n중문").unwrap();
+        save_word(&file, None, "아트월", &[], "2026-11-27").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "# 용어집\r\n몰딩\r\n중문\r\n아트월"
+        );
+        std::fs::write(&file, "몰딩\n중문\n").unwrap();
+        remove_word(&file, "중문").unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "몰딩\n");
+    }
+
+    #[test]
+    fn a_form_another_word_has_is_not_taken_over_from_a_meeting() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("v.txt");
+        let before = "우물 천정 => 우물천정\n";
+        std::fs::write(&file, before).unwrap();
+        assert!(!add_misheard(&file, "우물천장", "우물 천정", "2026-11-27", "").unwrap());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), before);
+    }
+
+    #[test]
+    fn changes_from_two_places_at_once_are_all_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("v.txt");
+        std::fs::write(&file, "몰딩\n").unwrap();
+        let writers: Vec<_> = (0..8)
+            .map(|n| {
+                let file = file.clone();
+                std::thread::spawn(move || {
+                    save_word(&file, None, &format!("낱말{n}"), &[], "").unwrap();
+                })
+            })
+            .collect();
+        for writer in writers {
+            writer.join().unwrap();
+        }
+        let vocabulary = Vocabulary::load(&file).unwrap();
+        assert!((0..8).all(|n| vocabulary.knows(&format!("낱말{n}"))));
     }
 }

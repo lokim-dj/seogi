@@ -1129,5 +1129,220 @@ await flow(
   },
 );
 
+/** Picks `word` in the transcript's `line`-th paragraph, as a drag would. */
+const pickWords = async (page, line, word) => {
+  await page.locator(".tline").nth(line).scrollIntoViewIfNeeded();
+  await page.evaluate(
+    ({ line, word }) => {
+      const lines = document
+        .querySelectorAll(".tline")
+        [line].querySelectorAll("[data-seg]");
+      for (const words of lines) {
+        const walker = document.createTreeWalker(words, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const at = node.textContent.indexOf(word);
+          if (at < 0) continue;
+          const range = document.createRange();
+          range.setStart(node, at);
+          range.setEnd(node, at + word.length);
+          window.getSelection().removeAllRanges();
+          window.getSelection().addRange(range);
+          return;
+        }
+      }
+      throw new Error(`${word} is not in the line`);
+    },
+    { line, word },
+  );
+  await page.waitForTimeout(200);
+};
+
+await flow(
+  "fixing a misheard word picked in the transcript, then undoing it",
+  "minutes",
+  async (page, called) => {
+    await unfold(page, "받아쓴 글");
+    await pickWords(page, 6, "청했어요");
+    await page.getByRole("button", { name: "틀린 말 고치기" }).click();
+    const panel = page.getByRole("dialog", { name: "틀린 말 고치기" });
+    await panel.getByText("「청했어요」").waitFor({ timeout: 2000 });
+    expect(
+      await called("seogi_word_places", (a) => a.from === "청했어요"),
+      "the places were not counted",
+    );
+    expect(
+      await panel.getByRole("checkbox", { name: /다음 회의에도/ }).isChecked(),
+      "'다음 회의에도' did not start on",
+    );
+    await panel.getByRole("textbox").fill("정했어요");
+    await panel.getByRole("button", { name: /고치기$/ }).click();
+    await page.waitForTimeout(400);
+    expect(
+      await called(
+        "seogi_fix_word",
+        (a) =>
+          a.from === "청했어요" &&
+          a.to === "정했어요" &&
+          a.remember === true &&
+          typeof a.at === "number",
+      ),
+      "the word was not fixed with the vocabulary learning it",
+    );
+    const line = page.locator(".tline").nth(6);
+    await line.locator(".word-fixed", { hasText: "정했어요" }).waitFor();
+    await line.getByRole("button", { name: "고침 · 「청했어요」" }).waitFor();
+    const note = page.getByRole("status");
+    await note
+      .getByText("1곳을 「정했어요」로 고치고 용어집에 넣었어요")
+      .waitFor();
+    expect(
+      !(await called("seogi_retry")),
+      "the minutes were written again on their own",
+    );
+    await note.getByRole("button", { name: "되돌리기" }).click();
+    await page.waitForTimeout(400);
+    expect(
+      await called(
+        "seogi_unfix_words",
+        (a) => a.forget === true && a.before.length === 1,
+      ),
+      "the fix was not undone with the vocabulary",
+    );
+    expect(
+      (await line.locator(".word-fixed").count()) === 0,
+      "the fixed word stayed",
+    );
+  },
+);
+
+await flow(
+  "a fix kept for this meeting only, and the minutes written again",
+  "minutes",
+  async (page, called) => {
+    await unfold(page, "받아쓴 글");
+    await pickWords(page, 3, "우물천장탄");
+    // From the keyboard: Enter while words are picked.
+    await page.getByRole("button", { name: "틀린 말 고치기" }).waitFor();
+    await page.keyboard.press("Enter");
+    const panel = page.getByRole("dialog", { name: "틀린 말 고치기" });
+    // The vocabulary's look-alike word is offered.
+    await panel.getByRole("button", { name: "우물천장", exact: true }).click();
+    await panel.getByText("용어집에 있는 말이에요").waitFor();
+    await panel.getByRole("textbox").fill("우물 천장");
+    // The vocabulary fixes these words to another word already: it is not
+    // taken over from here.
+    await panel
+      .getByText(
+        "「우물천장탄」은 이미 「우물천장」으로 고치게 되어 있어요. 용어집에서 바꿔 주세요.",
+      )
+      .waitFor({ timeout: 2000 });
+    expect(
+      await panel.getByRole("checkbox", { name: /다음 회의에도/ }).isDisabled(),
+      "the vocabulary could take over another word's misheard form",
+    );
+    await page.waitForTimeout(400);
+    expect(
+      await called("seogi_word_places", (a) => a.to === "우물 천장"),
+      "the places were not counted for the right word",
+    );
+    await panel.getByRole("textbox").press("Enter");
+    await page.waitForTimeout(400);
+    expect(
+      await called(
+        "seogi_fix_word",
+        (a) => a.to === "우물 천장" && a.remember === false,
+      ),
+      "the fix did not stay with this meeting",
+    );
+    await page
+      .getByRole("status")
+      .getByText("1곳을 「우물 천장」으로 고쳤어요")
+      .waitFor();
+    await page.getByRole("button", { name: "회의록 다시 쓰기" }).click();
+    await page.waitForTimeout(400);
+    expect(await called("seogi_retry"), "the minutes were not written again");
+  },
+);
+
+await flow(
+  "a fixed word says what was heard, and it can be put back",
+  "minutes-fixed",
+  async (page, called) => {
+    await unfold(page, "받아쓴 글");
+    // The one the vocabulary fixed says so.
+    const auto = page.locator(".tline", { hasText: "3연동" });
+    await auto.getByRole("button", { name: "고침 · 「삼연동」" }).click();
+    await auto.getByText("용어집이 알아서 고쳤어요").waitFor();
+    const line = page.locator(".tline").nth(3);
+    await line.scrollIntoViewIfNeeded();
+    await line.getByRole("button", { name: "고침 · 「우물천장탄」" }).click();
+    await line.getByText("처음엔 「우물천장탄」으로 받아썼어요").waitFor();
+    await line.getByText("직접 고쳤어요").waitFor();
+    await line.getByRole("button", { name: "원래 말로 되돌리기" }).click();
+    await page.waitForTimeout(400);
+    expect(
+      await called(
+        "seogi_unfix_word",
+        (a) => a.from === "우물천장탄" && a.to === "우물천장",
+      ),
+      "the words were not put back",
+    );
+    await line.getByText("우물천장탄을").waitFor({ timeout: 2000 });
+  },
+);
+
+await flow(
+  "the vocabulary: a list of words to add, change and take out",
+  "settings",
+  async (page, called) => {
+    await part(page, "녹음");
+    await page.getByRole("button", { name: "용어집 열기" }).click();
+    const list = page.getByRole("region", { name: "용어집" });
+    await list
+      .getByText("「우물천장탄」「우물 천정」")
+      .waitFor({ timeout: 2000 });
+    await list.getByRole("textbox", { name: "새 낱말" }).fill("아일랜드 식탁");
+    await list.getByRole("button", { name: "더하기" }).click();
+    await page.waitForTimeout(300);
+    expect(
+      await called(
+        "seogi_save_word",
+        (a) => a.old === null && a.term === "아일랜드 식탁",
+      ),
+      "the word was not added",
+    );
+    await list.getByRole("button", { name: "고치기 우물천장" }).click();
+    const forms = list.getByRole("textbox", { name: "이렇게 잘못 들려요" });
+    await forms.fill("우물천장탄, 우물 천정, 우물전장");
+    await list.getByRole("button", { name: "고친 대로 두기" }).click();
+    await page.waitForTimeout(300);
+    expect(
+      await called(
+        "seogi_save_word",
+        (a) =>
+          a.old === "우물천장" &&
+          a.misheard.length === 3 &&
+          a.misheard[0].meeting !== "",
+      ),
+      "the misheard forms were not kept, with where the first came from",
+    );
+    await list.getByRole("button", { name: "지우기 간접등" }).click();
+    await list.getByText("「간접등」 지웠어요").waitFor({ timeout: 2000 });
+    expect(
+      await called("seogi_remove_word", (a) => a.term === "간접등"),
+      "the word was not taken out",
+    );
+    await list.getByRole("button", { name: "되살리기" }).click();
+    await page.waitForTimeout(300);
+    expect(
+      await called(
+        "seogi_save_word",
+        (a) => a.old === null && a.term === "간접등",
+      ),
+      "the word taken out was not put back",
+    );
+  },
+);
+
 await browser.close();
 process.exit(failed ? 1 : 0);

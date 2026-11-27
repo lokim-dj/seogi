@@ -853,6 +853,7 @@ mod tests {
                 unsure: false,
                 overlap: false,
                 edited: None,
+                fixes: Vec::new(),
             }],
             speakers: vec![Speaker {
                 id: 1,

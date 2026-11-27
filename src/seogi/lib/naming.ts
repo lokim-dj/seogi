@@ -213,6 +213,13 @@ export function withRo(name: string): string {
   return `${name}${f === 0 || f === 8 ? "로" : "으로"}`;
 }
 
+/** A name with 는/은 ("레이는", "회장님은"; "Alex(은)는"). */
+export function withTopic(name: string): string {
+  const f = finalOf(name);
+  if (f === null) return `${name}(은)는`;
+  return `${name}${f === 0 ? "는" : "은"}`;
+}
+
 /** A name with 예요/이에요 ("레이예요", "회장님이에요"; "Alex(이)에요"). */
 export function withIs(name: string): string {
   const f = finalOf(name);

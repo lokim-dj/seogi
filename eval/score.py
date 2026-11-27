@@ -104,7 +104,9 @@ def score(truth_path: Path, hyp_path: Path, vocab_path: Path | None) -> dict:
     transcript = hyp.get("transcript", hyp)
     segments = transcript["segments"]
     ref_text = " ".join(t["text"] for t in truth["turns"])
-    hyp_text = " ".join(s["text"] for s in segments)
+    # The words as the minutes read them: a line's fixes (the vocabulary's
+    # corrections, kept beside the words transcribed) when it has them.
+    hyp_text = " ".join(s["edited"] if s.get("edited") is not None else s["text"] for s in segments)
 
     terms: list[str] = []
     if vocab_path and vocab_path.exists():

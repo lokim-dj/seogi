@@ -125,6 +125,17 @@ pub struct MeetingInfo {
     pub terms: Option<Vec<String>>,
 }
 
+/// What fixing a misheard word did in a meeting.
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+pub struct WordFixOutcome {
+    /// How many places were fixed.
+    pub places: u32,
+    /// The lines as they were, to put back if the user undoes the fix.
+    pub before: Vec<super::transcript::Segment>,
+    /// The vocabulary learnt the misheard words, for meetings from now on.
+    pub remembered: bool,
+}
+
 /// Whether a calendar address works, and what it holds for today.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Type)]
 pub struct CalendarCheck {
@@ -2652,6 +2663,150 @@ impl Secretary {
             .edit_lines(from_ms, to_ms, text)
             .map_err(|e| anyhow!(e))?;
         self.save(&meeting, &folder)
+    }
+
+    /// How many places in a meeting fixing the misheard words `from`,
+    /// picked at character `at` of the line starting at `at_ms`, as `to`
+    /// would fix: the picked one and the others the vocabulary's safe rules
+    /// would (`to` empty while the user has not written it yet).
+    pub fn word_places(
+        &self,
+        id: &str,
+        at_ms: u64,
+        at: usize,
+        from: &str,
+        to: &str,
+    ) -> Result<u32> {
+        let meeting = self.meeting(id)?;
+        let transcript = meeting
+            .transcript
+            .as_ref()
+            .ok_or_else(|| anyhow!("there is no transcript"))?;
+        let vocabulary =
+            Vocabulary::load(&self.config().vocabulary(&self.data_dir)).unwrap_or_default();
+        transcript
+            .word_places(at_ms, at, from, to, &vocabulary)
+            .map_err(|e| anyhow!(e))
+    }
+
+    /// Reads the misheard words `from` (picked at character `at` of the
+    /// line starting at `at_ms`) as `to` everywhere in the meeting they
+    /// safely can be. The words as transcribed and `전사.txt` stay. With
+    /// `remember`, the vocabulary learns `from` as a way `to` is misheard,
+    /// with this meeting and today, so meetings from now on are fixed as
+    /// they are transcribed. The minutes are not written again.
+    pub fn fix_word(
+        &self,
+        id: &str,
+        at_ms: u64,
+        at: usize,
+        from: &str,
+        to: &str,
+        remember: bool,
+    ) -> Result<WordFixOutcome> {
+        let path = self.config().vocabulary(&self.data_dir);
+        let vocabulary = Vocabulary::load(&path).unwrap_or_default();
+        let (mut meeting, folder) = self.editable(id)?;
+        let elsewhere = Vocabulary::one_correction(from, to, &vocabulary);
+        let fixed = meeting
+            .transcript
+            .as_mut()
+            .ok_or_else(|| anyhow!("there is no transcript"))?
+            .fix_word(at_ms, at, from, to, &elsewhere)
+            .map_err(|e| anyhow!(e))?;
+        self.save(&meeting, &folder)?;
+        let remembered = remember
+            && super::vocab::add_misheard(
+                &path,
+                to,
+                from,
+                &chrono::Local::now().format("%Y-%m-%d").to_string(),
+                &meeting.title,
+            )
+            .unwrap_or_else(|e| {
+                warn!("Could not add a misheard word to the vocabulary: {e:#}");
+                false
+            });
+        Ok(WordFixOutcome {
+            places: fixed.places,
+            before: fixed.before,
+            remembered,
+        })
+    }
+
+    /// Undoes a fix right after it was made: the lines as they were
+    /// (`WordFixOutcome::before`), and, when the vocabulary learnt `from`
+    /// with it, takes that out again.
+    pub fn unfix_words(
+        &self,
+        id: &str,
+        before: &[super::transcript::Segment],
+        from: &str,
+        to: &str,
+        forget: bool,
+    ) -> Result<()> {
+        let (mut meeting, folder) = self.editable(id)?;
+        meeting
+            .transcript
+            .as_mut()
+            .ok_or_else(|| anyhow!("there is no transcript"))?
+            .put_back_lines(before)
+            .map_err(|e| anyhow!(e))?;
+        self.save(&meeting, &folder)?;
+        if forget {
+            super::vocab::remove_misheard(&self.config().vocabulary(&self.data_dir), to, from)?;
+        }
+        Ok(())
+    }
+
+    /// Reads the words fixed from `from` to `to` in one paragraph on the
+    /// screen (from the line starting at `from_ms` up to `to_ms`) as
+    /// transcribed again. The vocabulary is left as it is.
+    pub fn unfix_word(
+        &self,
+        id: &str,
+        from_ms: u64,
+        to_ms: u64,
+        from: &str,
+        to: &str,
+    ) -> Result<()> {
+        let (mut meeting, folder) = self.editable(id)?;
+        let undone = meeting
+            .transcript
+            .as_mut()
+            .ok_or_else(|| anyhow!("there is no transcript"))?
+            .unfix_word(from_ms, to_ms, from, to);
+        if undone == 0 {
+            bail!("there is no such fix there");
+        }
+        self.save(&meeting, &folder)
+    }
+
+    /// The user's vocabulary as one list, for the settings.
+    pub fn vocabulary_words(&self) -> Result<super::vocab::WordList> {
+        super::vocab::list(&self.config().vocabulary(&self.data_dir))
+    }
+
+    /// Adds or changes a word of the user's vocabulary (`old` is its name
+    /// before, when it is renamed), with the ways it is misheard.
+    pub fn save_word(
+        &self,
+        old: Option<&str>,
+        term: &str,
+        misheard: &[super::vocab::Misheard],
+    ) -> Result<()> {
+        super::vocab::save_word(
+            &self.config().vocabulary(&self.data_dir),
+            old,
+            term,
+            misheard,
+            &chrono::Local::now().format("%Y-%m-%d").to_string(),
+        )
+    }
+
+    /// Takes a word out of the user's vocabulary.
+    pub fn remove_word(&self, term: &str) -> Result<()> {
+        super::vocab::remove_word(&self.config().vocabulary(&self.data_dir), term)
     }
 
     // ----- the banner -------------------------------------------------------

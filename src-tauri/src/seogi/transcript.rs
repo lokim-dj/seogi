@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+use super::vocab::Vocabulary;
+
 /// One stretch of speech by one speaker. Times are milliseconds from the
 /// start of the original recording, so any line can be played back from it.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, Type)]
@@ -30,6 +32,44 @@ pub struct Segment {
     /// Absent in meetings saved before lines could be fixed.
     #[serde(default)]
     pub edited: Option<String>,
+    /// Words fixed one at a time. The user's vocabulary fixes words as the
+    /// recording is transcribed: those are in `text` already (as `전사.txt`
+    /// has always had them), and their fix only remembers what was heard.
+    /// The user's own fixes (picking a misheard word) are not: `edited` is
+    /// `text` with them put in. Empty when the line is as transcribed or
+    /// when the user rewrote it whole (then `edited` alone says what it
+    /// reads). Absent in meetings saved before words could be fixed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fixes: Vec<WordFix>,
+}
+
+/// A word fixed in one line, beside the line's words.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct WordFix {
+    /// Where the word starts in `Segment::text`, in characters: the heard
+    /// words `from` for the user's fix, the right words `to` for the
+    /// vocabulary's (which `text` has already).
+    pub at: u32,
+    /// The words heard there.
+    pub from: String,
+    /// What they read as.
+    pub to: String,
+    /// The user's vocabulary fixed it as the recording was transcribed, in
+    /// `text` itself; transcribing again fixes it again. Otherwise the user
+    /// fixed it, in `edited` only.
+    #[serde(default)]
+    pub auto: bool,
+}
+
+impl WordFix {
+    /// How many characters of `Segment::text` it covers.
+    fn written_len(&self) -> usize {
+        if self.auto {
+            self.to.chars().count()
+        } else {
+            self.from.chars().count()
+        }
+    }
 }
 
 impl Segment {
@@ -38,6 +78,97 @@ impl Segment {
     pub fn said(&self) -> &str {
         self.edited.as_deref().unwrap_or(&self.text)
     }
+
+    /// The user rewrote the line whole (#57), rather than word by word.
+    fn rewritten(&self) -> bool {
+        self.edited.is_some() && self.fixes.iter().all(|fix| fix.auto)
+    }
+
+    /// Makes `edited` the words as transcribed with the user's word fixes
+    /// put in.
+    fn refix(&mut self) {
+        self.fixes.sort_by_key(|fix| fix.at);
+        if let Some(words) = with_fixes(&self.text, &self.fixes) {
+            self.edited = (words != self.text).then_some(words);
+        }
+    }
+
+    /// Where `n` characters from `at` of the line as read are in the line
+    /// as transcribed.
+    fn place(&self, at: usize, n: usize) -> Place {
+        let mut read = 0;
+        let mut written = 0;
+        for (index, fix) in self.fixes.iter().enumerate() {
+            let same = (fix.at as usize).saturating_sub(written);
+            if at >= read && at + n <= read + same {
+                return Place::Written(written + at - read);
+            }
+            read += same;
+            written = fix.at as usize;
+            let fixed = fix.to.chars().count();
+            if at == read && n == fixed {
+                return Place::Fix(index);
+            }
+            if at < read + fixed && read < at + n {
+                return Place::Across;
+            }
+            read += fixed;
+            written += fix.written_len();
+        }
+        let same = self.text.chars().count().saturating_sub(written);
+        if at >= read && at + n <= read + same {
+            Place::Written(written + at - read)
+        } else {
+            Place::Across
+        }
+    }
+}
+
+/// Where words picked in a line as read are in the line as transcribed.
+enum Place {
+    /// Unchanged words, from this character of `Segment::text`.
+    Written(usize),
+    /// Exactly the words a fix put in: the fix's index.
+    Fix(usize),
+    /// Partly in a fix, or past the end.
+    Across,
+}
+
+/// `text` with the user's fixes among `fixes` (in order) put in (the
+/// vocabulary's are in `text` already); `None` when a fix does not fit the
+/// words.
+pub fn with_fixes(text: &str, fixes: &[WordFix]) -> Option<String> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut next = 0;
+    for fix in fixes {
+        let at = fix.at as usize;
+        let end = at + fix.written_len();
+        let there = if fix.auto { &fix.to } else { &fix.from };
+        if at < next || end > chars.len() || chars[at..end].iter().collect::<String>() != *there {
+            return None;
+        }
+        out.extend(&chars[next..at]);
+        out.push_str(&fix.to);
+        next = end;
+    }
+    out.extend(&chars[next..]);
+    Some(out)
+}
+
+/// The byte where character `at` of `text` starts (the end for one past it).
+fn byte_at(text: &str, at: usize) -> usize {
+    text.char_indices()
+        .nth(at)
+        .map_or(text.len(), |(byte, _)| byte)
+}
+
+/// What fixing a misheard word did: how many places, and the lines as they
+/// were before, to put back if the user undoes it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+pub struct WordFixed {
+    pub places: u32,
+    pub before: Vec<Segment>,
 }
 
 /// A speaker in one recording. The name starts as "화자 N" and is the
@@ -200,6 +331,7 @@ impl Transcript {
             .map(|segment| Segment {
                 text: segment.said().to_string(),
                 edited: None,
+                fixes: Vec::new(),
                 ..segment.clone()
             })
             .collect();
@@ -241,7 +373,237 @@ impl Transcript {
         let now: Vec<&str> = lines.iter().map(|segment| segment.said()).collect();
         let parts = spread(&now, text.trim());
         for (segment, part) in lines.iter_mut().zip(parts) {
+            if part == segment.said().trim() {
+                // Unchanged: a line fixed word by word keeps its marks.
+                continue;
+            }
             segment.edited = (part != segment.text.trim()).then_some(part);
+            segment.fixes.clear();
+        }
+        Ok(())
+    }
+
+    /// Reads the misheard words `from` as `to`: the ones the user picked,
+    /// `n` characters from character `at` of the line starting at `at_ms`
+    /// as it reads now, and every other place in the meeting `elsewhere`
+    /// corrects (built with [`Vocabulary::one_correction`], so the same
+    /// letters inside a longer word are left alone). The words as
+    /// transcribed stay; a line rewritten whole gets the new words in its
+    /// rewritten words. Refused, changing nothing, when the picked words are
+    /// not there or are partly a word fixed before.
+    pub fn fix_word(
+        &mut self,
+        at_ms: u64,
+        at: usize,
+        from: &str,
+        to: &str,
+        elsewhere: &Vocabulary,
+    ) -> std::result::Result<WordFixed, &'static str> {
+        let to = to.trim();
+        if from.trim().is_empty() || to.is_empty() {
+            return Err("a word is needed");
+        }
+        if from == to {
+            return Err("the words are the same");
+        }
+        let picked = self
+            .segments
+            .iter()
+            .position(|segment| segment.start_ms == at_ms)
+            .ok_or("no line starts there")?;
+        let n = from.chars().count();
+        {
+            let line = &self.segments[picked];
+            let read: String = line.said().chars().skip(at).take(n).collect();
+            if read != from {
+                return Err("the words are not there any more");
+            }
+            if !line.rewritten() && matches!(line.place(at, n), Place::Across) {
+                return Err("part of the words was fixed before");
+            }
+        }
+
+        let mut fixed = WordFixed {
+            places: 0,
+            before: Vec::new(),
+        };
+        for (index, line) in self.segments.iter_mut().enumerate() {
+            let here = (index == picked).then_some((at, n));
+            let mut next = line.clone();
+            let mut places = 0;
+            if line.rewritten() {
+                let words = line.said().to_string();
+                let mine = here.map(|(at, n)| (byte_at(&words, at), byte_at(&words, at + n)));
+                let mut ranges: Vec<(usize, usize)> = elsewhere
+                    .spans(&words)
+                    .into_iter()
+                    .map(|span| (span.start, span.end))
+                    .filter(|&(start, end)| mine.is_none_or(|(a, b)| end <= a || b <= start))
+                    .chain(mine)
+                    .collect();
+                if ranges.is_empty() {
+                    continue;
+                }
+                ranges.sort_unstable();
+                let mut out = String::with_capacity(words.len());
+                let mut from_byte = 0;
+                for (start, end) in &ranges {
+                    out.push_str(&words[from_byte..*start]);
+                    out.push_str(to);
+                    from_byte = *end;
+                }
+                out.push_str(&words[from_byte..]);
+                places = ranges.len();
+                next.edited = (out != line.text).then_some(out);
+            } else {
+                let mut taken: Vec<(usize, usize)> = line
+                    .fixes
+                    .iter()
+                    .map(|fix| {
+                        let at = fix.at as usize;
+                        (at, at + fix.written_len())
+                    })
+                    .collect();
+                if let Some((at, n)) = here {
+                    match line.place(at, n) {
+                        Place::Written(written) => {
+                            next.fixes.push(WordFix {
+                                at: written as u32,
+                                from: from.to_string(),
+                                to: to.to_string(),
+                                auto: false,
+                            });
+                            taken.push((written, written + n));
+                        }
+                        Place::Fix(fix) if next.fixes[fix].auto => {
+                            // The vocabulary's words, in the line as
+                            // transcribed: the user's fix goes over them.
+                            let words = next.fixes[fix].to.clone();
+                            next.fixes[fix] = WordFix {
+                                at: next.fixes[fix].at,
+                                from: words,
+                                to: to.to_string(),
+                                auto: false,
+                            };
+                        }
+                        Place::Fix(fix) => {
+                            if next.fixes[fix].from == to {
+                                next.fixes.remove(fix);
+                            } else {
+                                next.fixes[fix].to = to.to_string();
+                            }
+                        }
+                        Place::Across => unreachable!("refused above"),
+                    }
+                    places += 1;
+                }
+                for span in elsewhere.spans(&line.text) {
+                    let start = line.text[..span.start].chars().count();
+                    let end = start + span.from.chars().count();
+                    if taken.iter().any(|&(a, b)| start < b && a < end) {
+                        continue;
+                    }
+                    taken.push((start, end));
+                    next.fixes.push(WordFix {
+                        at: start as u32,
+                        from: span.from,
+                        to: to.to_string(),
+                        auto: false,
+                    });
+                    places += 1;
+                }
+                if places == 0 {
+                    continue;
+                }
+                next.refix();
+            }
+            fixed.places += places as u32;
+            fixed.before.push(std::mem::replace(line, next));
+        }
+        Ok(fixed)
+    }
+
+    /// How many places [`Transcript::fix_word`] would fix for the misheard
+    /// words `from` picked at `at` of the line starting at `at_ms` and read
+    /// as `to`, with the user's `vocabulary` deciding where else the same
+    /// words are a word of their own (so is `to`: the same letters starting
+    /// it are left alone). With `to` not given yet, the places for a right
+    /// word that is no other word. Counted on a copy; nothing changes.
+    pub fn word_places(
+        &self,
+        at_ms: u64,
+        at: usize,
+        from: &str,
+        to: &str,
+        vocabulary: &Vocabulary,
+    ) -> std::result::Result<u32, &'static str> {
+        let to = to.trim();
+        let to = if to.is_empty() || to == from {
+            format!("{from}\u{2060}")
+        } else {
+            to.to_string()
+        };
+        let elsewhere = Vocabulary::one_correction(from, &to, vocabulary);
+        let mut copy = self.clone();
+        copy.fix_word(at_ms, at, from, &to, &elsewhere)
+            .map(|fixed| fixed.places)
+    }
+
+    /// Reads the words fixed from `from` to `to` in the lines from the one
+    /// starting at `from_ms` up to `to_ms` (a paragraph on the screen) as
+    /// heard again: the user's fix goes; the vocabulary's, which is in the
+    /// words as transcribed and in `전사.txt`, becomes the user's fix back
+    /// to the heard words. Returns how many places.
+    pub fn unfix_word(&mut self, from_ms: u64, to_ms: u64, from: &str, to: &str) -> u32 {
+        let mut undone = 0;
+        for line in &mut self.segments {
+            if line.start_ms < from_ms || line.start_ms > to_ms {
+                continue;
+            }
+            let mut changed = false;
+            line.fixes.retain_mut(|fix| {
+                if fix.from != from || fix.to != to {
+                    return true;
+                }
+                changed = true;
+                undone += 1;
+                if !fix.auto {
+                    return false;
+                }
+                // The vocabulary's fix is in the words as transcribed:
+                // the heard words come back as the user's fix over them.
+                *fix = WordFix {
+                    at: fix.at,
+                    from: to.to_string(),
+                    to: from.to_string(),
+                    auto: false,
+                };
+                true
+            });
+            if changed {
+                line.refix();
+            }
+        }
+        undone
+    }
+
+    /// Puts lines back as they were before a fix (`WordFixed::before`).
+    /// Refused, changing nothing, when one of them is no longer there (the
+    /// recording was transcribed again).
+    pub fn put_back_lines(&mut self, before: &[Segment]) -> std::result::Result<(), &'static str> {
+        let mut at = Vec::with_capacity(before.len());
+        for kept in before {
+            let index = self
+                .segments
+                .iter()
+                .position(|line| line.start_ms == kept.start_ms && line.text == kept.text)
+                .ok_or("the transcript has changed since")?;
+            at.push(index);
+        }
+        for (index, kept) in at.into_iter().zip(before) {
+            let line = &mut self.segments[index];
+            line.edited = kept.edited.clone();
+            line.fixes = kept.fixes.clone();
         }
         Ok(())
     }
@@ -801,6 +1163,7 @@ mod tests {
             unsure: false,
             overlap: false,
             edited: None,
+            fixes: Vec::new(),
         }
     }
 
@@ -1070,5 +1433,178 @@ mod tests {
                 "{now:?} -> {text:?} gave {parts:?}"
             );
         }
+    }
+
+    fn vocabulary(text: &str) -> Vocabulary {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("v.txt");
+        std::fs::write(&file, text).unwrap();
+        Vocabulary::load(&file).unwrap()
+    }
+
+    #[test]
+    fn a_misheard_word_is_fixed_where_picked_and_wherever_it_safely_is() {
+        let mut transcript = lines(&[
+            "우물천장탄을 살리고 간접등은",
+            "그 우물천장탄은 너무 낮아요. 우물천장탄",
+            "큰우물천장탄 이야기",
+        ]);
+        let known = vocabulary("우물천장\n");
+        assert_eq!(
+            transcript.word_places(1000, 2, "우물천장탄", "우물천장", &known),
+            Ok(3)
+        );
+        let elsewhere = Vocabulary::one_correction("우물천장탄", "우물천장", &known);
+        let fixed = transcript
+            .fix_word(1000, 2, "우물천장탄", "우물천장", &elsewhere)
+            .unwrap();
+        // The picked place, the other two at a word's start; not inside
+        // "큰우물천장탄".
+        assert_eq!(fixed.places, 3);
+        assert_eq!(fixed.before.len(), 2);
+        let s = &transcript.segments;
+        assert_eq!(s[0].said(), "우물천장을 살리고 간접등은");
+        assert_eq!(s[1].said(), "그 우물천장은 너무 낮아요. 우물천장");
+        assert_eq!(s[2].edited, None);
+        // The words as transcribed stay, and so does the plain transcript.
+        assert_eq!(s[1].text, "그 우물천장탄은 너무 낮아요. 우물천장탄");
+        assert!(transcript.to_text().contains("우물천장탄은"));
+        assert_eq!(
+            s[1].fixes,
+            vec![
+                WordFix {
+                    at: 2,
+                    from: "우물천장탄".into(),
+                    to: "우물천장".into(),
+                    auto: false
+                },
+                WordFix {
+                    at: 17,
+                    from: "우물천장탄".into(),
+                    to: "우물천장".into(),
+                    auto: false
+                },
+            ]
+        );
+        // Undone in one paragraph, and back as it was everywhere.
+        assert_eq!(transcript.unfix_word(0, 900, "우물천장탄", "우물천장"), 1);
+        assert_eq!(transcript.segments[0].edited, None);
+        transcript.put_back_lines(&fixed.before).unwrap();
+        assert!(!transcript.edited());
+        assert!(transcript.segments.iter().all(|s| s.fixes.is_empty()));
+    }
+
+    #[test]
+    fn a_short_or_mid_word_pick_is_fixed_only_where_picked() {
+        let mut transcript = lines(&["가나 가나다 가나", "가나는 좋아요"]);
+        let none = Vocabulary::default();
+        // Picked in the middle of a word: only there.
+        let elsewhere = Vocabulary::one_correction("나다", "라마", &none);
+        let fixed = transcript
+            .fix_word(0, 4, "나다", "라마", &elsewhere)
+            .unwrap();
+        assert_eq!(fixed.places, 1);
+        assert_eq!(transcript.segments[0].said(), "가나 가라마 가나");
+        // Two letters go on only alone or before particles.
+        let elsewhere = Vocabulary::one_correction("가나", "다라", &none);
+        let fixed = transcript
+            .fix_word(0, 0, "가나", "다라", &elsewhere)
+            .unwrap();
+        assert_eq!(fixed.places, 3);
+        assert_eq!(transcript.segments[0].said(), "다라 가라마 다라");
+        assert_eq!(transcript.segments[1].said(), "다라는 좋아요");
+        // One letter: only where picked, and a word the user knows is
+        // never another place.
+        let elsewhere = Vocabulary::one_correction("좋", "싫", &none);
+        assert!(elsewhere.corrections.is_empty());
+    }
+
+    #[test]
+    fn a_fixed_word_can_be_fixed_again_but_not_half_of_it() {
+        let mut transcript = lines(&["걸레바지는 흰색"]);
+        let none = Vocabulary::default();
+        let one = |from: &str, to: &str| Vocabulary::one_correction(from, to, &none);
+        transcript
+            .fix_word(0, 0, "걸레바지", "걸래받이", &one("걸레바지", "걸래받이"))
+            .unwrap();
+        assert_eq!(transcript.segments[0].said(), "걸래받이는 흰색");
+        // The fix's own words, picked again, change the fix.
+        transcript
+            .fix_word(0, 0, "걸래받이", "걸레받이", &one("걸래받이", "걸레받이"))
+            .unwrap();
+        assert_eq!(transcript.segments[0].said(), "걸레받이는 흰색");
+        assert_eq!(transcript.segments[0].fixes.len(), 1);
+        assert_eq!(transcript.segments[0].fixes[0].from, "걸레바지");
+        // Half a fix is refused, changing nothing.
+        assert_eq!(
+            transcript.fix_word(0, 2, "받이는", "바지는", &one("받이는", "바지는")),
+            Err("part of the words was fixed before")
+        );
+        // Words that are not there any more are refused.
+        assert!(transcript.fix_word(0, 0, "흰색", "검정", &none).is_err());
+        // Fixed back to the words as transcribed, it is no fix.
+        transcript
+            .fix_word(0, 0, "걸레받이", "걸레바지", &one("걸레받이", "걸레바지"))
+            .unwrap();
+        assert!(!transcript.edited());
+    }
+
+    #[test]
+    fn a_line_rewritten_whole_takes_the_word_in_its_own_words() {
+        let mut transcript = lines(&["우물천장탄 하나", "우물천장탄 둘"]);
+        transcript.edit_lines(0, 900, "우물천장탄 하나 더").unwrap();
+        let none = Vocabulary::default();
+        let elsewhere = Vocabulary::one_correction("우물천장탄", "우물천장", &none);
+        let fixed = transcript
+            .fix_word(1000, 0, "우물천장탄", "우물천장", &elsewhere)
+            .unwrap();
+        assert_eq!(fixed.places, 2);
+        let s = &transcript.segments;
+        assert_eq!(s[0].said(), "우물천장 하나 더");
+        assert!(s[0].fixes.is_empty());
+        assert_eq!(s[1].said(), "우물천장 둘");
+        assert_eq!(s[1].fixes.len(), 1);
+        // A whole-line edit over word fixes takes their place.
+        transcript.edit_lines(1000, 1900, "다른 말").unwrap();
+        assert!(transcript.segments[1].fixes.is_empty());
+        assert_eq!(transcript.segments[1].said(), "다른 말");
+    }
+
+    #[test]
+    fn word_fixes_read_in_older_records_and_are_left_out_when_absent() {
+        let line: Segment = serde_json::from_str(
+            r#"{"start_ms":0,"end_ms":1,"speaker":1,"text":"말","edited":"글"}"#,
+        )
+        .unwrap();
+        assert!(line.fixes.is_empty());
+        let json = serde_json::to_string(&line).unwrap();
+        assert!(!json.contains("fixes"));
+        assert_eq!(with_fixes("가나다", &[]).as_deref(), Some("가나다"));
+        let wrong = WordFix {
+            at: 1,
+            from: "다".into(),
+            to: "라".into(),
+            auto: true,
+        };
+        assert_eq!(with_fixes("가나다", &[wrong]), None);
+    }
+
+    #[test]
+    fn the_count_shown_is_what_the_fix_changes() {
+        let mut transcript = lines(&["우물천 하나", "우물천장은 높아요", "우물천에서"]);
+        let none = Vocabulary::default();
+        // The right word starts with the misheard one: where it is already
+        // written right, nothing is counted or changed.
+        let counted = transcript
+            .word_places(0, 0, "우물천", "우물천장", &none)
+            .unwrap();
+        let elsewhere = Vocabulary::one_correction("우물천", "우물천장", &none);
+        let fixed = transcript
+            .fix_word(0, 0, "우물천", "우물천장", &elsewhere)
+            .unwrap();
+        assert_eq!(counted, 2);
+        assert_eq!(fixed.places, counted);
+        assert_eq!(transcript.segments[1].edited, None);
+        assert_eq!(transcript.segments[2].said(), "우물천장에서");
     }
 }

@@ -16,6 +16,7 @@ import {
   type TalkStats,
   type Template,
   type Transcript as MeetingTranscript,
+  type WordFix,
 } from "@/bindings";
 import {
   isUnnamed,
@@ -46,6 +47,23 @@ import {
   type Redo,
 } from "../components/Edit";
 import { SummaryCardDialog } from "../components/SummaryCard";
+import {
+  FixedNote,
+  FixMark,
+  FixWas,
+  PickKey,
+  usePickedWords,
+  WordFixPanel,
+  type Fixed,
+  type Picked,
+} from "../components/WordFix";
+import {
+  chars,
+  distinctFixes,
+  fixedByWord,
+  pieces,
+  quotedRo,
+} from "../lib/wordfix";
 import { NS } from "../i18n";
 import { clock, fullDay, hm, hms, isoDay, shortModel } from "../lib/format";
 import { joinPath, usePlayer, type Player } from "../lib/player";
@@ -1491,9 +1509,14 @@ interface Paragraph {
   text: string;
   /** The words as transcribed. */
   original: string;
-  /** Whether the user fixed any of its lines. */
+  /** Whether the user rewrote any of its lines whole. */
   edited: boolean;
+  /** Whether any of its lines reads other than transcribed (rewritten, or
+   *  a word fixed). */
+  changed: boolean;
   unsure: boolean;
+  /** Its lines, for showing fixed words where they are. */
+  lines: Segment[];
 }
 
 /** `more` after `words` with a space, leaving out nothing said. */
@@ -1506,7 +1529,8 @@ function paragraphs(segments: Segment[]): Paragraph[] {
   for (const line of segments) {
     const last = out[out.length - 1];
     const said = line.edited ?? line.text;
-    const edited = line.edited !== undefined && line.edited !== null;
+    const changed = line.edited !== undefined && line.edited !== null;
+    const edited = changed && !fixedByWord(line);
     if (
       last &&
       last.speaker === line.speaker &&
@@ -1515,8 +1539,10 @@ function paragraphs(segments: Segment[]): Paragraph[] {
       last.text = joined(last.text, said);
       last.original = joined(last.original, line.text);
       last.edited = last.edited || edited;
+      last.changed = last.changed || changed;
       last.endMs = line.end_ms;
       last.unsure = last.unsure || (line.unsure ?? false);
+      last.lines.push(line);
     } else {
       out.push({
         startMs: line.start_ms,
@@ -1525,7 +1551,9 @@ function paragraphs(segments: Segment[]): Paragraph[] {
         text: said.trim(),
         original: line.text,
         edited,
+        changed,
         unsure: line.unsure ?? false,
+        lines: [line],
       });
     }
   }
@@ -2326,6 +2354,18 @@ function Transcript({
   const [seeing, setSeeing] = useState<number | null>(null);
   // The whole transcript as first written, before any fix.
   const [asWritten, setAsWritten] = useState(false);
+  // A fixed word whose fix is shown ("start|from|to"), the words being
+  // fixed, the fix just made, and the minutes asked to be written again.
+  const [seeingFix, setSeeingFix] = useState<string | null>(null);
+  const [panel, setPanel] = useState<Picked | null>(null);
+  const [fixed, setFixed] = useState<Fixed | null>(null);
+  const [fixTrouble, setFixTrouble] = useState("");
+  const redoMinutes = useConfirmRedo(meeting);
+  const box = useRef<HTMLDivElement | null>(null);
+  const [picked, dropPicked] = usePickedWords(
+    box,
+    asWritten || fixing !== null || panel !== null,
+  );
   const current = useRef<HTMLDivElement | null>(null);
   const transcript = meeting.transcript;
   const marks = meeting.marks_ms ?? [];
@@ -2363,13 +2403,30 @@ function Transcript({
     }
   }, [nowIndex, player.playing]);
 
-  const anyEdited = lines.some((line) => line.edited);
+  const anyEdited = lines.some((line) => line.changed);
   if (!transcript || lines.length === 0) return null;
   const nameOf = (id: number) =>
     transcript.speakers.find((speaker) => speaker.id === id)?.name ?? "";
 
+  const putBack = async (from: number, to: number, fix: WordFix) => {
+    const result = await commands.seogiUnfixWord(
+      meeting.id,
+      from,
+      to,
+      fix.from,
+      fix.to,
+    );
+    if (result.status === "error") {
+      setFixTrouble(t("failed", { reason: result.error }));
+      return;
+    }
+    setSeeingFix(null);
+    await refreshDetail();
+  };
+
   return (
     <div
+      ref={box}
       aria-label={t("minutes.transcript")}
       className="max-h-[70vh] overflow-y-auto pr-1"
     >
@@ -2386,6 +2443,8 @@ function Transcript({
                 setAsWritten(!asWritten);
                 setFixing(null);
                 setSeeing(null);
+                setSeeingFix(null);
+                setPanel(null);
               }}
             >
               {asWritten ? t("edit.showEdited") : t("edit.showOriginal")}
@@ -2523,9 +2582,28 @@ function Transcript({
               >
                 {index === foundIndex && !asWritten ? (
                   <Marked text={line.text} words={words} />
-                ) : (
+                ) : asWritten ? (
                   shown
+                ) : (
+                  <LineWords paragraph={line} pick={panel} />
                 )}
+                {asWritten
+                  ? null
+                  : distinctFixes(line.lines).map((fix) => {
+                      const key = `${line.startMs}|${fix.from}|${fix.to}`;
+                      return (
+                        <Fragment key={key}>
+                          {" "}
+                          <FixMark
+                            fix={fix}
+                            open={seeingFix === key}
+                            onToggle={() =>
+                              setSeeingFix(seeingFix === key ? null : key)
+                            }
+                          />
+                        </Fragment>
+                      );
+                    })}
                 {line.edited && !asWritten ? (
                   <>
                     {" "}
@@ -2542,9 +2620,140 @@ function Transcript({
             {seeing === line.startMs && line.edited && !asWritten ? (
               <WasWords text={line.original} />
             ) : null}
+            {asWritten
+              ? null
+              : distinctFixes(line.lines)
+                  .filter(
+                    (fix) =>
+                      seeingFix === `${line.startMs}|${fix.from}|${fix.to}`,
+                  )
+                  .map((fix) => (
+                    <FixWas
+                      key="was"
+                      fix={fix}
+                      onPutBack={() =>
+                        void putBack(
+                          line.startMs,
+                          line.lines[line.lines.length - 1].start_ms,
+                          fix,
+                        )
+                      }
+                    />
+                  ))}
           </div>
         );
       })}
+      {picked && !panel ? (
+        <PickKey
+          picked={picked}
+          onPress={() => {
+            setPanel(picked);
+            dropPicked();
+            setFixed(null);
+            setFixTrouble("");
+          }}
+        />
+      ) : null}
+      {panel ? (
+        <WordFixPanel
+          meeting={meeting}
+          picked={panel}
+          onCancel={() => setPanel(null)}
+          onFixed={(done) => {
+            setPanel(null);
+            setFixed(done);
+            window.getSelection()?.removeAllRanges();
+            void refreshDetail();
+          }}
+        />
+      ) : null}
+      {fixed ? (
+        <FixedNote
+          fixed={fixed}
+          trouble={fixTrouble}
+          canRewrite={Boolean(meeting.minutes?.length)}
+          onUndo={async () => {
+            const result = await commands.seogiUnfixWords(
+              meeting.id,
+              fixed.outcome.before,
+              fixed.from,
+              fixed.to,
+              fixed.outcome.remembered,
+            );
+            if (result.status === "error") {
+              setFixTrouble(t("failed", { reason: result.error }));
+              return;
+            }
+            setFixed(null);
+            await refreshDetail();
+          }}
+          onRewrite={() => {
+            setFixed(null);
+            redoMinutes.ask("minutes", () => {
+              void commands
+                .seogiRetry(meeting.id, true)
+                .then(() => refreshDetail());
+            });
+          }}
+          onClose={() => {
+            setFixed(null);
+            setFixTrouble("");
+          }}
+        />
+      ) : null}
+      {redoMinutes.dialog}
     </div>
+  );
+}
+
+/** A paragraph's words as read, each line in its own span (its start in
+ *  `data-seg`, so words picked in it can be told where they are), fixed
+ *  words underlined, and the words being fixed marked. */
+function LineWords({
+  paragraph,
+  pick,
+}: {
+  paragraph: Paragraph;
+  pick: Picked | null;
+}) {
+  const { t } = useTranslation(NS);
+  const shown = paragraph.lines.filter((line) =>
+    (line.edited ?? line.text).trim(),
+  );
+  return (
+    <>
+      {shown.map((line, index) => (
+        <Fragment key={line.start_ms}>
+          {index > 0 ? " " : null}
+          <span data-seg={line.start_ms}>
+            {pieces(
+              line,
+              pick && pick.atMs === line.start_ms
+                ? { at: pick.at, n: chars(pick.words).length }
+                : null,
+            ).map((piece, at) =>
+              piece.fix ? (
+                <span
+                  key={at}
+                  className={`word-fixed${piece.picked ? " word-picked" : ""}`}
+                  title={t("wordFix.was", {
+                    from: piece.fix.from,
+                    fromRo: quotedRo(piece.fix.from),
+                  })}
+                >
+                  {piece.text}
+                </span>
+              ) : piece.picked ? (
+                <mark key={at} className="word-picked">
+                  {piece.text}
+                </mark>
+              ) : (
+                <Fragment key={at}>{piece.text}</Fragment>
+              ),
+            )}
+          </span>
+        </Fragment>
+      ))}
+    </>
   );
 }

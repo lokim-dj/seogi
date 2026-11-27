@@ -186,8 +186,15 @@ export function lostBy(meeting: Meeting, redo: Redo) {
   const sections = meeting.minutes?.[0]?.sections ?? [];
   const entries = sections.flatMap((section) => section.entries);
   const segments = meeting.transcript?.segments ?? [];
-  const fixed = (index: number) =>
-    segments[index]?.edited !== undefined && segments[index]?.edited !== null;
+  // A line the user's vocabulary alone fixed is fixed again when the
+  // recording is transcribed again: nothing of the user's goes.
+  const fixed = (index: number) => {
+    const line = segments[index];
+    if (!line || line.edited === undefined || line.edited === null)
+      return false;
+    const fixes = line.fixes ?? [];
+    return !(fixes.length > 0 && fixes.every((fix) => fix.auto));
+  };
   return {
     changed: entries.filter((entry) => entry.original && !entry.added).length,
     added: entries.filter((entry) => entry.added).length,
