@@ -49,7 +49,7 @@ class InsertService : AccessibilityService() {
             AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED -> remember(event.source)
             // Only that a field changed is used, never what it holds; Seogi's own writing is not typing.
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED ->
-                if (SystemClock.uptimeMillis() - wroteAt > OWN_WRITE_MS) keystroke?.invoke()
+                if (OwnWrite.isTyping(SystemClock.uptimeMillis(), wroteAt)) keystroke?.invoke()
             AccessibilityEvent.TYPE_WINDOWS_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> check()
         }
@@ -188,8 +188,6 @@ class InsertService : AccessibilityService() {
     companion object {
         private const val TAG = "SeogiDictation"
         private const val RESUME_EVERY_MS = 30_000L
-        /** Text changes this soon after Seogi wrote are its own, not the user's typing. */
-        private const val OWN_WRITE_MS = 1_500L
 
         /** The running service, when the user has switched it on. Read and set on the main thread. */
         @Volatile

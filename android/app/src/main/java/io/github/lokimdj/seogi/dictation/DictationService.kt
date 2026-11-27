@@ -191,6 +191,7 @@ class DictationService : Service() {
         try {
             wm.addView(v, p)
             view = v
+            if (steppedBack) v.stepBack(true, animate = false)
         } catch (e: Exception) {
             Log.w(TAG, "could not show the key", e)
             params = null
@@ -237,20 +238,35 @@ class DictationService : Service() {
         placeAt(DictationPrefs.place(this))
     }
 
-    /** While the user types by hand the key steps back, and comes back [COME_BACK_MS] after the last key. */
-    private val comeBack = Runnable { view?.stepBack(false) }
+    /**
+     * Once the user types by hand the key steps back (small and faint) and
+     * stays so, also when it goes and comes back with the keyboard, until the
+     * user touches it: it should not pop up big in the middle of typing.
+     */
+    private var steppedBack = false
 
     private fun typedByHand() {
         if (mode != BubbleGesture.Mode.IDLE) return
+        steppedBack = true
         view?.stepBack(true)
-        main.removeCallbacks(comeBack)
-        main.postDelayed(comeBack, COME_BACK_MS)
     }
 
+    /** A touch that began off the face (in the window's margin) is let go whole. */
+    private var offFace = false
+    /** The screen and side margin, read once when a touch begins and used while it drags. */
+    private var dragScreen = Pair(0, 0)
+    private var dragMargin = 0
+
     private fun onTouch(e: MotionEvent) {
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) {
+            offFace = view?.onFace(e.x, e.y) == false
+        }
+        if (offFace) return
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                main.removeCallbacks(comeBack)
+                steppedBack = false
+                dragScreen = screen()
+                dragMargin = sideMargin()
                 view?.press()
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> view?.release()
@@ -275,16 +291,16 @@ class DictationService : Service() {
             BubbleGesture.Act.Cancel -> cancelListening()
             is BubbleGesture.Act.Move -> {
                 val p = params ?: return
-                val (w, h) = screen()
-                val m = sideMargin().coerceIn(0, ((w - p.width) / 2).coerceAtLeast(0))
+                val (w, h) = dragScreen
+                val m = dragMargin.coerceIn(0, ((w - p.width) / 2).coerceAtLeast(0))
                 p.x = (dragFromX + a.dx.toInt()).coerceIn(m, (w - p.width - m).coerceAtLeast(m))
                 p.y = (dragFromY + a.dy.toInt()).coerceIn(0, (h - p.height).coerceAtLeast(0))
                 view?.let { try { wm.updateViewLayout(it, p) } catch (_: Exception) {} }
             }
             BubbleGesture.Act.DragEnd -> {
                 val p = params ?: return
-                val (w, h) = screen()
-                val place = BubblePlace.afterDrag(p.x, p.y, w, h, p.width, sideMargin())
+                val (w, h) = dragScreen
+                val place = BubblePlace.afterDrag(p.x, p.y, w, h, p.width, dragMargin)
                 DictationPrefs.setPlace(this, place)
                 placeAt(place)
             }
@@ -460,7 +476,6 @@ class DictationService : Service() {
         running = false
         main.removeCallbacks(warm)
         main.removeCallbacks(settle)
-        main.removeCallbacks(comeBack)
         InsertService.listener = null
         InsertService.keystroke = null
         try { getSystemService(AudioManager::class.java).unregisterAudioRecordingCallback(recordings) } catch (_: Exception) {}
@@ -481,7 +496,6 @@ class DictationService : Service() {
         private const val ID_NOTIFICATION = 11
         /** The window; the face inside is a little smaller ([BubbleView]), so the spring has room. */
         private const val SIZE_DP = 64
-        private const val COME_BACK_MS = 1_500L
         /** The least room at each side, wider than the back gesture strips of common phones. */
         private const val EDGE_DP = 28
         private const val WARM_AFTER_MS = 250L

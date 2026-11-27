@@ -155,6 +155,14 @@ object KeyRule {
 }
 
 /**
+ * Whether a change in a text field is the user typing by hand: changes
+ * within [withinMs] of Seogi writing ([wroteAt]) are Seogi's own.
+ */
+object OwnWrite {
+    fun isTyping(now: Long, wroteAt: Long, withinMs: Long = 1_500): Boolean = now - wroteAt > withinMs
+}
+
+/**
  * Keeps the key from flickering: it comes up once the wish to show it has held
  * for [showAfterMs] and goes once the wish to hide it has held for
  * [hideAfterMs], so moving the cursor from one field to the next, or the

@@ -26,8 +26,8 @@ import io.github.lokimdj.seogi.R
  * - listening, the mark turns and a red tail runs round the rim (the ink
  *   stays, so the key never turns into a red blob);
  * - while the speech becomes text, the mark fades and a light arc turns;
- * - while the user types by hand ([stepBack]), it shrinks and fades so it is
- *   out of the way, and comes back when the typing stops.
+ * - once the user types by hand ([stepBack]), it shrinks and fades so it is
+ *   out of the way, until it is touched.
  *
  * The face is drawn at [FACE] of the window, so the spring has room to grow
  * without being cut off. Touches go to [onTouch] as they are.
@@ -94,6 +94,20 @@ class BubbleView(context: Context, private val onTouch: (MotionEvent) -> Unit) :
         contentDescription = context.getString(R.string.bubble_idle)
     }
 
+    /**
+     * Whether a touch at window pixel ([x], [y]) is on the face as it is drawn
+     * now (smaller when stepped back), with a little room. The window is a
+     * bit larger than the face; a touch in that margin is not meant for it.
+     * The key is the window's root view, so touches arrive unscaled.
+     */
+    fun onFace(x: Float, y: Float): Boolean {
+        val c = width / 2f
+        val r = c * FACE * scaleX + 4 * density
+        val dx = x - c
+        val dy = y - c
+        return dx * dx + dy * dy <= r * r
+    }
+
     /** The finger came down: the key gives a little. */
     fun press() {
         pressed = true
@@ -109,11 +123,18 @@ class BubbleView(context: Context, private val onTouch: (MotionEvent) -> Unit) :
         settle()
     }
 
-    /** The user types by hand ([on]) or stopped: step out of the way, or come back. */
-    fun stepBack(on: Boolean) {
+    /** Step out of the way ([on]) or come back; [animate] false puts it there at once (a key just shown). */
+    fun stepBack(on: Boolean, animate: Boolean = true) {
         if (pressed || mode != BubbleGesture.Mode.IDLE || steppedBack == on) return
         steppedBack = on
-        settle()
+        if (animate) {
+            settle()
+        } else {
+            val s = if (on) BACK else 1f
+            scaleX = s
+            scaleY = s
+            alpha = if (on) BACK_ALPHA else 1f
+        }
     }
 
     private fun settle() {
