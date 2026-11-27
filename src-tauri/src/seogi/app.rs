@@ -577,9 +577,8 @@ impl Secretary {
 
     /// The one way the dictation settings in `seogi.json` change: `change`
     /// is applied to what is saved now, under the lock, and the result is
-    /// saved. So the settings screen and the floating key (which saves its
-    /// place on every drag) never undo each other. Nothing else is read
-    /// again.
+    /// saved. So the settings screen and the tray never undo each other.
+    /// Nothing else is read again.
     pub fn update_dictation(
         &self,
         change: impl FnOnce(&mut super::dictation::DictationConfig),
@@ -3045,7 +3044,7 @@ pub fn tray_action(app: &AppHandle, id: &str) -> bool {
         }
         "seogi_dictation" => {
             // The same path as the settings' switch, so the shortcut, the
-            // floating key, the tray and an open settings screen all follow.
+            // tray and an open settings screen all follow.
             let app = app.clone();
             std::thread::spawn(move || {
                 let mut wanted = super::dictation::read(&app, &secretary.config().dictation);

@@ -1612,12 +1612,6 @@ async seogiDictationStatus() : Promise<Result<DictationStatus, string>> {
 }
 },
 /**
- * The floating key was pressed: starts or ends a dictation.
- */
-async seogiDictationToggle() : Promise<void> {
-    await TAURI_INVOKE("seogi_dictation_toggle");
-},
-/**
  * Copies the last dictation's words, from the note that says they could
  * not be typed.
  */
@@ -1647,17 +1641,6 @@ async seogiForgetDictations(ids: number[] | null) : Promise<Result<number, strin
  */
 async seogiDownloadDictationModel() : Promise<void> {
     await TAURI_INVOKE("seogi_download_dictation_model");
-},
-/**
- * The floating key's menu, with its two lines in the user's language.
- */
-async seogiMicMenu(hide: string, settings: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("seogi_mic_menu", { hide, settings }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
 },
 /**
  * Opens the system's page where Seogi is allowed to type into other apps.
@@ -2408,8 +2391,8 @@ muted_events: string[];
  */
 minutes_beside_source: boolean; 
 /**
- * Dictation: a shortcut or the floating key, speech, and the words
- * typed where the cursor is. On for a new install.
+ * Dictation: a shortcut, speech, and the words typed where the cursor
+ * is. On for a new install.
  */
 dictation: DictationConfig }
 /**
@@ -2467,7 +2450,7 @@ fillers: boolean; tidy: boolean; tidy_with: Provider;
 /**
  * Spoken numbers before a unit written as digits.
  */
-numbers: boolean; button: boolean; 
+numbers: boolean; 
 /**
  * How many recent dictations are kept (only on this computer, never in
  * the meetings).
@@ -2491,7 +2474,7 @@ export type DictationChanged = Record<string, never>
  */
 export type DictationConfig = { 
 /**
- * Dictation answers its shortcut and its key. On for a new install;
+ * Dictation answers its shortcut. On for a new install;
  * a `seogi.json` that already says either way keeps what it says.
  */
 enabled: boolean; 
@@ -2507,15 +2490,7 @@ tidy_with: Provider;
  * Write spoken numbers before a unit as digits ("이십 초" → "20초").
  * On unless turned off; a rule, not a model, so it costs nothing.
  */
-numbers: boolean; 
-/**
- * Show the floating microphone key above other apps.
- */
-button: boolean; 
-/**
- * Where the user left the key; `None` for the bottom right corner.
- */
-button_at: Spot | null }
+numbers: boolean }
 /**
  * What the settings screen needs to know besides the choices.
  */
@@ -3680,7 +3655,6 @@ export type Speed = "fast" | "fair" | "slow"
 /**
  * A place on the screen, in logical pixels.
  */
-export type Spot = { x: number; y: number }
 /**
  * What happened along the way, for the log and for honest reporting.
  */

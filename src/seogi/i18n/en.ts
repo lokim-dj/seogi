@@ -1011,8 +1011,7 @@ const en: Strings = {
     title: "Dictation",
     lead: "Press the shortcut and speak: the words go where the cursor is. Nothing is kept with your meetings.",
     enabled: "Dictation",
-    enabledHint:
-      "When on, the shortcut below and the microphone key take dictation anywhere.",
+    enabledHint: "When on, the shortcut below takes dictation anywhere.",
     permission: "Typing into other apps (Accessibility)",
     permissionNeeded:
       "To type into other apps, macOS has to allow it. In System Settings › Privacy & Security › Accessibility, turn on Seogi. This line changes by itself once you do.",
@@ -1086,9 +1085,6 @@ const en: Strings = {
       "There is no model on this computer quick enough to tidy. A small model in Ollama (such as gemma3:4b) tidies in under a second. Without one, the words go in as heard.",
     tidyLast: "last {{s}} s",
     tidySlowWarn: "not for dictation",
-    button: "Floating microphone key",
-    buttonHint:
-      "A small key above other apps. Press to listen, press again and the words go in. Drag it anywhere; right-click to hide it.",
     keep: "Recent dictation",
     keepHint:
       "Only the last {{n}} stay on this computer, never with your meetings.",
@@ -1104,13 +1100,6 @@ const en: Strings = {
       shortcut_taken: "That key is {{by}}.",
       shortcut_empty: "Pick a shortcut.",
       shortcut_refused: "That key cannot be used. Pick another.",
-    },
-    mic: {
-      label: "Dictation",
-      labelKeys: "Dictation · {{keys}}",
-      listening: "Listening",
-      hide: "Hide this key",
-      settings: "Dictation settings",
     },
     overlay: {
       listening: "Listening",

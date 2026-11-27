@@ -118,8 +118,8 @@ pub struct Config {
     /// watched folder. That folder is how a phone and the computer share
     /// files, so it is where the minutes are looked for on the phone.
     pub minutes_beside_source: bool,
-    /// Dictation: a shortcut or the floating key, speech, and the words
-    /// typed where the cursor is. On for a new install.
+    /// Dictation: a shortcut, speech, and the words typed where the cursor
+    /// is. On for a new install.
     pub dictation: DictationConfig,
 }
 
@@ -476,13 +476,12 @@ mod tests {
     }
 
     /// The screen sends every setting back with a copy it read earlier; the
-    /// dictation settings it holds (and where the floating key was dragged
-    /// since) must not undo the saved ones.
+    /// dictation settings it holds must not undo the saved ones.
     #[test]
     fn the_settings_screen_cannot_undo_dictation() {
         let mut saved = Config::default();
         saved.dictation.enabled = false;
-        saved.dictation.button_at = Some(super::super::dictation::Spot { x: 10, y: 20 });
+        saved.dictation.numbers = false;
         let mut from_screen = Config {
             remind: false,
             ..Config::default()

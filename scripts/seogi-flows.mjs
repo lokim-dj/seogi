@@ -1074,44 +1074,6 @@ await flow(
 );
 
 await flow(
-  "dictation: the floating key is off until turned on",
-  "settings-dictation",
-  async (page, called) => {
-    const key = page.getByRole("switch", { name: "떠 있는 마이크 단추" });
-    expect(!(await key.isChecked()), "the floating key starts on");
-    await key.check();
-    await page.waitForTimeout(300);
-    expect(
-      await called("seogi_set_dictation", (a) => a.dictation.button === true),
-      "the floating key was not saved",
-    );
-  },
-);
-
-await flow(
-  "dictation: the floating key starts and stops a dictation, and offers its menu",
-  "mic-idle",
-  async (page, called) => {
-    const key = page.getByRole("button", { name: "말로 입력" });
-    await key.click();
-    await page.waitForTimeout(200);
-    expect(
-      await called("seogi_dictation_toggle"),
-      "a press did not start dictation",
-    );
-    await key.click({ button: "right" });
-    await page.waitForTimeout(200);
-    expect(
-      await called(
-        "seogi_mic_menu",
-        (a) => a.hide === "단추 숨기기" && a.settings === "말로 입력 설정",
-      ),
-      "a right click did not offer hiding and the settings",
-    );
-  },
-);
-
-await flow(
   "dictation: words with nowhere to go are offered to copy",
   "indicator-nowhere",
   async (page, called) => {

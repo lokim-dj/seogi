@@ -6,7 +6,6 @@
 //   screen = home | home-going | home-going-long | home-many | minutes |
 //            recording | onboarding | settings | waiting | banner-starting |
 //            banner-ready | settings-dictation |
-//            mic-idle | mic-listening | mic-working |
 //            indicator-listening | indicator-tidying | indicator-note |
 //            indicator-nowhere | card | card-empty | minutes-edited |
 //            minutes-editing | minutes-fixed | settings-vocabulary
@@ -181,8 +180,6 @@ const config: Config = {
       model: "gemma3:4b",
     },
     numbers: true,
-    button: false,
-    button_at: null,
   },
 };
 
@@ -198,7 +195,6 @@ const dictation: Dictation = {
   tidy: config.dictation.tidy,
   tidy_with: config.dictation.tidy_with,
   numbers: config.dictation.numbers,
-  button: false,
   keep: 5,
 };
 
@@ -212,9 +208,7 @@ let recentDictations = [
   { id: 1, text: "네, 오늘 안에 보내 드릴게요.", at_ms: now - 31 * minute },
 ];
 const dictationStatus = (): DictationStatus => ({
-  permitted:
-    (screen !== "settings-dictation" || dictation.button) &&
-    screen !== "onboarding",
+  permitted: screen !== "settings-dictation" && screen !== "onboarding",
   active: dictation.enabled,
   handy_installed: true,
   handy_running: true,
@@ -1387,29 +1381,6 @@ async function show() {
   const root = ReactDOM.createRoot(
     document.getElementById("root") as HTMLElement,
   );
-  if (screen.startsWith("mic-")) {
-    await import("../i18n");
-    await import("../seogi.css");
-    const { default: MicButton } = await import("../mic/MicButton");
-    document.body.style.background = "#d9dbdf";
-    const state = screen.slice(4) as "idle" | "listening" | "working";
-    root.render(
-      <div style={{ width: 48, height: 48, position: "relative" }}>
-        <MicButton initial={state} />
-      </div>,
-    );
-    if (state === "listening") {
-      window.setInterval(
-        () =>
-          void emit(
-            "mic-level",
-            Array.from({ length: 16 }, () => 0.3 + Math.random() * 0.6),
-          ),
-        80,
-      );
-    }
-    return;
-  }
   if (screen.startsWith("indicator-")) {
     await import("../i18n");
     const { default: RecordingOverlay } = await import(
