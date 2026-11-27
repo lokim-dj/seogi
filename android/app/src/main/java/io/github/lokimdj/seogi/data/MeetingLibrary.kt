@@ -123,7 +123,9 @@ class MeetingLibrary(
      */
     fun view(id: String): Pair<MeetingDoc, List<OtherEdit>>? {
         val doc = doc(id) ?: return null
-        val (winners, others) = Edits.merge(computerEdits(id), phoneEdits(id).edits)
+        // Changes made before the transcript or minutes were replaced are left alone.
+        fun fresh(m: Map<String, Edit>) = m.filterValues { it.atMs >= doc.editsSince }
+        val (winners, others) = Edits.merge(fresh(computerEdits(id)), fresh(phoneEdits(id).edits))
         return Edits.overlay(doc, winners) to others
     }
 
@@ -201,7 +203,12 @@ class MeetingLibrary(
                 fileId = null // gone (trashed by hand): made again
             }
         }
-        if (fileId == null) fileId = reader.writeJson(token, m.folderId, Edits.PHONE_FILE, text)
+        if (fileId == null) {
+            // Made before but its id lost (the answer did not come back): use that one.
+            fileId = reader.filesIn(token, listOf(m.folderId)).firstOrNull { it.name == Edits.PHONE_FILE }?.id
+                ?.also { reader.rewriteJson(token, it, text) }
+                ?: reader.writeJson(token, m.folderId, Edits.PHONE_FILE, text)
+        }
         synchronized(phoneLock) {
             // A change made while this one was on its way stays waiting.
             val now = phoneEdits(m.id)

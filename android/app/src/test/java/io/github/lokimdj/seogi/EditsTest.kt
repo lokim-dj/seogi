@@ -130,4 +130,35 @@ class EditsTest {
         assertEquals(2, r.writes)
         assertTrue(lib.view("m")!!.first.tasks.single().done)
     }
+
+    private fun library(r: Reader) = MeetingLibrary(File(tmp.root, "m"), r, { TokenResult.Ok("t") }, object : Uploader.FolderCache {
+        override var folderId: String? = "ROOT"
+    })
+
+    /** Changes made before the meeting was transcribed again are not shown on the new one. */
+    @Test fun changesFromBeforeANewTranscriptAreSetAside() = runBlocking {
+        val r = Reader()
+        r.text["J"] = """{"id":"m","tasks":[{"id":"t1","text":"보내기"}],"edits_since":500}"""
+        r.files += DriveItem("J", "회의.json", "F", 1, null, 1, null)
+        val lib = library(r)
+        lib.refresh()
+        lib.edit("m", "done:t1", JsonPrimitive(true), nowMs = 400)
+        assertFalse(lib.view("m")!!.first.tasks.single().done)
+        lib.edit("m", "done:t1", JsonPrimitive(true), nowMs = 600)
+        assertTrue(lib.view("m")!!.first.tasks.single().done)
+    }
+
+    /** A file made before whose id was lost is used again, not made twice. */
+    @Test fun aFileMadeBeforeIsUsedAgain() = runBlocking {
+        val r = Reader()
+        r.text["J"] = """{"id":"m","tasks":[{"id":"t1","text":"보내기"}]}"""
+        r.files += DriveItem("J", "회의.json", "F", 1, null, 1, null)
+        val lib = library(r)
+        lib.refresh()
+        r.files += DriveItem("OLD", "고친것-폰.json", "F", 1, null, 1, null)
+        lib.edit("m", "done:t1", JsonPrimitive(true), nowMs = 1)
+        lib.pushEdits()
+        assertTrue(r.text["OLD"]!!.contains("done:t1"))
+        assertFalse(r.text.containsKey("P"))
+    }
 }

@@ -39,6 +39,7 @@ export function OtherEdits({
 }) {
   const { t } = useTranslation(NS);
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
+  const [trouble, setTrouble] = useState("");
 
   useEffect(() => {
     let live = true;
@@ -76,7 +77,14 @@ export function OtherEdits({
             onClick={() =>
               void commands
                 .seogiTakeOtherEdit(meeting.id, c.key)
-                .then(() => onChanged())
+                .then(async (result) => {
+                  if (result.status === "error") {
+                    setTrouble(t("failed", { reason: result.error }));
+                    return;
+                  }
+                  setTrouble("");
+                  await onChanged();
+                })
             }
           >
             {t(
@@ -91,6 +99,11 @@ export function OtherEdits({
           </button>
         );
       })}
+      {trouble ? (
+        <p role="alert" className="m-0 mt-1 text-[13px] rt">
+          {trouble}
+        </p>
+      ) : null}
     </section>
   );
 }

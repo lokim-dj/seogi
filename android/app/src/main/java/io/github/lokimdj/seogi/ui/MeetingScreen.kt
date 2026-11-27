@@ -201,7 +201,8 @@ fun MeetingScreen(
                     confirm = stringResource(R.string.e_keep), cancel = stringResource(R.string.cancel),
                     onConfirm = { text ->
                         changing = null
-                        if (text != line.text.trim()) onFixLine(line.startMs, text)
+                        // An empty line would take the line's words out: not from here.
+                        if (text.isNotBlank() && text != line.text.trim()) onFixLine(line.startMs, text)
                     },
                     onDismiss = { changing = null },
                 )

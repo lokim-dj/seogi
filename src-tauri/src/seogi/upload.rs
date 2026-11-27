@@ -111,9 +111,16 @@ struct Up {
     /// The phone's changes, as last read from its `고친것-폰.json`.
     #[serde(default)]
     phone_edits: BTreeMap<String, Edit>,
-    /// Drive's version of the phone's file when it was last read.
+    /// Drive's version of each of the phone's files (by file id) when they
+    /// were last read. Normally one; two phones, or a reply lost while one
+    /// was made, can leave more, and their changes are read as one.
     #[serde(default)]
-    phone_edits_version: Option<u64>,
+    phone_edits_versions: BTreeMap<String, Option<u64>>,
+    /// Changes made before this moment (in milliseconds since 1970) are for
+    /// a transcript or minutes since replaced, on either side: they are
+    /// left alone.
+    #[serde(default)]
+    edits_since: i64,
 }
 
 impl Up {
@@ -317,6 +324,19 @@ impl std::fmt::Display for TakenOut {
 
 impl std::error::Error for TakenOut {}
 
+/// The meeting cannot take changes right now (it is being worked on): they
+/// are read again at a later turn, and nothing is wrong.
+#[derive(Debug)]
+pub struct Later;
+
+impl std::fmt::Display for Later {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the meeting is being worked on")
+    }
+}
+
+impl std::error::Error for Later {}
+
 /// Errors after which the rest of the turn would fail the same way: no
 /// connection, the sign-in, or Drive itself busy or failing.
 fn stops_the_turn(error: &anyhow::Error) -> bool {
@@ -506,7 +526,8 @@ impl Uploads {
             for (key, value) in changes {
                 up.edits.insert(key.clone(), Edit { key, value, at_ms });
             }
-            if up.uploaded() && !up.excluded {
+            // Also while it is on its way up: the turn sends it again.
+            if (up.uploaded() || up.wanted) && !up.excluded {
                 up.wanted = true;
                 up.asks += 1;
                 again = true;
@@ -515,6 +536,19 @@ impl Uploads {
         if again {
             self.wake_up();
         }
+    }
+
+    /// The meeting's transcript or minutes were replaced (transcribed or
+    /// written again): the changes made so far, on either side, are for
+    /// what was there before and are set aside from `at_ms` on.
+    pub fn reset_edits(&self, id: &str, at_ms: i64) {
+        self.change(|saved| {
+            if let Some(up) = saved.meetings.get_mut(id) {
+                up.edits.clear();
+                up.phone_edits.clear();
+                up.edits_since = at_ms;
+            }
+        });
     }
 
     /// The changes of a meeting made on both sides that say different
@@ -709,17 +743,23 @@ impl Uploads {
         if folders.is_empty() {
             return Ok(());
         }
-        let mut trouble = None;
+        let mut by_meeting: BTreeMap<String, Vec<Versioned>> = BTreeMap::new();
         for found in remote.find_everywhere(edits::PHONE_FILE)? {
-            let Some(id) = found.parents.iter().find_map(|p| folders.get(p)).cloned() else {
-                continue;
-            };
+            if let Some(id) = found.parents.iter().find_map(|p| folders.get(p)) {
+                by_meeting.entry(id.clone()).or_default().push(found);
+            }
+        }
+        let mut trouble = None;
+        for (id, files) in by_meeting {
             let up = self.up(&id);
-            if found.version.is_some() && up.phone_edits_version == found.version {
+            let versions: BTreeMap<String, Option<u64>> =
+                files.iter().map(|f| (f.id.clone(), f.version)).collect();
+            if versions == up.phone_edits_versions && versions.values().all(Option::is_some) {
                 continue;
             }
-            match self.take_phone_edits(remote, library, &id, &found, &up) {
+            match self.take_phone_edits(remote, library, &id, &files, &up, versions) {
                 Ok(()) => {}
+                Err(e) if e.downcast_ref::<Later>().is_some() => {}
                 Err(e) if stops_the_turn(&e) => return Err(e),
                 Err(e) => {
                     warn!("Meeting {id}'s changes from the phone could not be taken yet: {e:#}");
@@ -735,14 +775,28 @@ impl Uploads {
         remote: &dyn Remote,
         library: &dyn Library,
         id: &str,
-        found: &Versioned,
+        files: &[Versioned],
         up: &Up,
+        versions: BTreeMap<String, Option<u64>>,
     ) -> Result<()> {
-        let bytes = remote.read(&found.id)?;
-        let theirs = EditsFile::parse(&bytes)
-            .filter(|file| file.meeting.is_empty() || file.meeting == id)
-            .map(|file| file.by_key())
-            .unwrap_or_default();
+        // Every phone file of the meeting, read as one: the latest of each key.
+        let mut theirs: BTreeMap<String, Edit> = BTreeMap::new();
+        for file in files {
+            let bytes = remote.read(&file.id)?;
+            let Some(parsed) =
+                EditsFile::parse(&bytes).filter(|f| f.meeting.is_empty() || f.meeting == id)
+            else {
+                continue;
+            };
+            for (key, edit) in parsed.by_key() {
+                if edit.at_ms < up.edits_since {
+                    continue;
+                }
+                if theirs.get(&key).is_none_or(|e| e.at_ms <= edit.at_ms) {
+                    theirs.insert(key, edit);
+                }
+            }
+        }
         let (winners, _) = edits::merge(&up.edits, &theirs);
         let winning: Vec<(String, serde_json::Value)> = winners
             .into_iter()
@@ -752,7 +806,7 @@ impl Uploads {
         // Kept first, so the faint lines are there when the screen hears of it.
         self.put_up(id, |up| up.phone_edits = theirs);
         let changed = library.phone_edits_arrived(id, &winning)?;
-        self.put_up(id, |up| up.phone_edits_version = found.version);
+        self.put_up(id, |up| up.phone_edits_versions = versions);
         if changed {
             info!("Meeting {id} took changes made on the phone");
             self.want(id);
@@ -884,7 +938,7 @@ impl Uploads {
 
         let transcript = std::fs::read(folder.join(store::TRANSCRIPT_NAME)).ok();
         let minutes = std::fs::read(folder.join(store::MINUTES_NAME)).ok();
-        let record = meeting_json(&meeting, audio_in_folder);
+        let record = meeting_json(&meeting, audio_in_folder, self.up(id).edits_since);
         let mine = self.up(id).edits;
         let computer_edits = (!mine.is_empty()).then(|| {
             serde_json::to_vec_pretty(&EditsFile::computer(id, &mine)).unwrap_or_default()
@@ -1181,7 +1235,9 @@ fn entry_json(entry: &Entry) -> serde_json::Value {
 
 /// `회의.json`: what the apps read of a meeting. The format is described in
 /// `docs/drive-folder.md`; fields are only ever added.
-pub fn meeting_json(meeting: &Meeting, audio_in_folder: bool) -> Vec<u8> {
+/// `edits_since`: changes made before it are for a transcript or minutes
+/// since replaced (see [`edits`]); 0 when there were none.
+pub fn meeting_json(meeting: &Meeting, audio_in_folder: bool, edits_since: i64) -> Vec<u8> {
     let minutes = meeting.minutes.first();
     let transcript = meeting
         .transcript
@@ -1242,6 +1298,7 @@ pub fn meeting_json(meeting: &Meeting, audio_in_folder: bool) -> Vec<u8> {
         })).collect::<Vec<_>>()).unwrap_or_default(),
         "sections": sections,
         "marks_ms": meeting.marks_ms,
+        "edits_since": edits_since,
         "speakers": transcript.as_ref().map(|t| t.speakers.iter().map(|s| json!({
             "id": s.id,
             "name": t.speaker_name(s.id),
@@ -2073,5 +2130,94 @@ mod tests {
         uploads.run_once(&drive, &library).unwrap();
         assert!(uploads.is_excluded("m1"));
         assert_eq!(drive.called("mkdir"), 1);
+    }
+
+    /// Two phone files in one folder (two phones, or a reply lost while one
+    /// was made) are read as one: no meeting flips back and forth.
+    #[test]
+    fn two_phone_files_are_read_as_one_and_settle() {
+        let dir = tempfile::tempdir().unwrap();
+        let uploads = uploads(&dir.path().join("data"));
+        let drive = FakeDrive::default();
+        let library = FakeLibrary::new();
+        let (m, folder) = meeting(dir.path(), "m1", Origin::Recorded, b"audio");
+        lock(&library.meetings).insert("m1".into(), (m, folder));
+        uploads.want("m1");
+        uploads.run_once(&drive, &library).unwrap();
+        let drive_folder = uploads.up("m1").folder;
+        let file = |value: bool, at: i64| {
+            json!({"format": 1, "device": "phone", "meeting": "m1",
+                "edits": [{"key": "done:t1", "value": value, "at_ms": at}]})
+            .to_string()
+        };
+        drive.put_file(
+            "P1",
+            edits::PHONE_FILE,
+            &drive_folder,
+            file(true, 100).as_bytes(),
+        );
+        drive.put_file(
+            "P2",
+            edits::PHONE_FILE,
+            &drive_folder,
+            file(false, 200).as_bytes(),
+        );
+        uploads.run_once(&drive, &library).unwrap();
+        let done = || lock(&library.meetings)["m1"].0.minutes[0].sections[0].entries[0].done;
+        assert!(!done());
+        // Nothing new: nothing read, nothing sent, the meeting stays put.
+        let (reads, updates) = (drive.called("read"), drive.called("update"));
+        uploads.run_once(&drive, &library).unwrap();
+        uploads.run_once(&drive, &library).unwrap();
+        assert_eq!(
+            (drive.called("read"), drive.called("update")),
+            (reads, updates)
+        );
+        assert!(!uploads.up("m1").wanted);
+        assert!(!done());
+    }
+
+    /// Transcribed or written again: changes made before are for what was
+    /// there, and are not made to the new one.
+    #[test]
+    fn changes_from_before_a_new_transcript_are_set_aside() {
+        let dir = tempfile::tempdir().unwrap();
+        let uploads = uploads(&dir.path().join("data"));
+        let drive = FakeDrive::default();
+        let library = FakeLibrary::new();
+        let (m, folder) = meeting(dir.path(), "m1", Origin::Recorded, b"audio");
+        lock(&library.meetings).insert("m1".into(), (m, folder));
+        uploads.want("m1");
+        uploads.run_once(&drive, &library).unwrap();
+        let drive_folder = uploads.up("m1").folder;
+        uploads.edited("m1", vec![("done:t1".into(), json!(true))], 100);
+        uploads.reset_edits("m1", 500);
+        assert!(uploads.up("m1").edits.is_empty());
+        let old = json!({"format": 1, "device": "phone", "meeting": "m1",
+            "edits": [{"key": "done:t1", "value": true, "at_ms": 400}]});
+        drive.put_file(
+            "P1",
+            edits::PHONE_FILE,
+            &drive_folder,
+            old.to_string().as_bytes(),
+        );
+        uploads.want("m1");
+        uploads.run_once(&drive, &library).unwrap();
+        assert!(!lock(&library.meetings)["m1"].0.minutes[0].sections[0].entries[0].done);
+        let json: serde_json::Value =
+            serde_json::from_slice(&lock(&drive.content)[&uploads.up("m1").files[MEETING_JSON].id])
+                .unwrap();
+        assert_eq!(json["edits_since"], 500);
+    }
+
+    /// A tick made while the meeting's first upload is under way goes up too.
+    #[test]
+    fn a_change_made_while_going_up_goes_up_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let uploads = uploads(&dir.path().join("data"));
+        uploads.want("m1");
+        let asks = uploads.up("m1").asks;
+        uploads.edited("m1", vec![("done:t1".into(), json!(true))], 1);
+        assert_eq!(uploads.up("m1").asks, asks + 1);
     }
 }

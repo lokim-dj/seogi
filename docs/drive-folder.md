@@ -94,6 +94,13 @@ time it was made, in its own file in the meeting's folder:
   user reads it), `speaker:<id>` (the speaker's name).
 - For each key changed on either side, the later change stands; at the very
   same `at_ms`, the computer's. Both sides decide it the same way.
+- When a meeting is transcribed or its minutes written again, the changes so
+  far were for what was replaced: the computer sets them aside and writes the
+  moment in `회의.json` as `edits_since`; both sides leave changes made before
+  it alone.
+- A folder may hold more than one `고친것-폰.json` (two phones, or a reply
+  lost while one was made): the computer reads them as one, the latest change
+  of each key, and the phone writes to the one there before making one.
 - The change that did not stand, when it says something else, is shown on
   both sides as a faint line under "다르게 고친 것"; pressing it takes that
   change instead, as made now. Nothing is dropped without a trace.
@@ -140,6 +147,7 @@ Fields are only ever added; `format` changes only if one changes meaning.
     { "key": "actions", "title": "할 일", "kind": "tasks", "entries": [] }
   ],
   "marks_ms": [120000],
+  "edits_since": 0,
   "speakers": [{ "id": 1, "name": "화자 1" }],
   "lines": [{ "start_ms": 0, "end_ms": 4200, "speaker": 1, "text": "…" }]
 }
