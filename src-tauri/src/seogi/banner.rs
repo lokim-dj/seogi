@@ -15,8 +15,10 @@ const PAGE: &str = "src/seogi/banner/index.html";
 
 /// The window is larger than what is drawn in it, to leave room for the
 /// shadow: (width, height) of a meeting starting, and of minutes ready.
-const STARTING_SIZE: (f64, f64) = (688.0, 124.0);
-const READY_SIZE: (f64, f64) = (332.0, 176.0);
+/// What is drawn is sized like a system notification; the ready window
+/// keeps room for its middle line to wrap once.
+const STARTING_SIZE: (f64, f64) = (584.0, 76.0);
+const READY_SIZE: (f64, f64) = (312.0, 112.0);
 /// Space kept from the screen's edges.
 const EDGE: f64 = 4.0;
 
