@@ -33,9 +33,12 @@ export default function Banner() {
   const leaveTimer = useRef<number | undefined>(undefined);
 
   const refresh = useCallback(async () => {
-    const next = await commands.seogiBanner();
+    // A new banner may have arrived while the old one was sliding out:
+    // stop the slide before asking, so its late "close" cannot put the new
+    // one away.
     window.clearTimeout(leaveTimer.current);
     leaveTimer.current = undefined;
+    const next = await commands.seogiBanner();
     setLeaving(false);
     setBanner(next);
   }, []);

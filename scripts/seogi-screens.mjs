@@ -26,7 +26,7 @@ const screens = [
   ["onboarding&step=3&os=windows", 1280, 800, true, "onboarding-3-windows"],
   ["settings", 1280, 800, true],
   ["banner-starting", 584, 76, false],
-  ["banner-ready", 312, 112, false],
+  ["banner-ready", 312, 124, false],
   ["home", 920, 700, true, "home-narrow"],
   ["card", 1280, 980, false],
   ["card-empty", 1280, 980, false],
