@@ -209,10 +209,22 @@ class DictationService : Service() {
         return Pair(b.width(), b.height())
     }
 
+    /**
+     * Room kept free at the left and right: the back gesture's strip, and at
+     * least [EDGE_DP], so the key is never under the thumb's swipe back.
+     */
+    private fun sideMargin(): Int {
+        val least = (EDGE_DP * resources.displayMetrics.density).toInt()
+        val g = try {
+            wm.currentWindowMetrics.windowInsets.getInsets(android.view.WindowInsets.Type.systemGestures())
+        } catch (_: Exception) { null }
+        return maxOf(least, g?.left ?: 0, g?.right ?: 0)
+    }
+
     private fun placeAt(place: BubblePlace) {
         val p = params ?: return
         val (w, h) = screen()
-        val (x, y) = place.toPixels(w, h, p.width)
+        val (x, y) = place.toPixels(w, h, p.width, sideMargin())
         p.x = x
         p.y = y
         view?.let { try { wm.updateViewLayout(it, p) } catch (_: Exception) {} }
@@ -246,14 +258,15 @@ class DictationService : Service() {
             is BubbleGesture.Act.Move -> {
                 val p = params ?: return
                 val (w, h) = screen()
-                p.x = (dragFromX + a.dx.toInt()).coerceIn(0, (w - p.width).coerceAtLeast(0))
+                val m = sideMargin().coerceIn(0, ((w - p.width) / 2).coerceAtLeast(0))
+                p.x = (dragFromX + a.dx.toInt()).coerceIn(m, (w - p.width - m).coerceAtLeast(m))
                 p.y = (dragFromY + a.dy.toInt()).coerceIn(0, (h - p.height).coerceAtLeast(0))
                 view?.let { try { wm.updateViewLayout(it, p) } catch (_: Exception) {} }
             }
             BubbleGesture.Act.DragEnd -> {
                 val p = params ?: return
                 val (w, h) = screen()
-                val place = BubblePlace.afterDrag(p.x, p.y, w, h, p.width)
+                val place = BubblePlace.afterDrag(p.x, p.y, w, h, p.width, sideMargin())
                 DictationPrefs.setPlace(this, place)
                 placeAt(place)
             }
@@ -447,6 +460,8 @@ class DictationService : Service() {
         private const val CHANNEL = "dictation"
         private const val ID_NOTIFICATION = 11
         private const val SIZE_DP = 56
+        /** The least room at each side, wider than the back gesture strips of common phones. */
+        private const val EDGE_DP = 28
         private const val WARM_AFTER_MS = 250L
         /** The model is let go after this long without speaking. */
         const val IDLE_MS = 3 * 60_000L

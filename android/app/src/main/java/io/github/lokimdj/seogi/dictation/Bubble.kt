@@ -3,30 +3,39 @@ package io.github.lokimdj.seogi.dictation
 import kotlin.math.hypot
 
 /**
- * Where the floating key sits, as fractions of the screen, so it stays on the
- * same side and height when the Fold opens or closes or the phone turns.
- * [x] is 0 for the left edge and 1 for the right; [y] runs top to bottom.
+ * Where the floating key sits, as fractions of the room it can move in, so it
+ * keeps its place when the Fold opens or closes or the phone turns.
+ * [x] is 0 for the far left and 1 for the far right; [y] runs top to bottom.
+ * The room leaves [margin] pixels free at the left and right, where Android's
+ * back gesture starts: a key there would be hard to touch, and a touch could
+ * go back instead.
  */
 data class BubblePlace(val x: Float, val y: Float) {
-    /** Top-left pixel of a [size] key on a [w]×[h] screen, kept fully on it. */
-    fun toPixels(w: Int, h: Int, size: Int): Pair<Int, Int> {
-        val maxX = (w - size).coerceAtLeast(0)
+    /** Top-left pixel of a [size] key on a [w]×[h] screen, kept fully on it and off the side margins. */
+    fun toPixels(w: Int, h: Int, size: Int, margin: Int = 0): Pair<Int, Int> {
+        val m = sideMargin(w, size, margin)
+        val spanX = (w - size - 2 * m).coerceAtLeast(0)
         val maxY = (h - size).coerceAtLeast(0)
-        return Pair((x.coerceIn(0f, 1f) * maxX).toInt(), (y.coerceIn(0f, 1f) * maxY).toInt())
+        return Pair(m + (x.coerceIn(0f, 1f) * spanX).toInt(), (y.coerceIn(0f, 1f) * maxY).toInt())
     }
 
     fun encode() = "$x,$y"
 
     companion object {
-        /** Right edge, a little below the middle: out of the way of most fields and keys. */
+        /** Near the right side, a little below the middle: out of the way of most fields and keys. */
         val Default = BubblePlace(1f, 0.62f)
 
-        /** After a drag the key goes to the nearer side edge, at the height it was let go. */
-        fun afterDrag(px: Int, py: Int, w: Int, h: Int, size: Int): BubblePlace {
+        /** After a drag the key stays where it was let go. */
+        fun afterDrag(px: Int, py: Int, w: Int, h: Int, size: Int, margin: Int = 0): BubblePlace {
+            val m = sideMargin(w, size, margin)
+            val spanX = (w - size - 2 * m).coerceAtLeast(1)
             val maxY = (h - size).coerceAtLeast(1)
-            val side = if (px + size / 2 < w / 2) 0f else 1f
-            return BubblePlace(side, (py.toFloat() / maxY).coerceIn(0f, 1f))
+            return BubblePlace(((px - m).toFloat() / spanX).coerceIn(0f, 1f), (py.toFloat() / maxY).coerceIn(0f, 1f))
         }
+
+        /** The side margin, made smaller on a screen too narrow to keep it. */
+        private fun sideMargin(w: Int, size: Int, margin: Int): Int =
+            margin.coerceIn(0, ((w - size) / 2).coerceAtLeast(0))
 
         fun decode(s: String?): BubblePlace {
             val parts = s?.trim()?.split(',') ?: return Default

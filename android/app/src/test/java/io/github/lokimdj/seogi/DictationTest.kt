@@ -177,11 +177,19 @@ class DictationTest {
         assertEquals(Pair(2000 - 100, 450), p.toPixels(2000, 1000, 100))
     }
 
-    @Test fun dragSnapsToTheNearerSide() {
-        assertEquals(0f, BubblePlace.afterDrag(100, 450, 1000, 1000, 100).x)
-        val right = BubblePlace.afterDrag(700, 900, 1000, 1000, 100)
-        assertEquals(1f, right.x)
-        assertEquals(1f, right.y)
+    @Test fun dragLeavesTheKeyWhereItWasLetGo() {
+        val p = BubblePlace.afterDrag(450, 900, 1000, 1000, 100, margin = 50)
+        assertEquals(0.5f, p.x)
+        assertEquals(1f, p.y)
+        assertEquals(Pair(450, 900), p.toPixels(1000, 1000, 100, margin = 50))
+    }
+
+    @Test fun keyStaysOffTheBackGestureStrips() {
+        // Pushed to either side, the key still leaves the margin free.
+        assertEquals(50, BubblePlace(0f, 0f).toPixels(1000, 1000, 100, margin = 50).first)
+        assertEquals(1000 - 100 - 50, BubblePlace(1f, 0f).toPixels(1000, 1000, 100, margin = 50).first)
+        // A screen too narrow for the margin still shows the whole key.
+        assertEquals(0, BubblePlace(0f, 0f).toPixels(100, 1000, 100, margin = 50).first)
     }
 
     @Test fun placeReadsBackAndBadTextGivesTheDefault() {
