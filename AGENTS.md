@@ -42,6 +42,14 @@ One pull request, one commit on main. Seogi has one maintainer, so the flow stay
 8. **Merge by squash when the checks are green** (`text`, `rust` and `android` in `.github/workflows/check.yml`; `gh pr merge --squash`). main is protected: no direct push, no getting around a check.
 9. **Close the loop.** With an issue, comment on it: what changed, what turned out different, what is left. Remove the worktree and the branch.
 
+### In a cloud session (claude.ai/code)
+
+A session on Anthropic's cloud (`CLAUDE_CODE_REMOTE=true`) gets its dependencies from `scripts/cloud-session-start.sh` through `.claude/settings.json`. It is Linux without the maintainer's private files, so:
+
+- Run the checks Linux can: `bun run lint`, `bun run format:check`, `bunx tsc --noEmit`, `bun run check:translations`, `bun run check:version`. The Rust tests (macOS) and the Android build come from CI on the pull request: wait for `text`, `rust` and `android`.
+- `bun run check:public` runs here without the private lists, and the pre-push hook is not installed. Do the pull request (steps 5 and 7 as usual), then **leave it unmerged**: it is merged from the maintainer's computer after the private name check.
+- Nothing that needs the phone, a microphone or the Mac app: say what is left to try on the device in the pull request.
+
 ## Who decides
 
 The maintainer decides these. Bring options and a recommendation, then wait; silence is not a yes.

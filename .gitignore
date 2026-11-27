@@ -29,6 +29,7 @@ dist-ssr
 # Local agent state; the shared review agent is part of the repository
 .claude/*
 !.claude/agents/
+!.claude/settings.json
 
 /target/
 recording_*
