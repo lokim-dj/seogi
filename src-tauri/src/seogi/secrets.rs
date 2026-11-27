@@ -4,8 +4,9 @@
 
 use anyhow::{anyhow, Result};
 
-/// The name the keys are filed under in the keychain.
-const SERVICE: &str = "io.github.lokimdj.seogi";
+/// The name the keys are filed under in the keychain: the app's identifier,
+/// so a development build keeps its keys apart from the installed app's.
+const SERVICE: &str = crate::brand::identifier();
 
 fn entry(name: &str) -> Result<keyring::Entry> {
     if name.trim().is_empty() {

@@ -26,6 +26,14 @@ bun run tauri build          # 릴리스 빌드와 설치 파일
 
 macOS에서 CMake 오류가 나면 `CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev`로 실행합니다.
 
+디버그 빌드는 식별자 `io.github.lokimdj.seogi.dev`로 돌아서 설치판(`io.github.lokimdj.seogi`)이 켜져 있어도 함께 켜집니다. 따로인 것: 데이터 폴더(설정, 장부), 키체인, 한 번만 켜지게 하는 잠금, 권한 초기화, 그리고 보관 폴더를 정하지 않았을 때의 회의 보관 폴더(`문서/서기 개발판`). 같이 쓰는 것: Hugging Face 모델 캐시, 설정에서 직접 가리킨 폴더(보관 폴더, 감시 폴더). 맥 권한(마이크, 손쉬운 사용)까지 따로 두는 디버그 앱 묶음은 이렇게 만듭니다.
+
+```bash
+bun run build:debug
+```
+
+개발 설정(`src-tauri/tauri.dev.conf.json`)을 겹쳐 쓰는 명령입니다. 그냥 `tauri build --debug`로 만든 묶음은 설치판과 같은 식별자를 달고 나옵니다. 설치판의 식별자(`tauri.conf.json`)는 바꾸지 않습니다. 바꾸면 깔린 서기마다 권한, 키, 설정이 처음으로 돌아갑니다.
+
 음성 구간 검출 모델은 저장소에 들어 있습니다(`src-tauri/resources/models/silero-vad-v6.2-F32.gguf`). 음성 인식 모델은 앱에서 내려받습니다.
 
 ## 문제 해결

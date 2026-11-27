@@ -134,6 +134,8 @@ To look at a screen while changing it, run `bun run dev` and open `http://localh
 
 To try things without touching your own meetings, point a development run at its own data folder: `SEOGI_DATA_DIR=/some/dir bun run tauri dev` (put a `seogi.json` with `library_dir` there), or use the headless `--seogi-library` runs.
 
+A debug build runs as `io.github.lokimdj.seogi.dev` (`brand::DEV_IDENTIFIER`), so it can run while the installed app is open. Its own: the data folder (settings, ledgers), keychain entries, the single-instance lock, permission resets, and the meeting library when none is set (`Documents/서기 개발판`). Shared: the Hugging Face model cache, and any folder you point its settings at (a library, a watched folder). Build a debug app bundle with `bun run build:debug`, which adds `src-tauri/tauri.dev.conf.json` so its macOS permissions stay apart too; a plain `tauri build --debug` bundle carries the release identifier. The release identifier `io.github.lokimdj.seogi` in `tauri.conf.json` never changes: every installed copy would lose its permissions, keys and settings.
+
 ## Speech engine facts worth knowing
 
 - Every model runs through `transcribe-cpp` (GGUF models, Metal on Apple Silicon, Vulkan or CPU on Windows). The engine runs in a worker process: the app re-launches itself with a hidden flag, so a native crash never takes the app down.
