@@ -1060,6 +1060,7 @@ pub fn run(cli_args: CliArgs) {
             seogi::app::RecordingChanged,
             seogi::app::MeetingStarting,
             seogi::app::BannerChanged,
+            seogi::app::DictationChanged,
             seogi::app::OpenMeeting,
         ]);
 

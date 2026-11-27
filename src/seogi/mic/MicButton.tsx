@@ -9,9 +9,11 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { platform } from "@tauri-apps/plugin-os";
 import { commands, events } from "@/bindings";
 import { Mark } from "../components/Mark";
 import { NS } from "../i18n";
+import { keysLabel, keysShort } from "../lib/format";
 
 export type MicState = "idle" | "listening" | "working";
 
@@ -26,6 +28,26 @@ export default function MicButton({
   const { t } = useTranslation(NS);
   const [state, setState] = useState<MicState>(initial);
   const press = useRef<{ x: number; y: number; dragged: boolean } | null>(null);
+  // The shortcut, shown when the pointer rests on the key; read again when
+  // the settings change it.
+  const [keys, setKeys] = useState("");
+
+  useEffect(() => {
+    const mac = platform() === "macos";
+    const read = () =>
+      void commands
+        .seogiDictation()
+        .then(({ shortcut }) => {
+          const label = mac
+            ? keysShort(shortcut, true)
+            : keysLabel(shortcut, false);
+          setKeys(label.replace(/space/i, "Space"));
+        })
+        .catch(() => setKeys(""));
+    read();
+    const off = events.dictationChanged.listen(read);
+    return () => void off.then((stop) => stop());
+  }, []);
 
   useEffect(() => {
     const offs = [
@@ -84,7 +106,9 @@ export default function MicButton({
   const label =
     state === "listening"
       ? t("dictation.mic.listening")
-      : t("dictation.mic.label");
+      : keys
+        ? t("dictation.mic.labelKeys", { keys })
+        : t("dictation.mic.label");
 
   return (
     <div className="mic-stage">

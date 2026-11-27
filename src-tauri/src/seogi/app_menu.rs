@@ -123,7 +123,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .item(&item("home", say("회의함", "Meetings"), "CmdOrCtrl+1")?)
         .item(&item(
             "dictation",
-            say("받아쓰기 설정", "Dictation Settings"),
+            say("말로 입력 설정", "Dictation Settings"),
             "CmdOrCtrl+2",
         )?)
         .build()?;

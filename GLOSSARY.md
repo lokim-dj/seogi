@@ -56,14 +56,17 @@ A kind of meeting and the shape of its minutes. Data, not code.
 **배너** (`banner`):
 The small always-on-top window: a meeting is starting, minutes are ready.
 
+**말로 입력** (`dictation`):
+Seogi's second job: a shortcut or the 마이크 단추, a few words spoken, and the words typed where the cursor is. Nothing of it goes to the 회의함. Turning a recording into text keeps 받아쓰기.
+_Avoid_: 받아쓰기, 음성 입력 (for this feature)
+
 **마이크 단추** (`mic_button`):
-The floating key for dictation.
+The floating key for 말로 입력.
 
 ## Words still to settle
 
 The maintainer picks; until then, keep each pair as it is and do not add a third word.
 
-- **받아쓰기** is used both for turning a recording into text and for the dictation feature (speak, text typed at the cursor). Pick a second word for one of them.
 - **액션 아이템** (README) and **할 일** (screens) are the same thing. Pick one for public text.
 - **전사** (file name `전사.txt`) and **받아쓴 글** (screens) are the same thing. The file name stays, since people already have it on disk; say which word prose uses.
 - **회의록 틀** (README) and **회의 종류** (screens) are the same thing. Pick one.
