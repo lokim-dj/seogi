@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use super::app::{
     Banner, CalendarCheck, CalendarStatus, MeetingInfo, RecordingState, Secretary, Upcoming,
@@ -791,11 +791,20 @@ pub async fn seogi_mac_calendar_request() -> Result<String, String> {
     off_screen(move || mac_calendar::request().map(str::to_string).map_err(text)).await
 }
 
-/// The calendars in macOS's Calendar app.
+/// The calendars in macOS's Calendar app. The error is `mac_unreadable`
+/// when the Calendar app has accounts but none of their calendars came
+/// back (restarting Seogi reads them again); an empty list means it has no
+/// account at all.
 #[tauri::command]
 #[specta::specta]
 pub async fn seogi_mac_calendars() -> Result<Vec<MacCalendar>, String> {
-    off_screen(move || mac_calendar::calendars().map_err(text)).await
+    off_screen(move || {
+        mac_calendar::calendars().map_err(|e| match mac_calendar::unread(&e) {
+            Some(why @ mac_calendar::Unread::Empty) => why.reason().to_string(),
+            _ => text(e),
+        })
+    })
+    .await
 }
 
 /// Moves a meeting's folder to the system's trash (it can be brought back
@@ -1295,6 +1304,35 @@ pub fn seogi_open_calendar_permission() -> Result<(), String> {
     open_privacy_pane("Privacy_Calendars")
 }
 
+/// Why Seogi may not restart now: `recording` while a meeting is being
+/// recorded, since restarting would end it.
+fn may_restart(recording: bool) -> Result<(), String> {
+    if recording {
+        Err("recording".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+/// Restarts Seogi, which reads the Calendar app over a new connection.
+/// Every restart goes through here; it is refused while a meeting is being
+/// recorded, with the error `recording`.
+pub fn restart(app: &AppHandle) -> Result<(), String> {
+    let recording = app
+        .try_state::<Arc<Secretary>>()
+        .is_some_and(|secretary| secretary.is_recording());
+    may_restart(recording)?;
+    app.restart()
+}
+
+/// [`restart`], for the window. The error is `recording` when a meeting is
+/// being recorded: the screen asks to restart after it ends.
+#[tauri::command]
+#[specta::specta]
+pub fn seogi_restart(app: AppHandle) -> Result<(), String> {
+    restart(&app)
+}
+
 fn open_privacy_pane(pane: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -1511,6 +1549,12 @@ pub async fn seogi_try_summary(secretary: State<'_, Arc<Secretary>>) -> Result<S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_restart_is_refused_while_a_meeting_is_recorded() {
+        assert_eq!(may_restart(true), Err("recording".to_string()));
+        assert_eq!(may_restart(false), Ok(()));
+    }
 
     #[test]
     fn the_summary_is_saved_only_as_png_or_pdf() {

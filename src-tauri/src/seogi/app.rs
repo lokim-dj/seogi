@@ -401,6 +401,8 @@ pub struct Secretary {
     calendars: Mutex<Vec<String>>,
     /// Set to have the calendars read again now.
     calendars_stale: std::sync::atomic::AtomicBool,
+    /// The calendars are being read right now.
+    calendar_reading: std::sync::atomic::AtomicBool,
     /// How the calendars answered when last read.
     calendar_status: Mutex<CalendarStatus>,
     /// What the banner window shows, if anything.
@@ -413,6 +415,15 @@ pub struct Secretary {
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Clears a "being done" flag when it goes out of scope, a panic included.
+struct ClearOnDrop<'a>(&'a std::sync::atomic::AtomicBool);
+
+impl Drop for ClearOnDrop<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::Release);
+    }
 }
 
 fn now_ms() -> i64 {
@@ -463,6 +474,7 @@ impl Secretary {
             recording: Mutex::new(None),
             calendars: Mutex::new(Vec::new()),
             calendars_stale: std::sync::atomic::AtomicBool::new(true),
+            calendar_reading: std::sync::atomic::AtomicBool::new(false),
             calendar_status: Mutex::new(CalendarStatus::default()),
             banner: Mutex::new(None),
             quiet,
@@ -2113,7 +2125,7 @@ impl Secretary {
         *lock(&self.calendars) = self.cached_calendars();
         let mut read_at: Option<Instant> = None;
         let mut reminded: std::collections::HashSet<(String, i64)> = Default::default();
-        let mut told: Option<&'static str> = None;
+        let mut told: Option<(crate::notices::NoticeCode, &'static str)> = None;
         loop {
             let due = read_at.is_none_or(|at| at.elapsed() >= REFRESH_EVERY);
             // macOS can take the Calendar app's permission away (an update
@@ -2122,34 +2134,53 @@ impl Secretary {
             // read the moment it is, without restarting Seogi.
             let allowed_again =
                 self.calendar_denied() && super::mac_calendar::access() == "granted";
-            if self.calendars_stale.swap(false, Ordering::AcqRel) || due || allowed_again {
-                self.read_calendars();
+            // Read on a thread of its own: a stuck Calendar app is read again
+            // in other ways, which takes seconds, and the reminders below
+            // must not wait for that. What was read last serves meanwhile.
+            let reading = self.calendar_reading.load(Ordering::Acquire);
+            if !reading
+                && (self.calendars_stale.swap(false, Ordering::AcqRel) || due || allowed_again)
+            {
+                self.calendar_reading.store(true, Ordering::Release);
                 read_at = Some(Instant::now());
+                let me = self.clone();
+                std::thread::spawn(move || {
+                    // Let go of even if the read panics, or the calendars
+                    // would never be read again.
+                    let _done = ClearOnDrop(&me.calendar_reading);
+                    me.read_calendars();
+                });
             }
-            // Right after a new signature macOS may not list Seogi at all
-            // (not_determined): then it is asked, not sent to System Settings.
-            let refused = self.calendar_denied().then(|| {
-                if super::mac_calendar::access() == "not_determined" {
-                    "not_determined"
-                } else {
-                    "denied"
-                }
-            });
-            if refused != told {
+            let trouble = self.calendar_trouble();
+            if trouble != told {
                 use crate::notices::{self, Notice, NoticeCode, NoticeSource};
-                match refused {
-                    Some(access) => notices::raise_without_overlay(
-                        &self.app,
-                        Notice::new(NoticeCode::CalendarPermissionLost, NoticeSource::Calendar)
-                            .with_detail(access.to_string()),
-                    ),
-                    None => notices::clear_matching(
-                        &self.app,
-                        NoticeSource::Calendar,
-                        Some(NoticeCode::CalendarPermissionLost),
-                    ),
+                match trouble {
+                    Some((code, detail)) => {
+                        notices::raise_without_overlay(
+                            &self.app,
+                            Notice::new(code, NoticeSource::Calendar)
+                                .with_detail((!detail.is_empty()).then(|| detail.to_string())),
+                        );
+                        // Said once as well: the start reminders stop with
+                        // it, and nobody looks at the menu bar for that.
+                        if code == NoticeCode::CalendarUnreadable {
+                            self.notify(
+                                say(
+                                    &self.app,
+                                    "캘린더를 못 읽어 시작 알림이 안 옵니다",
+                                    "The calendar cannot be read, so no start reminders",
+                                ),
+                                say(
+                                    &self.app,
+                                    "캘린더 앱의 일정은 그대로입니다. 서기를 다시 켜면 다시 읽습니다.",
+                                    "Your events are still in Calendar. Restart Seogi to read them again.",
+                                ),
+                            );
+                        }
+                    }
+                    None => notices::clear(&self.app, NoticeSource::Calendar),
                 }
-                told = refused;
+                told = trouble;
             }
             self.remind(&mut reminded);
             std::thread::sleep(Duration::from_secs(20));
@@ -2163,6 +2194,31 @@ impl Secretary {
             .mac
             .as_ref()
             .is_some_and(|check| check.reason == "mac_denied")
+    }
+
+    /// What is wrong with reading the Calendar app, as a notice and its
+    /// detail, from the last read.
+    fn calendar_trouble(&self) -> Option<(crate::notices::NoticeCode, &'static str)> {
+        use crate::notices::NoticeCode;
+        let reason = lock(&self.calendar_status)
+            .mac
+            .as_ref()
+            .map(|check| check.reason.clone())
+            .unwrap_or_default();
+        match reason.as_str() {
+            // Right after a new signature macOS may not list Seogi at all
+            // (not_determined): then it is asked, not sent to System Settings.
+            "mac_denied" => Some((
+                NoticeCode::CalendarPermissionLost,
+                if super::mac_calendar::access() == "not_determined" {
+                    "not_determined"
+                } else {
+                    "denied"
+                },
+            )),
+            "mac_unreadable" => Some((NoticeCode::CalendarUnreadable, "")),
+            _ => None,
+        }
     }
 
     fn calendar_cache(&self, index: usize) -> PathBuf {
@@ -2198,13 +2254,17 @@ impl Secretary {
                 }
                 Err(e) => {
                     warn!("The Calendar app could not be read: {e:#}");
+                    use super::mac_calendar::{unread, Unread};
+                    // Read from what the reading found, not guessed: an
+                    // allowed read that came back empty is not a calendar
+                    // that was taken out of the Calendar app.
+                    let why = unread(&e).unwrap_or(if super::mac_calendar::access() == "granted" {
+                        Unread::Empty
+                    } else {
+                        Unread::Denied
+                    });
                     CalendarCheck {
-                        reason: if super::mac_calendar::access() == "granted" {
-                            "mac_missing"
-                        } else {
-                            "mac_denied"
-                        }
-                        .to_string(),
+                        reason: why.reason().to_string(),
                         error: format!("{e:#}"),
                         read_at_ms: now,
                         ..CalendarCheck::default()
@@ -3252,6 +3312,18 @@ fn put_back_naming(meeting: &mut Meeting, kept: &Naming, now: &Naming) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_read_that_panics_still_lets_the_calendars_be_read_again() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let reading = AtomicBool::new(true);
+        let read = std::panic::catch_unwind(|| {
+            let _done = ClearOnDrop(&reading);
+            panic!("the read broke");
+        });
+        assert!(read.is_err());
+        assert!(!reading.load(Ordering::Acquire));
+    }
 
     /// The path a recording takes in `Secretary::transcribe`: the chosen
     /// model when it is here; while it is not, the best stand-in, named in

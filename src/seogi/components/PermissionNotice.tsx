@@ -1,20 +1,30 @@
 // Bands for a permission macOS took away, as after an update it did not
 // recognize as the same app: dictation can no longer type (Accessibility),
 // or the Calendar app can no longer be read. The backend looks again on its
-// own and takes the band down the moment Seogi is allowed again.
+// own and takes the band down the moment Seogi is allowed again. One more
+// band says the Calendar app gave nothing although Seogi may read it: the
+// connection inside this process went stale, and restarting Seogi fixes it.
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { commands, events, type Notice } from "@/bindings";
 import { NS } from "../i18n";
 
-type Lost = "CalendarPermissionLost" | "TypingPermissionLost";
+type Lost =
+  | "CalendarPermissionLost"
+  | "TypingPermissionLost"
+  | "CalendarUnreadable";
 
-const TEXT: Record<Lost, "permissionLost.calendar" | "permissionLost.typing"> =
-  {
-    CalendarPermissionLost: "permissionLost.calendar",
-    TypingPermissionLost: "permissionLost.typing",
-  };
+const TEXT: Record<
+  Lost,
+  | "permissionLost.calendar"
+  | "permissionLost.typing"
+  | "permissionLost.calendarUnreadable"
+> = {
+  CalendarPermissionLost: "permissionLost.calendar",
+  TypingPermissionLost: "permissionLost.typing",
+  CalendarUnreadable: "permissionLost.calendarUnreadable",
+};
 
 const isLost = (notice: Notice): notice is Notice & { code: Lost } =>
   notice.code in TEXT;
@@ -27,15 +37,31 @@ const asks = (notice: Notice) =>
   notice.detail === "not_determined";
 
 const fix = (notice: Notice) => {
+  // Through the backend, which refuses while a meeting is being recorded.
+  if (notice.code === "CalendarUnreadable") return commands.seogiRestart();
   if (asks(notice)) return commands.seogiMacCalendarRequest();
   if (notice.code === "CalendarPermissionLost")
     return commands.seogiOpenCalendarPermission();
   return commands.seogiOpenTypingPermission();
 };
 
+const action = (notice: Notice) =>
+  notice.code === "CalendarUnreadable"
+    ? "permissionLost.restart"
+    : asks(notice)
+      ? "permissionLost.ask"
+      : "permissionLost.open";
+
 export default function PermissionNotice() {
   const { t } = useTranslation(NS);
   const [shown, setShown] = useState<(Notice & { code: Lost })[]>([]);
+  // Restarting was refused: a meeting is being recorded.
+  const [later, setLater] = useState(false);
+
+  const press = async (notice: Notice) => {
+    const result = await fix(notice);
+    setLater(result.status === "error" && result.error === "recording");
+  };
 
   useEffect(() => {
     let stop = false;
@@ -64,13 +90,17 @@ export default function PermissionNotice() {
           role="alert"
           className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2 px-3 py-2 rounded-[9px] bg-s1 text-[13.5px]"
         >
-          <span className="rt min-w-0 flex-1">{t(TEXT[notice.code])}</span>
+          <span className="rt min-w-0 flex-1">
+            {later && notice.code === "CalendarUnreadable"
+              ? t("permissionLost.restartLater")
+              : t(TEXT[notice.code])}
+          </span>
           <button
             type="button"
-            onClick={() => void fix(notice)}
+            onClick={() => void press(notice)}
             className="btn solid !h-[26px] ml-auto"
           >
-            {asks(notice) ? t("permissionLost.ask") : t("permissionLost.open")}
+            {t(action(notice))}
           </button>
         </div>
       ))}

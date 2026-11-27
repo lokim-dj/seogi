@@ -1667,6 +1667,18 @@ async seogiOpenCalendarPermission() : Promise<Result<null, string>> {
 }
 },
 /**
+ * [`restart`], for the window. The error is `recording` when a meeting is
+ * being recorded: the screen asks to restart after it ends.
+ */
+async seogiRestart() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_restart") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Whether the system will open Seogi at login, as the system has it (the
  * setting may want it while System Settings has it switched off).
  */
@@ -3109,7 +3121,13 @@ export type NoticeCode = "TranscriptionFailed" | "PasteFailed" | "PasteBlockedEl
  * as `mac_calendar::access` says it: `not_determined` (macOS no longer
  * knows Seogi, so it is asked again) or `denied`.
  */
-"CalendarPermissionLost"
+"CalendarPermissionLost" |
+/**
+ * Seogi may read the Calendar app, yet no calendar came back, even
+ * after a refresh and over a fresh connection, so no meeting is
+ * announced. Restarting Seogi reads them again.
+ */
+"CalendarUnreadable"
 export type NoticeLevel = 
 /**
  * Nothing came out, or Handy can't do its job.
