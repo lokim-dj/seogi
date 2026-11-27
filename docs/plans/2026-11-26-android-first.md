@@ -1,6 +1,6 @@
 # 갤럭시 앱 첫 판(1단계: 녹음 + 드라이브 올리기) 구현 계획
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 폰에서 끊기지 않게 녹음하고, 끝나면 묻지 않고 내 구글 드라이브의 `서기 폰 녹음` 폴더로 올리는 안드로이드 앱 첫 판.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Kotlin 2.0, Jetpack Compose(BOM), AndroidX WorkManager · Credentials, Google Identity Services(AuthorizationClient), kotlinx.serialization, AGP 8.7 / Gradle 8.11, minSdk 33 · targetSdk 35 · build-tools 35.0.0.
 
-**Spec:** `docs/superpowers/specs/2026-11-24-galaxy-app-design.md`
+**Spec:** `docs/specs/2026-11-24-galaxy-app-design.md`
 
 ## Global Constraints
 
