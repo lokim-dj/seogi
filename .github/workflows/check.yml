@@ -94,6 +94,13 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: gradle
+      # Robolectric fetches its Android jar (~150 MB) from Maven Central on the
+      # first test run, and a dropped download has failed main more than once.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ hashFiles('android/gradle/libs.versions.toml') }}
+          restore-keys: robolectric-
       # The runner image carries the Android SDK (platform 35, build-tools
       # 35.0.0). The wrapper checks the Gradle download against its SHA-256.
       - name: Unit tests and debug build
