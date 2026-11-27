@@ -12,6 +12,7 @@ target
 android/.gradle
 android/build
 android/app/build
+android/app/.cxx
 
 # Tauri
 src-tauri/target
