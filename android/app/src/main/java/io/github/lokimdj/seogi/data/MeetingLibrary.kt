@@ -161,11 +161,15 @@ class MeetingLibrary(
         } catch (e: DriveHttpException) {
             return@withLock if (needsLogin(e)) Outcome.NEED_LOGIN else Outcome.FAILED
         }
-        docFile(id).delete()
-        computerFile(id).delete()
-        phoneFile(id).delete()
-        synchronized(docs) { docs.remove(id) }
-        save(state.value.filter { it.id != id })
+        // In Drive's trash now; a list that cannot be written here is put
+        // right by the next look at the folder.
+        runCatching {
+            docFile(id).delete()
+            computerFile(id).delete()
+            phoneFile(id).delete()
+            synchronized(docs) { docs.remove(id) }
+            save(state.value.filter { it.id != id })
+        }
         Outcome.DONE
     }
 

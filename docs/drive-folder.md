@@ -47,8 +47,9 @@ left alone.
   the phone's own recording of it is deleted); the computer finds the folder
   in the trash (one search for all meetings, or when it next goes to update
   it) and takes the meeting out of Drive as "드라이브에서 빼기" does, so it is
-  not put back; "드라이브에 다시 올리기" undoes that. A folder deleted for good
-  is made again at the next upload.
+  not put back. "드라이브에 다시 올리기" (or undoing the delete on the computer)
+  takes the same folder out of Drive's trash, with the recording still in it,
+  so nothing goes up twice; a folder deleted for good is made again.
 
 ## How the phone reads it
 

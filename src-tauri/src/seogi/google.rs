@@ -1055,6 +1055,17 @@ pub fn trash(token: &str, id: &str) -> Result<()> {
     patch(token, id, serde_json::json!({ "trashed": true }), None, &[])
 }
 
+/// Takes a file or folder out of Drive's trash.
+pub fn untrash(token: &str, id: &str) -> Result<()> {
+    patch(
+        token,
+        id,
+        serde_json::json!({ "trashed": false }),
+        None,
+        &[],
+    )
+}
+
 /// A small file made in `parent` in one request.
 pub fn create_small(
     token: &str,
