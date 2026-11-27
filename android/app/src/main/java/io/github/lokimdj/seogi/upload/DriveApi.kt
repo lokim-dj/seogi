@@ -127,6 +127,8 @@ interface DriveReader {
     fun writeJson(token: String, folderId: String, name: String, text: String): String
     /** Replaces a small JSON file's content. */
     fun rewriteJson(token: String, fileId: String, text: String)
+    /** Moves a file or folder to Drive's trash (never a permanent delete); false when Drive does not know it. */
+    fun trash(token: String, fileId: String): Boolean
 }
 
 /** [Drive] over the Drive REST API v3. */

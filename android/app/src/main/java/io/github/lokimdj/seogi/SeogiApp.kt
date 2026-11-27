@@ -3,6 +3,7 @@ package io.github.lokimdj.seogi
 import android.app.Application
 import android.net.Uri
 import android.provider.MediaStore
+import io.github.lokimdj.seogi.data.ListEntry
 import io.github.lokimdj.seogi.data.MeetingLibrary
 import io.github.lokimdj.seogi.data.PhoneFile
 import io.github.lokimdj.seogi.data.Reconcile
@@ -93,6 +94,44 @@ class SeogiApp : Application() {
     fun editMeeting(id: String, key: String, value: kotlinx.serialization.json.JsonElement) {
         meetings.edit(id, key, value)
         scope.launch { meetings.pushEdits() }
+    }
+
+    /** Meetings being deleted right now: hidden from the lists. */
+    val deletingMeetings = MutableStateFlow<Set<String>>(emptySet())
+
+    /**
+     * Deletes a meeting on the phone (decision 5 of #67): its folder in
+     * Drive, with the recording and the minutes, goes to Drive's trash, and
+     * the phone's own recording of it (if any) is deleted here. The
+     * computer keeps its copy. Says what went wrong, if anything.
+     */
+    fun deleteMeeting(e: ListEntry) {
+        val m = e.meeting ?: return
+        deletingMeetings.value = deletingMeetings.value + m.id
+        scope.launch {
+            val outcome = try {
+                meetings.trashMeeting(m.id)
+            } finally {
+                deletingMeetings.value = deletingMeetings.value - m.id
+            }
+            var problem = when (outcome) {
+                MeetingLibrary.Outcome.DONE -> null
+                MeetingLibrary.Outcome.OFFLINE -> getString(R.string.delete_meeting_offline)
+                MeetingLibrary.Outcome.NEED_LOGIN -> getString(R.string.delete_meeting_login)
+                MeetingLibrary.Outcome.FAILED -> getString(R.string.delete_drive_failed)
+            }
+            val r = e.recording
+            if (problem == null && r != null) {
+                // Its copy in Drive went with the folder; only the phone's file is left.
+                val result = deleter().delete(store.get(r.id) ?: r, trashInDrive = false)
+                if (!result.phoneDeleted) problem = getString(R.string.delete_phone_failed)
+            }
+            if (problem != null) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(this@SeogiApp, problem, android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     /** A recording could not be saved; it stays for the next start. Shown in red on the home. */

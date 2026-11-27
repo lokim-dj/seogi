@@ -40,6 +40,15 @@ left alone.
   device, each written only by its own device (below).
 - "드라이브에서 빼기" moves a meeting's folder to Drive's trash. Nothing is
   deleted for good.
+- Deleting a meeting (decision 5 of #67) moves its folder to Drive's trash,
+  with everything in it, and keeps the computer's copy. On the computer the
+  meeting itself goes to the system's trash as before, and bringing it back
+  puts it in Drive again. On the phone the folder goes to Drive's trash (and
+  the phone's own recording of it is deleted); the computer finds the folder
+  in the trash (one search for all meetings, or when it next goes to update
+  it) and takes the meeting out of Drive as "드라이브에서 빼기" does, so it is
+  not put back; "드라이브에 다시 올리기" undoes that. A folder deleted for good
+  is made again at the next upload.
 
 ## How the phone reads it
 

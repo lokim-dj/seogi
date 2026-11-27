@@ -924,6 +924,44 @@ pub fn find_everywhere(token: &str, name: &str) -> Result<Vec<Versioned>> {
     })
 }
 
+/// The folders in `parent` that are in Drive's trash (a folder in the
+/// trash keeps its parent).
+pub fn trashed_folders(token: &str, parent: &str) -> Result<Vec<String>> {
+    let q = format!(
+        "'{}' in parents and mimeType = '{FOLDER_MIME}' and trashed = true",
+        quoted(parent)
+    );
+    tauri::async_runtime::block_on(async {
+        let found: Value = checked(
+            http()?
+                .get(format!("{API}/files"))
+                .header("Authorization", bearer(token))
+                .query(&[
+                    ("spaces", "drive"),
+                    ("pageSize", "1000"),
+                    ("fields", "files(id)"),
+                    ("q", q.as_str()),
+                ])
+                .send()
+                .await
+                .map_err(reached)?,
+        )
+        .await?
+        .json()
+        .await
+        .map_err(reached)?;
+        Ok(found["files"]
+            .as_array()
+            .map(|files| {
+                files
+                    .iter()
+                    .filter_map(|f| f["id"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default())
+    })
+}
+
 /// The folder in `parent` marked as the meeting `meeting_id`'s.
 pub fn find_meeting_folder(token: &str, parent: &str, meeting_id: &str) -> Result<Option<String>> {
     let q = format!(

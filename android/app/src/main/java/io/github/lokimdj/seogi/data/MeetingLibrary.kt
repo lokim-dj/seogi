@@ -140,6 +140,33 @@ class MeetingLibrary(
         editsState.value += 1
     }
 
+    /**
+     * "지우기" on a meeting (decision 5 of #67): its folder in Drive goes to
+     * Drive's trash, with everything in it, and it leaves the list here.
+     * Nothing is deleted for good, and the computer keeps its copy (it sees
+     * the folder in the trash and does not put it back).
+     */
+    suspend fun trashMeeting(id: String): Outcome = lock.withLock {
+        val m = get(id) ?: return@withLock Outcome.DONE
+        val token = when (val t = tokens()) {
+            is TokenResult.Ok -> t.token
+            TokenResult.NeedLogin -> return@withLock Outcome.NEED_LOGIN
+        }
+        try {
+            reader.trash(token, m.folderId) // false: already gone, which is as wanted
+        } catch (e: IOException) {
+            return@withLock Outcome.OFFLINE
+        } catch (e: DriveHttpException) {
+            return@withLock if (needsLogin(e)) Outcome.NEED_LOGIN else Outcome.FAILED
+        }
+        docFile(id).delete()
+        computerFile(id).delete()
+        phoneFile(id).delete()
+        synchronized(docs) { docs.remove(id) }
+        save(state.value.filter { it.id != id })
+        Outcome.DONE
+    }
+
     /** Sends this phone's changes that Drive does not have yet. Never throws. */
     suspend fun pushEdits(): Outcome = lock.withLock {
         val waiting = state.value.filter { phoneEdits(it.id).pending }

@@ -213,7 +213,9 @@
             폰 안 앱 임시 저장소로 내려받고, 드라이브의 녹음은 읽기만 합니다.
             폰에서 할 일을 끝냄으로 표시하거나 줄이나 말한 사람 이름을 고치면,
             그 고친 것과 고친 시각을 그 회의 폴더의 <code>고친것-폰.json</code>
-            에 올려 컴퓨터의 서기가 같은 것을 보게 합니다.
+            에 올려 컴퓨터의 서기가 같은 것을 보게 합니다. 폰에서 회의를 지우면
+            그 회의 폴더를 드라이브 휴지통으로 옮기고(영구 삭제 아님), 컴퓨터의
+            서기에는 그대로 남습니다.
           </li>
           <li>
             <strong>구글 계정 이메일 주소</strong>: 어느 계정으로 올리는지 보여
@@ -268,12 +270,14 @@
             녹음을 올리면 드라이브 남은 공간이 1GB보다 적어질 때는 녹음은 올리지
             않고 한 번 알립니다. 회의의 줄 메뉴 '드라이브에서 빼기'를 누르면 그
             회의의 드라이브 폴더를 드라이브 휴지통으로 옮기고, 컴퓨터의 회의는
-            그대로 둡니다. 드라이브의 파일을 영구히 지우지 않습니다. 로그인은 내
-            브라우저에서 하고, 그 결과(갱신 토큰)와 계정 주소는 그 컴퓨터의 서기
-            데이터 폴더(<code>google.json</code>, 나만 읽을 수 있게)에만 둡니다.
-            '연결 끊기'를 누르면 그 파일을 지우고 구글에 그 로그인을 거두라고
-            알립니다. '데스크톱용 Google Drive'가 동기화한 폴더를 녹음함으로
-            지켜보는 방법도 그대로 쓸 수 있습니다.
+            그대로 둡니다. 컴퓨터에서 회의를 휴지통으로 옮기면 그 드라이브
+            폴더도 드라이브 휴지통으로 옮기고, 폰에서 드라이브 휴지통으로 옮긴
+            회의는 다시 올리지 않습니다. 드라이브의 파일을 영구히 지우지
+            않습니다. 로그인은 내 브라우저에서 하고, 그 결과(갱신 토큰)와 계정
+            주소는 그 컴퓨터의 서기 데이터 폴더(<code>google.json</code>, 나만
+            읽을 수 있게)에만 둡니다. '연결 끊기'를 누르면 그 파일을 지우고
+            구글에 그 로그인을 거두라고 알립니다. '데스크톱용 Google Drive'가
+            동기화한 폴더를 녹음함으로 지켜보는 방법도 그대로 쓸 수 있습니다.
           </li>
           <li>
             폰의 구글 로그인은 구글 계정 시스템이 폰 안에서 관리하고, 서기는
@@ -501,7 +505,9 @@
             is only read. When you tick a task, fix a line or name a speaker on
             the phone, that change and its time go into
             <code>고친것-폰.json</code> in the meeting's folder, so Seogi on
-            your computer shows the same.
+            your computer shows the same. Deleting a meeting on the phone moves
+            its folder to the Drive trash (never a permanent delete); Seogi on
+            your computer keeps its copy.
           </li>
           <li>
             <strong>Your Google account's email address</strong> is kept in the
@@ -565,11 +571,14 @@
             goes up as it is. A recording that would leave less than 1 GB free
             in Drive is not uploaded, and you are told once. "Take out of Drive"
             in a meeting's menu moves that meeting's Drive folder to the Drive
-            trash; the meeting on the computer stays. Seogi never deletes files
-            in Drive for good. You sign in in your own browser; the result (a
-            refresh token) and the account address are kept only in Seogi's data
-            folder on that computer (<code>google.json</code>, readable by you
-            only). "Disconnect" deletes that file and asks Google to revoke the
+            trash; the meeting on the computer stays. Moving a meeting to the
+            trash on the computer moves its Drive folder to the Drive trash too,
+            and a meeting whose folder was moved to the Drive trash from the
+            phone is not put back. Seogi never deletes files in Drive for good.
+            You sign in in your own browser; the result (a refresh token) and
+            the account address are kept only in Seogi's data folder on that
+            computer (<code>google.json</code>, readable by you only).
+            "Disconnect" deletes that file and asks Google to revoke the
             sign-in. Watching the folder Google Drive for desktop syncs still
             works too.
           </li>

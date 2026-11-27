@@ -46,6 +46,13 @@ class MeetingLibraryTest {
         override fun filesIn(token: String, parents: List<String>) = files.filter { it.parent in parents }
         override fun readText(token: String, fileId: String): String { reads += fileId; return text.getValue(fileId) }
         val written = mutableMapOf<String, String>()
+        val trashed = mutableListOf<String>()
+        override fun trash(token: String, fileId: String): Boolean {
+            if (offline) throw IOException("offline")
+            trashed += fileId
+            folders.removeAll { it.id == fileId }
+            return true
+        }
         override fun writeJson(token: String, folderId: String, name: String, text: String): String {
             val id = "W${written.size + 1}"
             written[id] = text
@@ -150,6 +157,32 @@ class MeetingLibraryTest {
         lib.refresh()
         assertEquals(listOf("m2"), lib.all.value.map { it.id })
         assertNull(lib.doc("m1"))
+    }
+
+    /** Decision 5: deleting a meeting moves its Drive folder to the trash; nothing is deleted for good. */
+    @Test fun deletingAMeetingTrashesItsFolder() = runBlocking {
+        val r = FakeReader()
+        r.meeting("m1", "견적 회의", 1000)
+        r.meeting("m2", "주간 회의", 2000)
+        val lib = library(r)
+        lib.refresh()
+        assertEquals(MeetingLibrary.Outcome.DONE, lib.trashMeeting("m1"))
+        assertEquals(listOf("F-m1"), r.trashed)
+        assertEquals(listOf("m2"), lib.all.value.map { it.id })
+        assertNull(lib.doc("m1"))
+        lib.refresh()
+        assertEquals(listOf("m2"), lib.all.value.map { it.id })
+    }
+
+    /** Offline: nothing changes, so the user can try again. */
+    @Test fun deletingOfflineKeepsTheMeeting() = runBlocking {
+        val r = FakeReader()
+        r.meeting("m1", "견적 회의", 1000)
+        val lib = library(r)
+        lib.refresh()
+        r.offline = true
+        assertEquals(MeetingLibrary.Outcome.OFFLINE, lib.trashMeeting("m1"))
+        assertEquals(listOf("m1"), lib.all.value.map { it.id })
     }
 
     @Test fun signedOutSaysSo() = runBlocking {
