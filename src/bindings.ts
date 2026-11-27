@@ -1667,6 +1667,18 @@ async seogiOpenCalendarPermission() : Promise<Result<null, string>> {
 }
 },
 /**
+ * [`restart`], for the window. The error is `recording` when a meeting is
+ * being recorded: the screen asks to restart after it ends.
+ */
+async seogiRestart() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_restart") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Whether the system will open Seogi at login, as the system has it (the
  * setting may want it while System Settings has it switched off).
  */

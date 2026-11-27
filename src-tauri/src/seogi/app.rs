@@ -401,6 +401,8 @@ pub struct Secretary {
     calendars: Mutex<Vec<String>>,
     /// Set to have the calendars read again now.
     calendars_stale: std::sync::atomic::AtomicBool,
+    /// The calendars are being read right now.
+    calendar_reading: std::sync::atomic::AtomicBool,
     /// How the calendars answered when last read.
     calendar_status: Mutex<CalendarStatus>,
     /// What the banner window shows, if anything.
@@ -463,6 +465,7 @@ impl Secretary {
             recording: Mutex::new(None),
             calendars: Mutex::new(Vec::new()),
             calendars_stale: std::sync::atomic::AtomicBool::new(true),
+            calendar_reading: std::sync::atomic::AtomicBool::new(false),
             calendar_status: Mutex::new(CalendarStatus::default()),
             banner: Mutex::new(None),
             quiet,
@@ -2122,9 +2125,20 @@ impl Secretary {
             // read the moment it is, without restarting Seogi.
             let allowed_again =
                 self.calendar_denied() && super::mac_calendar::access() == "granted";
-            if self.calendars_stale.swap(false, Ordering::AcqRel) || due || allowed_again {
-                self.read_calendars();
+            // Read on a thread of its own: a stuck Calendar app is read again
+            // in other ways, which takes seconds, and the reminders below
+            // must not wait for that. What was read last serves meanwhile.
+            let reading = self.calendar_reading.load(Ordering::Acquire);
+            if !reading
+                && (self.calendars_stale.swap(false, Ordering::AcqRel) || due || allowed_again)
+            {
+                self.calendar_reading.store(true, Ordering::Release);
                 read_at = Some(Instant::now());
+                let me = self.clone();
+                std::thread::spawn(move || {
+                    me.read_calendars();
+                    me.calendar_reading.store(false, Ordering::Release);
+                });
             }
             let trouble = self.calendar_trouble();
             if trouble != told {

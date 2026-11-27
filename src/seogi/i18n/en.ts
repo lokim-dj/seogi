@@ -235,6 +235,7 @@ const en: Strings = {
     open: "Open System Settings",
     ask: "Allow",
     restart: "Restart Seogi",
+    restartLater: "Restart once the recording has ended.",
   },
   update: {
     available: "Version {{version}} is out",
@@ -954,6 +955,8 @@ const en: Strings = {
         "Seogi may not read calendars. Turn on Seogi in System Settings → Privacy & Security → Calendars.",
       mac_missing:
         "The chosen calendars are not in the Calendar app. Choose again.",
+      mac_no_account:
+        "The Calendar app has no accounts. Add the account with your events in Calendar → Settings → Accounts.",
       mac_unreadable:
         "Seogi may read calendars, but the Calendar app gave none. Your events are still there; restarting Seogi reads them again.",
     },

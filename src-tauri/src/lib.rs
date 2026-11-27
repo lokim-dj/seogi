@@ -401,11 +401,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                     // new process reads the calendars again. Never in the
                     // middle of a recording: the window says why instead.
                     Some(n) if n.code == notices::NoticeCode::CalendarUnreadable => {
-                        let recording = app
-                            .try_state::<Arc<seogi::app::Secretary>>()
-                            .is_some_and(|secretary| secretary.is_recording());
-                        if !recording {
-                            app.restart();
+                        if let Err(why) = seogi::commands::restart(app) {
+                            log::info!("Not restarting now: {why}");
                         }
                     }
                     _ => {}
@@ -1037,6 +1034,7 @@ pub fn run(cli_args: CliArgs) {
             seogi::commands::seogi_download_dictation_model,
             seogi::commands::seogi_open_typing_permission,
             seogi::commands::seogi_open_calendar_permission,
+            seogi::commands::seogi_restart,
             seogi::commands::seogi_login_item,
             seogi::commands::seogi_open_login_items,
             seogi::commands::seogi_try_notification,

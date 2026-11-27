@@ -16,6 +16,9 @@
 //!
 //! Elsewhere than macOS the functions say the calendars are not there.
 
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -44,6 +47,9 @@ pub enum Unread {
     /// EventKit to refresh and over a fresh connection, while calendars were
     /// chosen from it before or it has accounts. Restarting Seogi helps.
     Empty,
+    /// Calendars were chosen from the Calendar app, but a fresh connection
+    /// sees no account in it at all: it was taken out. Adding it helps.
+    NoAccount,
 }
 
 impl Unread {
@@ -53,6 +59,7 @@ impl Unread {
             Self::Denied => "mac_denied",
             Self::Missing => "mac_missing",
             Self::Empty => "mac_unreadable",
+            Self::NoAccount => "mac_no_account",
         }
     }
 }
@@ -65,6 +72,7 @@ impl std::fmt::Display for Unread {
             Self::Empty => {
                 "the Calendar app gave no calendars though Seogi may read them, also after a refresh and over a fresh connection"
             }
+            Self::NoAccount => "the Calendar app has no account any more",
         })
     }
 }
@@ -184,8 +192,14 @@ fn verdict(looks: &[Look], ids: &[String], fresh: bool) -> Verdict {
         // Calendars came back, only not the chosen ones.
         return Verdict::Unread(Unread::Missing);
     }
-    if ids.is_empty() && fresh && looks.iter().all(|look| look.sources == 0) {
-        return Verdict::NoCalendars;
+    if fresh && looks.iter().all(|look| look.sources == 0) {
+        // A fresh connection saw no account at all: there is none, even
+        // if calendars were chosen from one before.
+        return if ids.is_empty() {
+            Verdict::NoCalendars
+        } else {
+            Verdict::Unread(Unread::NoAccount)
+        };
     }
     // Calendars were chosen from this app before, or it has accounts, or
     // no fresh connection could be made: no calendar coming back means the
@@ -229,6 +243,71 @@ fn read(
     }
 }
 
+/// How long what the last read found serves the settings screen instead
+/// of reading again: a stuck read costs seconds, and one look gives both
+/// the calendars and the events.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const REUSE_FOR: Duration = Duration::from_secs(60);
+
+/// The calendars the last read found, or that none came back though they
+/// should have.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+struct Remembered {
+    at: Instant,
+    calendars: std::result::Result<Vec<MacCalendar>, Unread>,
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+static LAST: Mutex<Option<Remembered>> = Mutex::new(None);
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn remember(last: &Mutex<Option<Remembered>>, read: &Result<Look>) {
+    let calendars = match read {
+        Ok(look) => Ok(look.calendars.clone()),
+        Err(e) if unread(e) == Some(Unread::Empty) => Err(Unread::Empty),
+        // Denied, a choice gone, no account: cheap to read again.
+        Err(_) => return,
+    };
+    *last.lock().unwrap_or_else(|e| e.into_inner()) = Some(Remembered {
+        at: Instant::now(),
+        calendars,
+    });
+}
+
+/// The calendars, from the last read when it was a moment ago.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn calendars_from(
+    last: &Mutex<Option<Remembered>>,
+    read: impl FnOnce() -> Result<Look>,
+) -> Result<Vec<MacCalendar>> {
+    if let Some(recent) = last
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .filter(|recent| recent.at.elapsed() < REUSE_FOR)
+    {
+        match &recent.calendars {
+            Ok(calendars) if !calendars.is_empty() => return Ok(calendars.clone()),
+            Err(why) => return Err((*why).into()),
+            Ok(_) => {}
+        }
+    }
+    let read = read();
+    remember(last, &read);
+    Ok(read?.calendars)
+}
+
+/// The events of one read, whose calendars are remembered for the settings.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn events_from(
+    last: &Mutex<Option<Remembered>>,
+    read: impl FnOnce() -> Result<Look>,
+) -> Result<Vec<Event>> {
+    let read = read();
+    remember(last, &read);
+    Ok(read?.events)
+}
+
 #[cfg(target_os = "macos")]
 mod imp {
     use std::collections::HashSet;
@@ -252,9 +331,9 @@ mod imp {
     use super::{Event, Look, MacCalendar, Unread, WORKER_FLAG};
 
     /// How long the worker may take before it is given up on.
-    const WORKER_TIMEOUT: Duration = Duration::from_secs(30);
+    const WORKER_TIMEOUT: Duration = Duration::from_secs(8);
     /// How long EventKit is given to refresh before it is read again.
-    const REFRESH_WAIT: Duration = Duration::from_secs(2);
+    const REFRESH_WAIT: Duration = Duration::from_secs(1);
 
     pub fn access() -> &'static str {
         let status = unsafe { EKEventStore::authorizationStatusForEntityType(EKEntityType::Event) };
@@ -423,11 +502,11 @@ mod imp {
     }
 
     pub fn calendars() -> Result<Vec<MacCalendar>> {
-        Ok(read(&[], 0, 0)?.calendars)
+        super::calendars_from(&super::LAST, || read(&[], 0, 0))
     }
 
     pub fn events(ids: &[String], from_ms: i64, to_ms: i64) -> Result<Vec<Event>> {
-        Ok(read(ids, from_ms, to_ms)?.events)
+        super::events_from(&super::LAST, || read(ids, from_ms, to_ms))
     }
 
     /// A participant as [`standing`] reads one.
@@ -658,7 +737,12 @@ mod tests {
     #[test]
     fn nothing_from_any_connection_is_a_stuck_read_not_a_missing_account() {
         let ids = chosen(&["a"]);
-        let error = read(&ids, |_| Ok(look(&[], 0)), || Ok(look(&[], 0))).unwrap_err();
+        // The fresh connection sees the account; its calendars just did
+        // not come back.
+        let error = read(&ids, |_| Ok(look(&[], 0)), || Ok(look(&[], 1))).unwrap_err();
+        assert_eq!(unread(&error), Some(Unread::Empty));
+        // Nor without a fresh connection to say otherwise.
+        let error = read(&ids, |_| Ok(look(&[], 0)), || Err(anyhow::anyhow!("no"))).unwrap_err();
         assert_eq!(unread(&error), Some(Unread::Empty));
         // Without a fresh connection it is not known to be empty either.
         let error = read(&[], |_| Ok(look(&[], 0)), || Err(anyhow::anyhow!("no"))).unwrap_err();
@@ -672,6 +756,40 @@ mod tests {
     fn only_a_fresh_connection_seeing_no_account_means_there_are_none() {
         let read = read(&[], |_| Ok(look(&[], 0)), || Ok(look(&[], 0))).unwrap();
         assert!(read.calendars.is_empty());
+    }
+
+    #[test]
+    fn chosen_calendars_whose_account_is_gone_ask_to_add_one_not_to_restart() {
+        let ids = chosen(&["a"]);
+        let error = read(&ids, |_| Ok(look(&[], 0)), || Ok(look(&[], 0))).unwrap_err();
+        assert_eq!(unread(&error), Some(Unread::NoAccount));
+        assert_eq!(Unread::NoAccount.reason(), "mac_no_account");
+    }
+
+    #[test]
+    fn one_read_serves_the_settings_for_a_while() {
+        let last = Mutex::new(None);
+        // The reminders' read found the calendars and their events.
+        let mut found = look(&["a", "b"], 1);
+        found.events = Vec::new();
+        events_from(&last, || Ok(found.clone())).unwrap();
+        let calendars = calendars_from(&last, || panic!("the last read is a moment old")).unwrap();
+        assert_eq!(calendars.len(), 2);
+
+        // A stuck read is not paid for twice: the settings hear it at once.
+        let last = Mutex::new(None);
+        let stuck = events_from(&last, || Err(Unread::Empty.into())).unwrap_err();
+        assert_eq!(unread(&stuck), Some(Unread::Empty));
+        let error = calendars_from(&last, || panic!("not again")).unwrap_err();
+        assert_eq!(unread(&error), Some(Unread::Empty));
+
+        // Something cheap to look at again is looked at again.
+        let last = Mutex::new(None);
+        let _ = events_from(&last, || Err(Unread::Missing.into()));
+        assert_eq!(
+            calendars_from(&last, || Ok(look(&["a"], 1))).unwrap().len(),
+            1
+        );
     }
 
     #[test]

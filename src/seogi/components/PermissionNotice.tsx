@@ -7,7 +7,6 @@
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { relaunch } from "@tauri-apps/plugin-process";
 import { commands, events, type Notice } from "@/bindings";
 import { NS } from "../i18n";
 
@@ -38,7 +37,8 @@ const asks = (notice: Notice) =>
   notice.detail === "not_determined";
 
 const fix = (notice: Notice) => {
-  if (notice.code === "CalendarUnreadable") return relaunch();
+  // Through the backend, which refuses while a meeting is being recorded.
+  if (notice.code === "CalendarUnreadable") return commands.seogiRestart();
   if (asks(notice)) return commands.seogiMacCalendarRequest();
   if (notice.code === "CalendarPermissionLost")
     return commands.seogiOpenCalendarPermission();
@@ -55,6 +55,13 @@ const action = (notice: Notice) =>
 export default function PermissionNotice() {
   const { t } = useTranslation(NS);
   const [shown, setShown] = useState<(Notice & { code: Lost })[]>([]);
+  // Restarting was refused: a meeting is being recorded.
+  const [later, setLater] = useState(false);
+
+  const press = async (notice: Notice) => {
+    const result = await fix(notice);
+    setLater(result.status === "error" && result.error === "recording");
+  };
 
   useEffect(() => {
     let stop = false;
@@ -83,10 +90,14 @@ export default function PermissionNotice() {
           role="alert"
           className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2 px-3 py-2 rounded-[9px] bg-s1 text-[13.5px]"
         >
-          <span className="rt min-w-0 flex-1">{t(TEXT[notice.code])}</span>
+          <span className="rt min-w-0 flex-1">
+            {later && notice.code === "CalendarUnreadable"
+              ? t("permissionLost.restartLater")
+              : t(TEXT[notice.code])}
+          </span>
           <button
             type="button"
-            onClick={() => void fix(notice)}
+            onClick={() => void press(notice)}
             className="btn solid !h-[26px] ml-auto"
           >
             {t(action(notice))}
