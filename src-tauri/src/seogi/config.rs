@@ -118,6 +118,14 @@ pub struct Config {
     /// watched folder. That folder is how a phone and the computer share
     /// files, so it is where the minutes are looked for on the phone.
     pub minutes_beside_source: bool,
+    /// With Google connected, put the meetings recorded or brought in on
+    /// this computer in the shared Drive folder too, once their minutes are
+    /// ready ("이 컴퓨터에서 녹음한 회의도 올리기"). A phone's meetings always
+    /// get their minutes there.
+    pub drive_upload_own: bool,
+    /// And their recordings with them ("녹음 파일도 올리기"); the text goes
+    /// either way.
+    pub drive_upload_audio: bool,
     /// Dictation: a shortcut, speech, and the words typed where the cursor
     /// is. On for a new install.
     pub dictation: DictationConfig,
@@ -143,6 +151,8 @@ impl Default for Config {
             mark_shortcut: "Ctrl+Alt+M".to_string(),
             muted_events: Vec::new(),
             minutes_beside_source: true,
+            drive_upload_own: true,
+            drive_upload_audio: true,
             dictation: DictationConfig::default(),
         }
     }

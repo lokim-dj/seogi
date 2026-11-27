@@ -1105,7 +1105,7 @@ export default function Settings() {
                     </div>
                   ) : null}
                 </div>
-                <PhoneRow onNote={setNote} />
+                <PhoneRow onNote={setNote} config={config} onSave={save} />
                 <div className="srow">
                   <div>
                     <div className="l">{t("settings.calendar")}</div>

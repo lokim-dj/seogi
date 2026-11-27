@@ -184,11 +184,11 @@
           </li>
           <li>
             <strong>내 구글 드라이브로 올리기</strong>: 녹음이 끝나면 내가
-            로그인한 구글 계정의 드라이브, <code>서기 폰 녹음</code> 폴더로
-            올립니다. 녹음 옆에 작은 설명 파일(시작 시각, 길이, 중요 표시 시각,
-            파일 이름, 녹음 이름, 캘린더 일정 이름, 폰 모델, 앱 버전, 파일 지문,
-            되살린 녹음인지)이 같이 올라갑니다. 컴퓨터의 서기가 쓰도록 둔
-            파일입니다.
+            로그인한 구글 계정의 드라이브, <code>서기</code> 폴더(예전 이름
+            <code>서기 폰 녹음</code>)로 올립니다. 녹음 옆에 작은 설명 파일(시작
+            시각, 길이, 중요 표시 시각, 파일 이름, 녹음 이름, 캘린더 일정 이름,
+            폰 모델, 앱 버전, 파일 지문, 되살린 녹음인지)이 같이 올라갑니다.
+            컴퓨터의 서기가 쓰도록 둔 파일입니다.
           </li>
           <li>
             <strong>구글 계정 이메일 주소</strong>: 어느 계정으로 올리는지 보여
@@ -213,25 +213,37 @@
             볼 수 있고, 내 드라이브의 다른 파일은 보지도 읽지도 못합니다.
           </li>
           <li>
-            이 권한으로 하는 일: 서기가 만든 <code>서기 폰 녹음</code> 폴더
-            찾기와 만들기, 그 폴더가 아직 있는지 확인하기, 녹음과 설명 파일
-            올리기, 내가 녹음을 지울 때 서기가 올린 그 파일을 드라이브
-            휴지통으로 옮기기(올리던 중이면 그 올리기를 멈추기), 그리고 어느
-            계정인지 보여 주려고 계정의 이메일 주소 읽기. 구글 계정 선택 창으로
-            로그인하면 구글이 계정의 기본 프로필을 함께 건네지만, 서기는 그중
-            이메일 주소만 씁니다.
+            이 권한으로 하는 일: 서기가 만든 <code>서기</code> 폴더 찾기와
+            만들기, 그 폴더가 아직 있는지 확인하기, 녹음과 설명 파일 올리기,
+            내가 녹음을 지울 때 서기가 올린 그 파일을 드라이브 휴지통으로
+            옮기기(올리던 중이면 그 올리기를 멈추기), 그리고 어느 계정인지 보여
+            주려고 계정의 이메일 주소 읽기. 구글 계정 선택 창으로 로그인하면
+            구글이 계정의 기본 프로필을 함께 건네지만, 서기는 그중 이메일 주소만
+            씁니다.
           </li>
           <li>
-            컴퓨터의 서기에서 설정 › 보관과 일정 › 폰 녹음으로 구글을 연결하면,
-            같은 <code>drive.file</code> 권한 하나로 서기가 만든
-            <code>서기 폰 녹음</code> 폴더를 찾고(없으면 폰과 똑같이 만들고), 그
+            컴퓨터의 서기에서 설정 › 보관과 일정 › 폰과 드라이브로 구글을
+            연결하면, 같은 <code>drive.file</code> 권한 하나로 서기가 만든
+            <code>서기</code> 폴더를 찾고(없으면 폰과 똑같이 만들고, 예전 이름
+            <code>서기 폰 녹음</code>이면 이름만 <code>서기</code>로 바꾸고), 그
             안의 녹음과 설명 파일을 내 컴퓨터로 내려받고, 어느 계정인지 보여
-            주려고 이메일 주소를 읽습니다. 드라이브의 파일은 고치거나 지우지
-            않습니다. 로그인은 내 브라우저에서 하고, 그 결과(갱신 토큰)와 계정
-            주소는 그 컴퓨터의 서기 데이터 폴더(<code>google.json</code>, 나만
-            읽을 수 있게)에만 둡니다. '연결 끊기'를 누르면 그 파일을 지우고
-            구글에 그 로그인을 거두라고 알립니다. '데스크톱용 Google Drive'가
-            동기화한 폴더를 녹음함으로 지켜보는 방법도 그대로 쓸 수 있습니다.
+            주려고 이메일 주소를 읽습니다. 회의록이 나오면 폰에서도 보도록 그
+            회의의 폴더를 <code>서기</code> 폴더 안에 만들어 받아쓴 글
+            (<code>전사.txt</code>), 회의록(<code>회의록.md</code>), 앱이 읽는
+            요약(<code>회의.json</code>: 할 일, 시각, 말한 사람)을 올리고, 폰
+            녹음과 그 설명 파일은 그 폴더로 옮깁니다(복사하지 않음). '이
+            컴퓨터에서 녹음한 회의도 올리기'(처음엔 켜짐)가 켜져 있으면
+            컴퓨터에서 녹음한 회의도 같은 방법으로 올리고, '녹음 파일도
+            올리기'(처음엔 켜짐)가 켜져 있으면 원본 녹음도 그대로 올립니다.
+            녹음을 올리면 드라이브 남은 공간이 1GB보다 적어질 때는 녹음은 올리지
+            않고 한 번 알립니다. 회의의 줄 메뉴 '드라이브에서 빼기'를 누르면 그
+            회의의 드라이브 폴더를 드라이브 휴지통으로 옮기고, 컴퓨터의 회의는
+            그대로 둡니다. 드라이브의 파일을 영구히 지우지 않습니다. 로그인은 내
+            브라우저에서 하고, 그 결과(갱신 토큰)와 계정 주소는 그 컴퓨터의 서기
+            데이터 폴더(<code>google.json</code>, 나만 읽을 수 있게)에만 둡니다.
+            '연결 끊기'를 누르면 그 파일을 지우고 구글에 그 로그인을 거두라고
+            알립니다. '데스크톱용 Google Drive'가 동기화한 폴더를 녹음함으로
+            지켜보는 방법도 그대로 쓸 수 있습니다.
           </li>
           <li>
             폰의 구글 로그인은 구글 계정 시스템이 폰 안에서 관리하고, 서기는
@@ -458,28 +470,43 @@
           </li>
           <li>
             What it does with that access: find and create the
-            <code>서기 폰 녹음</code> folder it made, check that the folder
-            still exists, upload recordings and their description files, move a
-            recording it uploaded (and its description file) to the Drive trash
-            when you delete that recording (stopping the upload if it is still
-            under way), and read your account's email address to show which
-            account is in use. If you sign in through Google's account picker,
-            Google also hands over the account's basic profile; Seogi uses only
-            the email address from it.
+            <code>서기</code> folder it made (earlier named
+            <code>서기 폰 녹음</code>), check that the folder still exists,
+            upload recordings and their description files, move a recording it
+            uploaded (and its description file) to the Drive trash when you
+            delete that recording (stopping the upload if it is still under
+            way), and read your account's email address to show which account is
+            in use. If you sign in through Google's account picker, Google also
+            hands over the account's basic profile; Seogi uses only the email
+            address from it.
           </li>
           <li>
             If you connect Google in Seogi on your computer (Settings › Storage
-            and calendar › Phone recordings), it uses the same single
-            <code>drive.file</code> scope to find the <code>서기 폰 녹음</code>
-            folder Seogi created (making it the way the phone does if there is
-            none), download the recordings and description files in it to your
-            computer, and read your email address to show which account is in
-            use. It never changes or deletes files in Drive. You sign in in your
-            own browser; the result (a refresh token) and the account address
-            are kept only in Seogi's data folder on that computer
-            (<code>google.json</code>, readable by you only). "Disconnect"
-            deletes that file and asks Google to revoke the sign-in. Watching
-            the folder Google Drive for desktop syncs still works too.
+            and calendar › Phone and Drive), it uses the same single
+            <code>drive.file</code> scope to find the <code>서기</code> folder
+            Seogi created (making it the way the phone does if there is none,
+            and renaming it from its earlier name <code>서기 폰 녹음</code> to
+            <code>서기</code>), download the recordings and description files in
+            it to your computer, and read your email address to show which
+            account is in use. When a meeting's minutes are ready, it makes a
+            folder for that meeting inside the <code>서기</code> folder so the
+            phone can show it, uploads the transcript (<code>전사.txt</code>),
+            the minutes (<code>회의록.md</code>) and a summary the apps read
+            (<code>회의.json</code>: tasks, times, speakers), and moves (does
+            not copy) the phone's recording and its description file into it.
+            With "Also put up meetings recorded on this computer" on (it is on
+            at first), meetings recorded on the computer go up the same way, and
+            with "Put up recordings too" (on at first) their original recording
+            goes up as it is. A recording that would leave less than 1 GB free
+            in Drive is not uploaded, and you are told once. "Take out of Drive"
+            in a meeting's menu moves that meeting's Drive folder to the Drive
+            trash; the meeting on the computer stays. Seogi never deletes files
+            in Drive for good. You sign in in your own browser; the result (a
+            refresh token) and the account address are kept only in Seogi's data
+            folder on that computer (<code>google.json</code>, readable by you
+            only). "Disconnect" deletes that file and asks Google to revoke the
+            sign-in. Watching the folder Google Drive for desktop syncs still
+            works too.
           </li>
           <li>
             On the phone, your Google sign-in is handled by Google's account

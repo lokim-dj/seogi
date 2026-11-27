@@ -38,6 +38,7 @@ import type {
   Config,
   Dictation,
   DictationStatus,
+  DriveStatus,
   Found,
   FoundPlace,
   Meeting,
@@ -101,6 +102,7 @@ if (screen === "minutes-edited" || screen === "minutes-editing") {
       faint: false,
       original: null,
       added: true,
+      id: "added-1",
     });
     const line = done.transcript?.segments[1];
     if (line) line.edited = line.text.replace(/\s*$/, " 거실부터 볼게요.");
@@ -175,6 +177,8 @@ const config: Config = {
   mark_shortcut: "Ctrl+Alt+M",
   muted_events: ["weekly"],
   minutes_beside_source: true,
+  drive_upload_own: true,
+  drive_upload_audio: true,
   dictation: {
     enabled: screen === "settings-dictation" || screen === "onboarding",
     tidy: screen === "settings-dictation",
@@ -842,6 +846,17 @@ const phone: PhoneStatus = {
   brought_in: 2,
   trouble: "",
 };
+// Meetings in Drive: one put up already, and "지난 회의 올리기" offering
+// the ones done before connecting.
+const drive: DriveStatus = {
+  uploading: false,
+  waiting: 0,
+  audio_waiting: 0,
+  excluded: [],
+  uploaded: [],
+  trouble: "",
+};
+let backlogLeft = 7;
 let atLogin = true;
 const trashedRows: MeetingSummary[] = [];
 
@@ -879,6 +894,25 @@ mockIPC(
       case "seogi_phone_disconnect":
         Object.assign(phone, { connected: false, account: "" });
         return { ...phone };
+      case "seogi_drive_status":
+        return { ...drive, excluded: [...drive.excluded] };
+      case "seogi_drive_backlog":
+        return {
+          meetings: backlogLeft,
+          bytes: backlogLeft > 0 ? 3.4 * 1024 ** 3 : 0,
+        };
+      case "seogi_drive_upload_backlog": {
+        const n = backlogLeft;
+        backlogLeft = 0;
+        drive.waiting += n;
+        return n;
+      }
+      case "seogi_drive_exclude": {
+        const id = String(args.id);
+        drive.excluded = drive.excluded.filter((item) => item !== id);
+        if (args.excluded) drive.excluded.push(id);
+        return null;
+      }
       case "seogi_sign_in": {
         const tool = args.tool as Tool;
         window.setTimeout(() => (signIns[tool] = "signed_in"), 4000);
@@ -1030,6 +1064,7 @@ mockIPC(
           faint: false,
           original: null,
           added: true,
+          id: `added-${Date.now()}`,
         });
         return null;
       }

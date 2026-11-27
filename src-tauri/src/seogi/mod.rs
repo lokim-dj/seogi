@@ -43,5 +43,6 @@ pub mod store;
 pub mod talk;
 pub mod templates;
 pub mod transcript;
+pub mod upload;
 pub mod vocab;
 pub mod watch;
