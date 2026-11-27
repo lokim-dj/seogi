@@ -5,6 +5,7 @@ import io.github.lokimdj.seogi.dictation.BubbleGesture.Act
 import io.github.lokimdj.seogi.dictation.BubbleGesture.Mode
 import io.github.lokimdj.seogi.dictation.BubblePlace
 import io.github.lokimdj.seogi.dictation.DictationModel
+import io.github.lokimdj.seogi.dictation.InsertTarget
 import io.github.lokimdj.seogi.dictation.Inserter
 import io.github.lokimdj.seogi.dictation.KeyPresence
 import io.github.lokimdj.seogi.dictation.KeyRule
@@ -229,6 +230,39 @@ class DictationTest {
         val g = BubbleGesture()
         g.down(0, 0f, 0f, Mode.IDLE)
         assertEquals(listOf(Act.Cancel), g.cancel())
+    }
+
+    // --- which field the text goes into ---
+
+    private data class F(val name: String, val editable: Boolean = true, val onScreen: Boolean = true)
+
+    private fun pick(focused: F?, remembered: F?) =
+        InsertTarget.pick(focused, remembered, editable = { it.editable }, onScreen = { it.onScreen })
+
+    @Test fun theFocusedFieldComesFirst() {
+        val c = pick(F("now"), F("before"))
+        assertEquals(F("now"), c.field)
+        assertFalse(c.refocus)
+    }
+
+    @Test fun whenTheFocusMovedTheRememberedFieldIsUsedAndFocused() {
+        val none = pick(null, F("before"))
+        assertEquals(F("before"), none.field)
+        assertTrue(none.refocus)
+        val button = pick(F("button", editable = false), F("before"))
+        assertEquals(F("before"), button.field)
+        assertTrue(button.refocus)
+    }
+
+    @Test fun withNoFieldToTakeItTheTextIsCopiedAndTheLogSaysWhy() {
+        assertEquals(null, pick(null, null).field)
+        assertEquals("no focused field, none remembered", pick(null, null).why)
+        val gone = pick(null, F("before", onScreen = false))
+        assertEquals(null, gone.field)
+        assertTrue(gone.why.contains("gone"))
+        assertEquals(null, pick(null, F("before", editable = false)).field)
+        val same = F("label", editable = false)
+        assertEquals(null, pick(same, same).field)
     }
 
     // --- when the key is on the screen ---

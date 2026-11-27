@@ -107,3 +107,28 @@ object Inserter {
         return field.paste(text)
     }
 }
+
+/**
+ * Which field the spoken text goes into, in this order:
+ * 1. the field that has the cursor now, if it takes text;
+ * 2. else the last field that took text while the user was typing, if it is
+ *    still on the screen (touching the key or the keyboard closing can move
+ *    the focus away); it gets the focus back first;
+ * 3. else none: the text is copied, and [Choice.why] says why for the log.
+ */
+object InsertTarget {
+    data class Choice<F>(val field: F?, val refocus: Boolean, val why: String)
+
+    fun <F> pick(focused: F?, remembered: F?, editable: (F) -> Boolean, onScreen: (F) -> Boolean): Choice<F> {
+        if (focused != null && editable(focused)) return Choice(focused, refocus = false, why = "focused field")
+        val now = when {
+            focused == null -> "no focused field"
+            else -> "focused field takes no text"
+        }
+        if (remembered == null) return Choice(null, false, "$now, none remembered")
+        if (remembered == focused) return Choice(null, false, "$now, the remembered one is it")
+        if (!onScreen(remembered)) return Choice(null, false, "$now, the remembered one is gone")
+        if (!editable(remembered)) return Choice(null, false, "$now, the remembered one takes no text")
+        return Choice(remembered, refocus = true, why = "$now, using the remembered field")
+    }
+}

@@ -15,6 +15,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Dictation (opt-in in Seogi's settings): the floating microphone key over other apps. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Dictation: the floating key the user left on comes back after the phone starts. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:name=".SeogiApp"
@@ -69,5 +71,15 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/insert_service" />
         </service>
+
+        <!-- Brings the floating key back after an update or a restart (dictation/KeyRestart.kt). -->
+        <receiver
+            android:name=".dictation.KeyRestart"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

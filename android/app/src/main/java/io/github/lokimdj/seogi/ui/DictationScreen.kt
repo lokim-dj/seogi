@@ -172,10 +172,10 @@ private fun Ready(state: SetupState, on: Boolean, onSwitch: (Boolean) -> Unit, o
         Spacer(Modifier.height(18.dp))
         Hairline()
         val direct = state.accessibility
-        StepLine(
-            stringResource(R.string.dict_key), stringResource(if (on) R.string.on else R.string.off),
+        SwitchLine(
+            stringResource(R.string.dict_key), on,
             stringResource(if (direct) R.string.dict_key_why else R.string.dict_key_why_always),
-            done = false, onClick = { onSwitch(!on) },
+            onChange = onSwitch,
         )
         Hairline()
         StepLine(

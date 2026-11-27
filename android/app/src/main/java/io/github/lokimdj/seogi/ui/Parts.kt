@@ -1,5 +1,10 @@
 package io.github.lokimdj.seogi.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.infiniteRepeatable
@@ -206,6 +211,42 @@ fun StepLine(name: String, action: String, why: String, done: Boolean, onClick: 
         if (why.isNotEmpty()) {
             T(why, size = 12.5.sp, color = pal.t3, medium = true, modifier = Modifier.padding(top = 3.dp, end = 40.dp))
         }
+    }
+}
+
+/**
+ * A setting that is on or off: its name (and a line on what it does) beside a
+ * switch, the whole line one tap target. Off: knob left on a grey track; on:
+ * knob right on Seogi's red.
+ */
+@Composable
+fun SwitchLine(name: String, on: Boolean, why: String, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            .toggleable(value = on, role = Role.Switch, onValueChange = onChange)
+            .padding(vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f).padding(end = 16.dp)) {
+            T(name, size = 15.sp)
+            if (why.isNotEmpty()) T(why, size = 12.5.sp, color = pal.t3, medium = true, modifier = Modifier.padding(top = 3.dp))
+        }
+        Switch(on)
+    }
+}
+
+/** The switch itself, drawn to the design: 52 × 30 dp, a 24 dp knob. */
+@Composable
+private fun Switch(on: Boolean) {
+    val still = LocalReduceMotion.current
+    val knobAt by animateDpAsState(if (on) 25.dp else 3.dp, if (still) snap() else tween(160), label = "knob")
+    val track by animateColorAsState(
+        if (on) pal.red else pal.t3.copy(alpha = 0.45f), if (still) snap() else tween(160), label = "track",
+    )
+    Box(Modifier.size(width = 52.dp, height = 30.dp).clip(CircleShape).background(track)) {
+        Box(
+            Modifier.padding(start = knobAt, top = 3.dp).size(24.dp).clip(CircleShape).background(Color.White),
+        )
     }
 }
 

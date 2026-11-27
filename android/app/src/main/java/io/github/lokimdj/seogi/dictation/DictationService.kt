@@ -84,6 +84,7 @@ class DictationService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        running = true
         InsertService.listener = { refresh() }
         // A meeting starting or ending changes whether the key may show.
         getSystemService(AudioManager::class.java).registerAudioRecordingCallback(recordings, main)
@@ -357,7 +358,14 @@ class DictationService : Service() {
 
     /** Into the field with the cursor; when there is none (or no accessibility), onto the clipboard. */
     private fun deliver(text: String) {
-        val typed = try { InsertService.instance?.insert(text) == true } catch (e: Exception) { false }
+        val service = InsertService.instance
+        if (service == null) Log.i(TAG, "copying instead of typing: accessibility is off")
+        val typed = try {
+            service?.insert(text) == true
+        } catch (e: Exception) {
+            Log.i(TAG, "copying instead of typing: the insert failed", e)
+            false
+        }
         if (typed) return
         getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText(getString(R.string.app_name), text))
         toast(getString(R.string.dict_copied))
@@ -418,6 +426,7 @@ class DictationService : Service() {
 
     override fun onDestroy() {
         destroyed = true
+        running = false
         main.removeCallbacks(warm)
         main.removeCallbacks(settle)
         InsertService.listener = null
@@ -452,6 +461,34 @@ class DictationService : Service() {
                 context.startForegroundService(Intent(context, DictationService::class.java))
             } catch (e: Exception) {
                 Log.w(TAG, "could not start", e)
+            }
+        }
+
+        /** True while the service lives in this process (`:dictation`, beside [InsertService]). */
+        @Volatile
+        var running = false
+            private set
+
+        /**
+         * Brings the key back without Seogi on screen (the accessibility
+         * service was bound, the app was updated, the phone started), when the
+         * user left it on and it has what it needs. Android may still refuse a
+         * microphone service started from the background; that is logged, and
+         * opening Seogi starts it.
+         */
+        fun resume(context: Context, why: String) {
+            if (!DictationPrefs.isOn(context)) return
+            val ready = context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED &&
+                Settings.canDrawOverlays(context) && DictationModel.isReady(context)
+            if (!ready) {
+                Log.i(TAG, "not bringing the key back ($why): permission, overlay or model missing")
+                return
+            }
+            try {
+                context.startForegroundService(Intent(context, DictationService::class.java))
+                Log.i(TAG, "bringing the key back ($why)")
+            } catch (e: Exception) {
+                Log.i(TAG, "Android did not let the key come back ($why)", e)
             }
         }
 
