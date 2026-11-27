@@ -101,6 +101,17 @@ pub struct Gap {
 }
 
 impl Gap {
+    /// The note the transcript and the minutes put at the gap: `(12초 끊김)`,
+    /// or `(끊김)` for one whose length is not known (the app stopped while
+    /// the microphone was away; `gap_ms` is 0 then).
+    pub fn note(&self) -> String {
+        if self.gap_ms == 0 {
+            "(끊김)".to_string()
+        } else {
+            format!("({} 끊김)", self.words())
+        }
+    }
+
     /// How long, as the transcript and the minutes say it: `12초`,
     /// `3분 5초`, `1시간 2분`.
     pub fn words(&self) -> String {

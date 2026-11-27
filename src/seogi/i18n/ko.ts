@@ -426,6 +426,7 @@ const ko = {
     gapsLabel: "마이크 끊김",
     gapsLead: "그동안의 이야기는 녹음과 회의록에 없어요.",
     gap: "({{length}} 끊김)",
+    gapOpen: "(끊김)",
     gapLength: { h: "{{n}}시간", m: "{{n}}분", s: "{{n}}초" },
     openFolder: "폴더 열기",
     rewrite: "회의록 다시 쓰기",

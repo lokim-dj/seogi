@@ -109,7 +109,7 @@ pub fn minutes_markdown(
         gaps.sort_by_key(|gap| gap.at_ms);
         let places: Vec<String> = gaps
             .iter()
-            .map(|gap| format!("`{}` ({} 끊김)", clock(gap.at_ms), gap.words()))
+            .map(|gap| format!("`{}` {}", clock(gap.at_ms), gap.note()))
             .collect();
         facts.push(format!(
             "- 녹음: 마이크가 끊겼던 곳 {}. 그동안의 이야기는 회의록에 없어요.",

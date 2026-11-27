@@ -433,6 +433,7 @@ const en: Strings = {
     gapsLabel: "Microphone lost",
     gapsLead: "What was said meanwhile is not in the recording or the minutes.",
     gap: "({{length}} lost)",
+    gapOpen: "(lost)",
     gapLength: { h: "{{n}} h", m: "{{n}} min", s: "{{n}} s" },
     openFolder: "Open folder",
     rewrite: "Write the minutes again",

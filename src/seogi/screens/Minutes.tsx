@@ -542,6 +542,8 @@ function onScrollBar(event: PointerEvent): boolean {
 function useGapText() {
   const { t } = useTranslation(NS);
   return (gap: Gap) => {
+    // The app stopped while the microphone was away: no length is known.
+    if (gap.gap_ms === 0) return t("minutes.gapOpen");
     const seconds = Math.max(1, Math.ceil(gap.gap_ms / 1000));
     const h = Math.floor(seconds / 3600);
     const m = Math.floor(seconds / 60) % 60;

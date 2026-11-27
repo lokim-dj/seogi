@@ -1155,14 +1155,23 @@ impl Secretary {
 
         let me = Arc::downgrade(self);
         let device = (!config.input_device.is_empty()).then(|| config.input_device.clone());
+        // What the microphone does is told on the recording's own thread
+        // and handled on one other thread, in the order it happened, so a
+        // quick loss and return never leave the screen saying "away". The
+        // thread ends when the recording does (its sender goes with it).
+        let (tell, told) = std::sync::mpsc::channel::<recorder::Event>();
         let session_folder = folder.clone();
-        let session = recorder::Session::start(&path, device, move |event| {
-            // The microphone went away, came back, or was given up on. This
-            // thread is the recording's own; the rest is done on another.
-            if let Some(me) = me.upgrade() {
-                let folder = session_folder.clone();
-                std::thread::spawn(move || me.microphone_event(&folder, event));
+        std::thread::spawn(move || {
+            for event in told {
+                let Some(me) = me.upgrade() else {
+                    return;
+                };
+                me.microphone_event(&session_folder, event);
             }
+        });
+        let tell = Mutex::new(tell);
+        let session = recorder::Session::start(&path, device, move |event| {
+            let _ = lock(&tell).send(event);
         });
         let session = match session {
             Ok(session) => session,
@@ -1252,7 +1261,10 @@ impl Secretary {
         match event {
             recorder::Event::Lost { reason } => {
                 warn!("The microphone went away; reconnecting: {reason}");
-                self.reconnecting_changed(true);
+                // Where it went is kept with the meeting at once, so a
+                // crash while it is away still knows.
+                self.keep_microphone_state(folder);
+                self.reconnecting_changed(folder);
                 // Said now, and said again when it is back: a notice shown
                 // while the lid is shut is seen by nobody.
                 self.notify(
@@ -1270,23 +1282,11 @@ impl Secretary {
             }
             recorder::Event::Back { gap, device } => {
                 info!("The microphone is back after {} ms: {device}", gap.gap_ms);
-                // The gaps are kept with the meeting at once, so a crash
-                // later on still knows where they were.
-                {
-                    let recording = lock(&self.recording);
-                    if let Some(active) = recording.as_ref().filter(|a| a.folder == folder) {
-                        match Library::read(&active.folder) {
-                            Ok(mut meeting) => {
-                                meeting.gaps = active.session.gaps();
-                                if let Err(e) = self.save(&meeting, &active.folder) {
-                                    warn!("Could not keep the microphone's gap: {e:#}");
-                                }
-                            }
-                            Err(e) => warn!("Could not keep the microphone's gap: {e:#}"),
-                        }
-                    }
-                }
-                self.reconnecting_changed(false);
+                // The gap and the microphone now in use (the default one
+                // when the chosen one stayed away) are kept with the
+                // meeting at once.
+                self.keep_microphone_state(folder);
+                self.reconnecting_changed(folder);
                 let words = gap.words();
                 self.notify(
                     say(
@@ -1304,13 +1304,52 @@ impl Secretary {
                     },
                 );
             }
-            recorder::Event::GaveUp { reason } => self.recording_broke(reason),
+            recorder::Event::GaveUp { reason } => self.recording_broke(
+                reason,
+                say(
+                    &self.app,
+                    "마이크가 10분 동안 돌아오지 않았습니다. 그때까지의 녹음으로 회의록을 만듭니다.",
+                    "The microphone did not come back for 10 minutes. Minutes will be made from what was recorded.",
+                ),
+            ),
+            recorder::Event::Broken { reason } => self.recording_broke(
+                reason,
+                say(
+                    &self.app,
+                    "마이크가 끊기면서 녹음을 더 이어 쓸 수 없게 됐습니다. 저장된 데까지의 녹음으로 회의록을 만듭니다.",
+                    "When the microphone went away the recording could not be continued. Minutes will be made from what was saved.",
+                ),
+            ),
         }
     }
 
-    /// The microphone went away (true) or came back (false): the menu bar
-    /// and the window say so while it is away.
-    fn reconnecting_changed(&self, reconnecting: bool) {
+    /// Keeps the recording's gaps so far (one still open has no length
+    /// yet) and its microphone with the meeting.
+    fn keep_microphone_state(&self, folder: &Path) {
+        let recording = lock(&self.recording);
+        let Some(active) = recording.as_ref().filter(|a| a.folder == folder) else {
+            return;
+        };
+        let kept = Library::read(&active.folder).and_then(|mut meeting| {
+            meeting.gaps = active.session.gaps_so_far();
+            meeting.device = active.session.device();
+            self.save(&meeting, &active.folder)
+        });
+        if let Err(e) = kept {
+            warn!("Could not keep the microphone's gap: {e:#}");
+        }
+    }
+
+    /// The menu bar and the window follow whether the recording's
+    /// microphone is away now, as the recording says at this moment.
+    fn reconnecting_changed(&self, folder: &Path) {
+        let Some(reconnecting) = lock(&self.recording)
+            .as_ref()
+            .filter(|active| active.folder == folder)
+            .map(|active| active.session.is_reconnecting())
+        else {
+            return;
+        };
         let _ = RecordingChanged { recording: true }.emit(&self.app);
         if self.quiet {
             return;
@@ -1331,9 +1370,9 @@ impl Secretary {
         }
     }
 
-    /// No microphone came back for a long while: the meeting ends with what
-    /// was recorded.
-    fn recording_broke(&self, reason: String) {
+    /// The recording cannot go on without its microphone: the meeting ends
+    /// with what was recorded, and `why` says so.
+    fn recording_broke(&self, reason: String, why: &str) {
         let Some(active) = lock(&self.recording).take() else {
             return;
         };
@@ -1341,11 +1380,7 @@ impl Secretary {
         match self.finish_recording(active, Some(("microphone_lost", reason))) {
             Ok(_) => self.notify(
                 say(&self.app, "녹음이 멈췄습니다", "The recording stopped"),
-                say(
-                    &self.app,
-                    "마이크가 10분 동안 돌아오지 않았습니다. 그때까지의 녹음으로 회의록을 만듭니다.",
-                    "The microphone did not come back for 10 minutes. Minutes will be made from what was recorded.",
-                ),
+                why,
             ),
             Err(e) => error!("Could not finish the interrupted recording: {e:#}"),
         }

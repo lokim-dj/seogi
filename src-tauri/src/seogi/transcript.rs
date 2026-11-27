@@ -835,7 +835,7 @@ impl Transcript {
         gaps.sort_by_key(|gap| gap.at_ms);
         let mut gaps = gaps.into_iter().peekable();
         let gap_line = |out: &mut String, gap: &super::store::Gap| {
-            out.push_str(&format!("[{}] ({} 끊김)\n", clock(gap.at_ms), gap.words()));
+            out.push_str(&format!("[{}] {}\n", clock(gap.at_ms), gap.note()));
         };
         for paragraph in self.paragraphs() {
             while let Some(gap) = gaps.next_if(|gap| gap.at_ms <= paragraph.start_ms) {

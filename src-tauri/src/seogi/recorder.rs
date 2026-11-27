@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::{JoinHandle, ThreadId};
-use std::time::{Duration, Instant};
+use std::time::{Duration, SystemTime};
 
 use anyhow::{anyhow, bail, Context, Result};
 use handy_recorder::{AudioChunk, Channels, EndReason, Recorder, RecorderConfig, Sink};
@@ -83,6 +83,10 @@ pub enum Event {
     /// No microphone came back in time. Call [`Session::stop`] to complete
     /// the file with what was recorded.
     GaveUp { reason: String },
+    /// The broken microphone did not give the recording back, so nothing
+    /// more can be written to it. Call [`Session::stop`]: the file is made
+    /// whole from what reached the disk.
+    Broken { reason: String },
 }
 
 /// What wakes the session's thread.
@@ -107,15 +111,50 @@ struct Shared {
     write_error: Mutex<Option<String>>,
     /// The microphone is away and being looked for.
     reconnecting: AtomicBool,
-    /// When it went away, while it is.
-    lost_since: Mutex<Option<Instant>>,
+    /// The broken microphone has been let go of: the next sound is from a
+    /// new one, so it is the microphone's return. Until then a late piece
+    /// from the broken one is only written, not taken for a return.
+    awaiting_return: AtomicBool,
+    /// When it went away, while it is, by the wall clock.
+    lost_since: Mutex<Option<SystemTime>>,
     /// Every stretch it was away and came back from.
     gaps: Mutex<Vec<Gap>>,
     signal: Mutex<Signal>,
     wake: Condvar,
+    clock: Clock,
+}
+
+/// What time it is. The wall clock, because a gap is mostly the computer
+/// asleep with its lid shut, and `Instant` does not count sleep on macOS;
+/// a test's own clock otherwise.
+#[derive(Clone)]
+struct Clock(Arc<dyn Fn() -> SystemTime + Send + Sync>);
+
+impl Default for Clock {
+    fn default() -> Self {
+        Self(Arc::new(SystemTime::now))
+    }
+}
+
+impl Clock {
+    fn now(&self) -> SystemTime {
+        (self.0)()
+    }
+
+    /// Time since `then`; nothing when the clock was set back.
+    fn since(&self, then: SystemTime) -> Duration {
+        self.now().duration_since(then).unwrap_or_default()
+    }
 }
 
 impl Shared {
+    fn with_clock(clock: Clock) -> Self {
+        Self {
+            clock,
+            ..Self::default()
+        }
+    }
+
     fn elapsed_ms(&self) -> u64 {
         self.frames.load(Ordering::Acquire) * 1000 / u64::from(RATE)
     }
@@ -126,14 +165,17 @@ impl Shared {
         self.wake.notify_all();
     }
 
-    /// The first sound after the microphone came back.
+    /// The first sound from a microphone opened after one went away.
     fn came_back(&self) {
+        if !self.awaiting_return.swap(false, Ordering::AcqRel) {
+            return;
+        }
         let Some(since) = lock(&self.lost_since).take() else {
             return;
         };
         let gap = Gap {
             at_ms: self.elapsed_ms(),
-            gap_ms: since.elapsed().as_millis() as u64,
+            gap_ms: self.clock.since(since).as_millis() as u64,
         };
         lock(&self.gaps).push(gap);
         self.reconnecting.store(false, Ordering::Release);
@@ -182,7 +224,7 @@ impl WavSink {
 
 impl Sink for WavSink {
     fn process_chunk(&mut self, chunk: AudioChunk<'_>) {
-        if self.shared.reconnecting.load(Ordering::Acquire) {
+        if self.shared.awaiting_return.load(Ordering::Acquire) {
             self.shared.came_back();
         }
         let real = &chunk.samples[..chunk.valid_frames * chunk.channels as usize];
@@ -343,7 +385,7 @@ impl Inner {
         if !self.shared.reconnecting.swap(true, Ordering::AcqRel) {
             // A new outage; one whose reopened microphone failed again
             // before any sound is the same one.
-            *lock(&self.shared.lost_since) = Some(Instant::now());
+            *lock(&self.shared.lost_since) = Some(self.shared.clock.now());
             *lock(&self.last_loss) = reason.clone();
             self.shared.level.store(0, Ordering::Release);
             log::warn!("The microphone went away mid-recording: {reason}");
@@ -351,7 +393,7 @@ impl Inner {
                 reason: reason.clone(),
             });
         }
-        let since = lock(&self.shared.lost_since).unwrap_or_else(Instant::now);
+        let since = lock(&self.shared.lost_since).unwrap_or_else(|| self.shared.clock.now());
         let held = std::mem::replace(&mut *lock(&self.live), Live::Gone);
         let mut sink = match held {
             // Everything it heard before failing is written by now.
@@ -359,7 +401,7 @@ impl Inner {
                 Ok(stopped) => stopped.sink,
                 Err(e) => {
                     log::error!("The recording could not be taken back from the microphone: {e}");
-                    (self.events)(Event::GaveUp {
+                    (self.events)(Event::Broken {
                         reason: format!("{reason}; the recording could not be kept: {e}"),
                     });
                     return false;
@@ -368,12 +410,15 @@ impl Inner {
             Live::Waiting(sink) => sink,
             Live::Gone => return false,
         };
+        // The broken microphone is let go of: whatever sound comes next is
+        // from one opened from here on.
+        self.shared.awaiting_return.store(true, Ordering::Release);
         loop {
             if self.stopping() {
                 *lock(&self.live) = Live::Waiting(sink);
                 return false;
             }
-            if since.elapsed() >= self.timing.give_up_after {
+            if self.shared.clock.since(since) >= self.timing.give_up_after {
                 *lock(&self.live) = Live::Waiting(sink);
                 log::warn!(
                     "No microphone for {} s; the recording ends",
@@ -485,6 +530,7 @@ impl Session {
             device,
             Box::new(SystemMicrophones),
             Reconnect::default(),
+            Clock::default(),
             Box::new(events),
         )
     }
@@ -494,10 +540,11 @@ impl Session {
         device: Option<String>,
         opener: Box<dyn Opener>,
         timing: Reconnect,
+        clock: Clock,
         events: Box<dyn Fn(Event) + Send + Sync + 'static>,
     ) -> Result<Self> {
         let inner = Arc::new(Inner {
-            shared: Arc::new(Shared::default()),
+            shared: Arc::new(Shared::with_clock(clock)),
             opener,
             chosen: device,
             device: Mutex::new(String::new()),
@@ -564,6 +611,20 @@ impl Session {
         lock(&self.inner.shared.gaps).clone()
     }
 
+    /// [`Session::gaps`], and while the microphone is away the stretch it
+    /// is away for, with no length yet (`gap_ms` 0): what a meeting keeps
+    /// so that a crash meanwhile still knows where it went.
+    pub fn gaps_so_far(&self) -> Vec<Gap> {
+        let mut gaps = self.gaps();
+        if self.is_reconnecting() {
+            gaps.push(Gap {
+                at_ms: self.elapsed_ms(),
+                gap_ms: 0,
+            });
+        }
+        gaps
+    }
+
     /// The file could not be written.
     pub fn has_failed(&self) -> bool {
         self.inner.shared.failed.load(Ordering::Acquire)
@@ -609,7 +670,7 @@ impl Session {
             if let Some(since) = lock(&shared.lost_since).take() {
                 gaps.push(Gap {
                     at_ms: shared.elapsed_ms(),
-                    gap_ms: since.elapsed().as_millis() as u64,
+                    gap_ms: (shared.clock.since(since).as_millis() as u64).max(1),
                 });
             }
             trouble = Some(lock(&self.inner.last_loss).clone());
@@ -698,6 +759,7 @@ mod tests {
     use super::*;
     use handy_recorder::testing::{FakeError, FakeMic};
     use std::sync::mpsc;
+    use std::time::Instant;
 
     fn feed(sink: &mut WavSink, chunks: u32, value: f32) {
         let samples = vec![value; CHUNK_FRAMES];
@@ -839,6 +901,32 @@ mod tests {
     };
 
     fn rig(device: Option<&str>, timing: Reconnect) -> Rig {
+        rig_with_clock(device, timing, Clock::default())
+    }
+
+    /// A clock a test moves by hand, as the time a computer sleeps passes
+    /// without any real time passing for the test.
+    #[derive(Clone)]
+    struct HandClock(Arc<Mutex<SystemTime>>);
+
+    impl HandClock {
+        fn new() -> Self {
+            Self(Arc::new(Mutex::new(
+                SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000),
+            )))
+        }
+
+        fn clock(&self) -> Clock {
+            let now = self.0.clone();
+            Clock(Arc::new(move || *lock(&now)))
+        }
+
+        fn advance(&self, time: Duration) {
+            *lock(&self.0) += time;
+        }
+    }
+
+    fn rig_with_clock(device: Option<&str>, timing: Reconnect, clock: Clock) -> Rig {
         let dir = tempfile::tempdir().unwrap();
         let mic = FakeMic::new(RATE, 1);
         let away = Arc::new(AtomicBool::new(false));
@@ -854,6 +942,7 @@ mod tests {
                 opens: opens.clone(),
             }),
             timing,
+            clock,
             Box::new(move |event| {
                 let _ = lock(&send).send(event);
             }),
@@ -1074,6 +1163,7 @@ mod tests {
             Some("headset".to_string()),
             Box::new(Same(opener.clone())),
             QUICK,
+            Clock::default(),
             Box::new(move |event| {
                 let _ = lock(&send).send(event);
             }),
@@ -1157,6 +1247,106 @@ mod tests {
         assert_eq!(finished.trouble, None);
         assert!(finished.gaps.is_empty());
         assert!(rig.events.try_recv().is_err(), "nothing went away");
+    }
+
+    #[test]
+    fn the_time_the_computer_slept_counts_in_the_gap() {
+        // The lid shut for three minutes of sleep: hardly any time passes
+        // for the test, the wall clock moves on three minutes.
+        let hand = HandClock::new();
+        let rig = rig_with_clock(
+            None,
+            Reconnect {
+                retry_every: Duration::from_millis(20),
+                give_up_after: Duration::from_secs(600),
+            },
+            hand.clock(),
+        );
+        rig.talk(10, 0.5);
+        rig.wait_for_frames(10 * CHUNK_FRAMES as u64);
+        let before = rig.which();
+        rig.lid_closed();
+        assert!(matches!(rig.next(), Event::Lost { .. }));
+        hand.advance(Duration::from_secs(180));
+        rig.lid_open();
+        rig.wait_until_reopened(before);
+        rig.talk(1, 0.5);
+        let Event::Back { gap, .. } = rig.next() else {
+            panic!("the microphone should be back");
+        };
+        assert!(
+            (180_000..181_000).contains(&gap.gap_ms),
+            "the sleep is in the gap: {} ms",
+            gap.gap_ms
+        );
+        stop(&rig.mic, rig.session);
+    }
+
+    #[test]
+    fn ten_minutes_away_are_counted_by_the_wall_clock_too() {
+        let hand = HandClock::new();
+        let rig = rig_with_clock(
+            None,
+            Reconnect {
+                retry_every: Duration::from_millis(10),
+                give_up_after: Duration::from_secs(600),
+            },
+            hand.clock(),
+        );
+        rig.talk(10, 0.5);
+        rig.wait_for_frames(10 * CHUNK_FRAMES as u64);
+        rig.lid_closed();
+        assert!(matches!(rig.next(), Event::Lost { .. }));
+        hand.advance(Duration::from_secs(9 * 60));
+        assert!(
+            rig.events.recv_timeout(Duration::from_millis(200)).is_err(),
+            "nine minutes are not ten"
+        );
+        hand.advance(Duration::from_secs(2 * 60));
+        assert!(matches!(rig.next(), Event::GaveUp { .. }));
+        let finished = stop(&rig.mic, rig.session);
+        assert_eq!(finished.gaps.len(), 1);
+        assert!(finished.gaps[0].gap_ms >= 660_000);
+    }
+
+    #[test]
+    fn a_late_sound_from_the_broken_microphone_is_not_its_return() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = Arc::new(Shared::default());
+        let mut sink = WavSink::create(&dir.path().join("a.wav"), shared.clone()).unwrap();
+        feed(&mut sink, 10, 0.5);
+        // The microphone failed; the session marks it away, and a piece
+        // the broken one had already heard arrives before it is let go of.
+        shared.reconnecting.store(true, Ordering::Release);
+        *lock(&shared.lost_since) = Some(shared.clock.now());
+        feed(&mut sink, 1, 0.5);
+        assert!(lock(&shared.gaps).is_empty(), "no return yet");
+        assert!(lock(&shared.signal).back.is_none());
+        assert!(shared.reconnecting.load(Ordering::Acquire));
+        // Let go of; the next piece is from the microphone opened again.
+        shared.awaiting_return.store(true, Ordering::Release);
+        feed(&mut sink, 1, 0.5);
+        let gaps = lock(&shared.gaps).clone();
+        assert_eq!(gaps.len(), 1);
+        assert_eq!(gaps[0].at_ms, 1_100, "after the late piece, which is kept");
+        assert!(!shared.reconnecting.load(Ordering::Acquire));
+        // Later sound is just sound.
+        feed(&mut sink, 1, 0.5);
+        assert_eq!(lock(&shared.gaps).len(), 1);
+    }
+
+    #[test]
+    fn a_gap_of_unknown_length_says_so() {
+        let open = Gap {
+            at_ms: 1_000,
+            gap_ms: 0,
+        };
+        assert_eq!(open.note(), "(끊김)");
+        let known = Gap {
+            at_ms: 1_000,
+            gap_ms: 12_000,
+        };
+        assert_eq!(known.note(), "(12초 끊김)");
     }
 
     #[test]
