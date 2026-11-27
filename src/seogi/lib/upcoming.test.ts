@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import type { Upcoming } from "@/bindings";
-import { arrange } from "./upcoming";
+import { arrange, goingNow, nextAfter } from "./upcoming";
 
 const MIN = 60_000;
 const day = new Date(2026, 10, 25).getTime();
@@ -55,5 +55,21 @@ assert.deepEqual(arrange([...many, tomorrow], now, false), {
   rest: many.slice(1, 4),
   hidden: 1,
 });
+
+// The record key names what is going on now; the one begun last wins, and
+// what has ended, has not begun or is turned off is not going on.
+assert.equal(goingNow([longGoing, five], now), longGoing);
+assert.equal(goingNow([longGoing, justBegun, five], now), justBegun);
+assert.equal(goingNow([five], now), null);
+const ended = at("ended", now - 5 * 60 * MIN);
+assert.equal(goingNow([ended], now), null);
+assert.equal(goingNow([at("off", now - 10 * MIN, true)], now), null);
+// Beside it, only the next one, which may be tomorrow's.
+assert.equal(nextAfter([longGoing, five], now), five);
+assert.equal(
+  nextAfter([longGoing, at("off", now + MIN, true), tomorrow], now),
+  tomorrow,
+);
+assert.equal(nextAfter([longGoing], now), null);
 
 console.log("upcoming: ok");

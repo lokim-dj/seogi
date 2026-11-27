@@ -1,7 +1,8 @@
 // The home: one quiet column. The record key and the next event on one
 // line, the meetings below it by day. Finding, bringing in files and the
-// settings wait behind three icons at the top right. Pressing a meeting
-// opens its minutes.
+// settings wait behind three named icons at the top right. Pressing a
+// meeting opens its minutes; its menu is under the right mouse button and
+// the ··· that shows at the end of its line under the pointer.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -19,6 +20,7 @@ import { around, has } from "../lib/found";
 import {
   CloseIcon,
   ImportIcon,
+  MoreIcon,
   SearchIcon,
   SlidersIcon,
 } from "../components/icons";
@@ -28,7 +30,7 @@ import SpeechModelNotice from "../components/SpeechModelNotice";
 import { ConfirmDelete, busy } from "../components/DeleteMeeting";
 import { NS } from "../i18n";
 import { clock, daysAgo, fullDay, hm, keysShort, longDay } from "../lib/format";
-import { arrange } from "../lib/upcoming";
+import { arrange, goingNow, nextAfter } from "../lib/upcoming";
 import { MICROPHONE_DENIED, useSeogi } from "../store";
 
 const RECORDING_KINDS = [
@@ -131,6 +133,7 @@ export default function Home() {
             onClick={() => setFinding({ open: !finding })}
           >
             <SearchIcon />
+            <span>{t("band.find")}</span>
             <span className="t3">{mac ? "⌘K" : "Ctrl+K"}</span>
           </button>
           <button
@@ -141,15 +144,15 @@ export default function Home() {
             onClick={() => void pickFiles()}
           >
             <ImportIcon />
+            <span>{t("band.importShort")}</span>
           </button>
           <button
             type="button"
             className="ib"
-            aria-label={t("band.settings")}
-            title={t("band.settings")}
             onClick={() => go({ name: "settings" })}
           >
             <SlidersIcon />
+            <span>{t("band.settings")}</span>
           </button>
         </span>
       </header>
@@ -186,7 +189,9 @@ function later(ms: number, now: number): number {
   return Math.round((day(ms) - day(now)) / 86_400_000);
 }
 
-/** The record key, and the next event beside it. */
+/** The record key, and the next event beside it. While an event is going
+ *  on, the key names it and records into it, and only the next event is
+ *  beside it. */
 function RecordLine({ onNote }: { onNote: (note: string) => void }) {
   const { t, i18n } = useTranslation(NS);
   const now = useNow(30000);
@@ -218,7 +223,15 @@ function RecordLine({ onNote }: { onNote: (note: string) => void }) {
   const hasCalendar =
     (config?.calendar_urls.length ?? 0) > 0 ||
     (config?.mac_calendars.length ?? 0) > 0;
-  const { main: next, rest, hidden } = arrange(today, now, recording !== null);
+  const shown = arrange(today, now, recording !== null);
+  // The home is not shown while recording; the key would not be pressed.
+  const going = recording === null ? goingNow(today, now) : null;
+  const next = going ? nextAfter(today, now) : shown.main;
+  const rest = going ? [] : shown.rest;
+  const hidden = going ? 0 : shown.hidden;
+  const goingLabel = going
+    ? t("band.eventRecordLabel", { title: going.event.title })
+    : undefined;
   // "지금 하는 중", "17분 뒤", "2시간 5분 뒤".
   const when = (start: number) => {
     const minutes = Math.round((start - now) / 60000);
@@ -253,24 +266,35 @@ function RecordLine({ onNote }: { onNote: (note: string) => void }) {
     <div className="a-rec">
       <button
         type="button"
-        className="rec"
+        className="rec flex-none"
         style={{ width: 46, height: 46 }}
-        aria-label={t("band.record")}
-        onClick={() => void record()}
+        aria-label={goingLabel ?? t("band.record")}
+        onClick={() => void record(going ?? undefined)}
       />
       <button
         type="button"
         className="lbl p-0 border-0 bg-transparent"
-        onClick={() => void record()}
+        title={goingLabel}
+        onClick={() => void record(going ?? undefined)}
+        onContextMenu={going ? menuFor(going) : undefined}
       >
-        <b>{t("band.record")}</b>
-        <span>
-          {config
-            ? t("home.shortcutAnywhere", {
-                keys: keysShort(config.record_shortcut, mac),
-              })
-            : null}
-        </span>
+        {going ? (
+          <>
+            <b>{t("home.recordGoing")}</b>
+            <span>{t("home.goingNow", { title: going.event.title })}</span>
+          </>
+        ) : (
+          <>
+            <b>{t("band.record")}</b>
+            <span>
+              {config
+                ? t("home.shortcutAnywhere", {
+                    keys: keysShort(config.record_shortcut, mac),
+                  })
+                : null}
+            </span>
+          </>
+        )}
       </button>
       {next && later(next.event.start_ms, now) ? (
         // Not today: what is next, to know; it is recorded when it comes.
@@ -325,7 +349,7 @@ function RecordLine({ onNote }: { onNote: (note: string) => void }) {
             </span>
           ) : null}
         </span>
-      ) : (
+      ) : going ? null : (
         <span className="a-next">
           <span className="t3">
             {hasCalendar ? t("band.noEvents") : t("band.noCalendar")}
@@ -516,6 +540,7 @@ function MeetingList({
                   <Row
                     meeting={meeting}
                     on={meeting.id === selected}
+                    menuOpen={menu?.meeting.id === meeting.id}
                     onOpen={() =>
                       openMeeting(
                         meeting.id,
@@ -564,6 +589,7 @@ function MeetingList({
   );
 }
 
+const MENU_WIDTH = 220;
 const MENU_ITEM =
   "w-full flex items-center justify-between gap-4 h-8 px-3 border-0 rounded-[6px] bg-transparent text-left text-[13.5px] hover:bg-s2";
 
@@ -593,7 +619,9 @@ function Mutable({
   );
 }
 
-/** A small menu at the pointer, closed by Escape or a click elsewhere. */
+/** A small menu at the pointer, closed by Escape or a click elsewhere. Its
+ *  first item takes the keyboard, so a menu opened from the keyboard can be
+ *  used from it; closing gives the keyboard back. */
 function ContextMenu({
   x,
   y,
@@ -607,6 +635,7 @@ function ContextMenu({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  const box = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const away = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -614,6 +643,19 @@ function ContextMenu({
     window.addEventListener("keydown", away);
     return () => window.removeEventListener("keydown", away);
   }, [onClose]);
+  useEffect(() => {
+    const before =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    box.current
+      ?.querySelector<HTMLElement>('[role="menuitem"]')
+      ?.focus({ preventScroll: true });
+    return () => {
+      // Only when nothing else (a question that opened) took it since.
+      if (document.activeElement === document.body) before?.focus();
+    };
+  }, []);
   return (
     <div
       className="fixed inset-0 z-20"
@@ -624,11 +666,12 @@ function ContextMenu({
       }}
     >
       <div
+        ref={box}
         role="menu"
         aria-label={label}
         className="fixed w-[220px] p-1.5 rounded-[10px] bg-s1 shadow-[0_8px_24px_var(--sh)]"
         style={{
-          left: Math.min(x, window.innerWidth - 230),
+          left: Math.max(8, Math.min(x, window.innerWidth - MENU_WIDTH - 10)),
           top: Math.min(y, window.innerHeight - 100),
         }}
         onClick={(event) => event.stopPropagation()}
@@ -735,14 +778,19 @@ function Hits({
   );
 }
 
+/** A meeting's line. Its menu opens with the right mouse button, or with
+ *  the ··· at the end of the line, which shows only while the pointer or
+ *  the keyboard is on the line. */
 function Row({
   meeting,
   on,
+  menuOpen,
   onOpen,
   onMenu,
 }: {
   meeting: MeetingSummary;
   on: boolean;
+  menuOpen: boolean;
   onOpen: () => void;
   onMenu: (x: number, y: number) => void;
 }) {
@@ -759,24 +807,42 @@ function Row({
   const sub = [meeting.duration_ms > 0 ? length(meeting.duration_ms) : "", from]
     .filter(Boolean)
     .join(", ");
+  const title = meeting.title || t("untitled");
   return (
-    <button
-      type="button"
-      className={`a-row ${on ? "on" : ""}`}
-      aria-current={on ? "true" : undefined}
-      onClick={onOpen}
-      onContextMenu={(event) => {
-        event.preventDefault();
-        onMenu(event.clientX, event.clientY);
-      }}
-    >
-      <span className="tm">{hm(meeting.started_at_ms)}</span>
-      <span className="ti">
-        <b>{meeting.title || t("untitled")}</b>
-        {sub ? <span>{sub}</span> : null}
-      </span>
-      <Status meeting={meeting} />
-    </button>
+    <div className="a-line">
+      <button
+        type="button"
+        className={`a-row ${on ? "on" : ""}`}
+        aria-current={on ? "true" : undefined}
+        onClick={onOpen}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onMenu(event.clientX, event.clientY);
+        }}
+      >
+        <span className="tm">{hm(meeting.started_at_ms)}</span>
+        <span className="ti">
+          <b>{title}</b>
+          {sub ? <span>{sub}</span> : null}
+        </span>
+        <Status meeting={meeting} />
+      </button>
+      <button
+        type="button"
+        className="ib a-more"
+        aria-label={t("home.rowMenuLabel", { title })}
+        title={t("home.rowMenu")}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        onClick={(event) => {
+          // Under the key, its right edge on the key's.
+          const at = event.currentTarget.getBoundingClientRect();
+          onMenu(at.right - MENU_WIDTH, at.bottom + 4);
+        }}
+      >
+        <MoreIcon />
+      </button>
+    </div>
   );
 }
 

@@ -11,6 +11,7 @@ import { test, expect } from "@playwright/test";
 const screens = [
   "home",
   "home-going",
+  "home-going-long",
   "home-many",
   "minutes",
   "recording",
