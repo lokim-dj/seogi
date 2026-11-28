@@ -119,7 +119,7 @@ export default function VocabularyWords({
   };
 
   return (
-    <section aria-label={t("vocab.title")} className="font-medium">
+    <section aria-label={t("vocab.title")} className="font-normal">
       <p className="m-0 mb-3 text-[13.5px] t3">
         <button type="button" className="lnk t2" onClick={onBack}>
           {t("vocab.back")}

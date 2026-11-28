@@ -195,7 +195,7 @@ export default function SeogiApp() {
       {screen}
       <TrashedNote />
       {dropping && config.set_up ? (
-        <div className="fixed inset-3 z-20 flex items-center justify-center border border-dashed border-t3 rounded-[14px] bg-bg/90 text-[16px] font-medium pointer-events-none">
+        <div className="fixed inset-3 z-20 flex items-center justify-center border border-dashed border-t3 rounded-[14px] bg-bg/90 text-[16px] font-normal pointer-events-none">
           {t("home.dropHere")}
         </div>
       ) : null}

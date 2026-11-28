@@ -118,7 +118,7 @@ export default function Banner() {
             aria-hidden="true"
           />
           <div className="flex-1 min-w-0">
-            <div className="text-[13px] font-medium leading-[1.35] whitespace-nowrap overflow-hidden text-ellipsis">
+            <div className="text-[13px] font-normal leading-[1.35] whitespace-nowrap overflow-hidden text-ellipsis">
               <span className="tab">{hm(banner.event.start_ms)}</span>{" "}
               {banner.event.title}
             </div>
@@ -156,7 +156,7 @@ export default function Banner() {
         className={`banner-box py-[7px] pr-1.5 pl-3${leaving ? " leaving" : ""}`}
       >
         <div className="flex items-start gap-1">
-          <div className="flex-1 min-w-0 pt-px text-[13px] font-medium leading-[1.35] whitespace-nowrap overflow-hidden text-ellipsis">
+          <div className="flex-1 min-w-0 pt-px text-[13px] font-normal leading-[1.35] whitespace-nowrap overflow-hidden text-ellipsis">
             {banner.title}
           </div>
           <div className="-my-[3px]">{close}</div>

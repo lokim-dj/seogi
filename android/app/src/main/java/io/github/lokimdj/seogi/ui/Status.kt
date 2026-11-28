@@ -12,7 +12,7 @@ import io.github.lokimdj.seogi.data.UploadState
 import java.time.ZoneId
 
 /** How one recording's upload reads on a list line. */
-data class LineText(val state: String, val color: Color, val medium: Boolean, val sub: String, val progress: Float?)
+data class LineText(val state: String, val color: Color, val quiet: Boolean, val sub: String, val progress: Float?)
 
 @Composable
 private fun reason(e: UploadError?) = stringResource(

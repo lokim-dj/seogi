@@ -75,7 +75,7 @@ fun HomeScreen(
                 val running = event.begin <= now
                 T(
                     stringResource(if (running) R.string.now_event else R.string.next_event, Format.hm(event.begin, zone)),
-                    size = 12.5.sp, color = pal.t3, medium = true,
+                    size = 12.5.sp, color = pal.t3, quiet = true,
                 )
                 T(event.title, size = 16.sp, maxLines = 1, modifier = Modifier.padding(top = 2.dp))
             }
@@ -91,7 +91,7 @@ fun HomeScreen(
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             RecordKey(rec, onRecord, size, Modifier.padding(top = 14.dp))
             T(
-                stringResource(hint), size = 12.5.sp, color = pal.t3, medium = true, align = TextAlign.Center,
+                stringResource(hint), size = 12.5.sp, color = pal.t3, quiet = true, align = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -116,7 +116,7 @@ fun HomeScreen(
             }
             if (entries.isEmpty()) {
                 T(
-                    stringResource(R.string.no_recordings), size = 12.5.sp, color = pal.t3, medium = true,
+                    stringResource(R.string.no_recordings), size = 12.5.sp, color = pal.t3, quiet = true,
                     modifier = Modifier.padding(vertical = 14.dp),
                 )
                 Hairline()
@@ -125,7 +125,7 @@ fun HomeScreen(
                 val l = entryLineText(e, recordings, wifiOnly, now, detailed = false)
                 val r = e.recording
                 ListLine(
-                    e.title, l.state, l.sub, l.color, l.medium, l.progress,
+                    e.title, l.state, l.sub, l.color, l.quiet, l.progress,
                     onClick = when {
                         e.meeting != null -> ({ onOpen(e) })
                         r != null && r.upload == UploadState.FAILED -> ({ onRetry(r) })

@@ -96,13 +96,13 @@ fun BackBar(title: String?, onBack: () -> Unit, action: String? = null, onAction
         ) {
             Icon(R.drawable.ic_back, 16.dp, pal.t3)
             Spacer(Modifier.width(8.dp))
-            T(stringResource(R.string.home), size = 13.5.sp, color = pal.t3, medium = true)
+            T(stringResource(R.string.home), size = 13.5.sp, color = pal.t3, quiet = true)
         }
         Spacer(Modifier.weight(1f))
-        if (title != null) T(title, size = 12.5.sp, color = pal.t3, medium = true)
+        if (title != null) T(title, size = 12.5.sp, color = pal.t3, quiet = true)
         if (action != null) {
             T(
-                action, size = 13.5.sp, color = pal.t3, medium = true,
+                action, size = 13.5.sp, color = pal.t3, quiet = true,
                 modifier = Modifier.clickable(role = Role.Button, onClick = onAction).padding(vertical = 10.dp, horizontal = 4.dp),
             )
         }
@@ -117,7 +117,7 @@ fun ArrowKey(text: String, bright: Boolean, onClick: () -> Unit, enabled: Boolea
         Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick).padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        T(text, size = 16.sp, color = color, medium = !bright)
+        T(text, size = 16.sp, color = color, quiet = !bright)
         Spacer(Modifier.width(8.dp))
         Icon(R.drawable.ic_arrow, 16.dp, color)
     }
@@ -144,7 +144,7 @@ fun ListLine(
     state: String,
     sub: String?,
     stateColor: Color = pal.t1,
-    stateMedium: Boolean = false,
+    stateQuiet: Boolean = false,
     progress: Float? = null,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
@@ -164,9 +164,9 @@ fun ListLine(
         Row(verticalAlignment = Alignment.CenterVertically) {
             T(name, size = 14.5.sp, maxLines = 1, modifier = Modifier.weight(1f))
             Spacer(Modifier.width(12.dp))
-            T(state, size = 12.5.sp, color = stateColor, medium = stateMedium, maxLines = 1)
+            T(state, size = 12.5.sp, color = stateColor, quiet = stateQuiet, maxLines = 1)
         }
-        if (sub != null) T(sub, size = 12.sp, color = pal.t3, medium = true, modifier = Modifier.padding(top = 2.dp))
+        if (sub != null) T(sub, size = 12.sp, color = pal.t3, quiet = true, modifier = Modifier.padding(top = 2.dp))
         if (progress != null) {
             Box(Modifier.padding(top = 5.dp).fillMaxWidth().height(2.dp).background(pal.s2)) {
                 Box(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).height(2.dp).background(pal.t1))
@@ -208,12 +208,12 @@ fun StepLine(name: String, action: String, why: String, done: Boolean, onClick: 
     Column(Modifier.fillMaxWidth().clickable(enabled = !done, onClick = onClick).padding(vertical = 13.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             T(name, size = 15.sp)
-            if (tag != null) T(tag, size = 12.5.sp, color = pal.t3, medium = true)
+            if (tag != null) T(tag, size = 12.5.sp, color = pal.t3, quiet = true)
             Spacer(Modifier.weight(1f))
-            T(action, size = 13.5.sp, color = if (done) pal.t3 else pal.t1, medium = done, maxLines = 1)
+            T(action, size = 13.5.sp, color = if (done) pal.t3 else pal.t1, quiet = done, maxLines = 1)
         }
         if (why.isNotEmpty()) {
-            T(why, size = 12.5.sp, color = pal.t3, medium = true, modifier = Modifier.padding(top = 3.dp, end = 40.dp))
+            T(why, size = 12.5.sp, color = pal.t3, quiet = true, modifier = Modifier.padding(top = 3.dp, end = 40.dp))
         }
     }
 }
@@ -233,7 +233,7 @@ fun SwitchLine(name: String, on: Boolean, why: String, onChange: (Boolean) -> Un
     ) {
         Column(Modifier.weight(1f).padding(end = 16.dp)) {
             T(name, size = 15.sp)
-            if (why.isNotEmpty()) T(why, size = 12.5.sp, color = pal.t3, medium = true, modifier = Modifier.padding(top = 3.dp))
+            if (why.isNotEmpty()) T(why, size = 12.5.sp, color = pal.t3, quiet = true, modifier = Modifier.padding(top = 3.dp))
         }
         Switch(on)
     }
@@ -276,7 +276,7 @@ fun ConfirmDialog(
                 .padding(start = 22.dp, end = 22.dp, top = 20.dp, bottom = 8.dp),
         ) {
             T(title, size = 16.sp)
-            T(body, size = 13.sp, color = pal.t2, medium = true, modifier = Modifier.padding(top = 6.dp))
+            T(body, size = 13.sp, color = pal.t2, quiet = true, modifier = Modifier.padding(top = 6.dp))
             if (check != null) {
                 Row(
                     Modifier.padding(top = 16.dp).clickable(role = Role.Checkbox) { checked = !checked },
@@ -293,7 +293,7 @@ fun ConfirmDialog(
             }
             Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.End) {
                 T(
-                    cancel, size = 14.sp, color = pal.t3, medium = true,
+                    cancel, size = 14.sp, color = pal.t3, quiet = true,
                     modifier = Modifier.clickable(role = Role.Button, onClick = onDismiss).padding(12.dp),
                 )
                 T(
@@ -325,14 +325,14 @@ fun TextDialog(
             BasicTextField(
                 value = text,
                 onValueChange = { text = it },
-                textStyle = TextStyle(fontFamily = Gmarket, fontWeight = FontWeight.Medium, fontSize = 15.sp, color = pal.t1),
+                textStyle = TextStyle(fontFamily = Pretendard, fontWeight = FontWeight.Medium, fontSize = 15.sp, color = pal.t1),
                 cursorBrush = SolidColor(pal.t1),
                 modifier = Modifier.fillMaxWidth().padding(top = 14.dp)
                     .border(1.dp, pal.line, RoundedCornerShape(8.dp)).padding(12.dp),
             )
             Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.End) {
                 T(
-                    cancel, size = 14.sp, color = pal.t3, medium = true,
+                    cancel, size = 14.sp, color = pal.t3, quiet = true,
                     modifier = Modifier.clickable(role = Role.Button, onClick = onDismiss).padding(12.dp),
                 )
                 T(

@@ -5,25 +5,6 @@
 @import "tailwindcss" source(".");
 @import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 
-/* Gmarket Sans, the original OpenType files unchanged (see
-   fonts/GmarketSans-OFL.txt); what it lacks falls to Pretendard. Bold for
-   what is read, Medium for what is around it; the Light weight read too
-   faintly on the ink and is not used. */
-@font-face {
-  font-family: "Gmarket Sans";
-  src: url("./fonts/GmarketSansMedium.otf") format("opentype");
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Gmarket Sans";
-  src: url("./fonts/GmarketSansBold.otf") format("opentype");
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-
 /* The ink (dark) palette is the default; a light system gets paper. */
 :root {
   color-scheme: dark;
@@ -121,9 +102,17 @@
   --color-check-on-ink: var(--rt);
   --color-link: var(--t1);
 
+  /* Pretendard everywhere (the npm files above, unchanged; see
+     THIRD_PARTY_NOTICES.md), close to macOS's Apple SD Gothic Neo. Four
+     weights keep the hierarchy: Medium for what is read, Regular for what
+     is around it, SemiBold for a word that stands out, Bold for a title. */
   --font-sans:
-    "Gmarket Sans", "Pretendard Variable", Pretendard, "Apple SD Gothic Neo",
-    "Noto Sans KR", "Malgun Gothic", sans-serif;
+    "Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Noto Sans KR",
+    "Malgun Gothic", sans-serif;
+  --fw-quiet: 400;
+  --fw-text: 500;
+  --fw-strong: 600;
+  --fw-title: 700;
 }
 
 @layer base {
@@ -144,7 +133,7 @@
     color: var(--t1);
     font-family: var(--font-sans);
     font-size: 14.5px;
-    font-weight: 700;
+    font-weight: var(--fw-text);
     line-height: 1.6;
     letter-spacing: -0.01em;
     /* Korean wraps between words, not inside one ("고르세/요"); a long
@@ -157,7 +146,7 @@
 
   b,
   strong {
-    font-weight: 700;
+    font-weight: var(--fw-strong);
   }
 
   ::selection {
@@ -231,9 +220,9 @@
     align-items: center;
   }
   .wm {
-    font-weight: 700;
+    font-weight: var(--fw-title);
     font-size: 16px;
-    letter-spacing: -0.04em;
+    letter-spacing: -0.03em;
     color: var(--t1);
   }
   .a-col {
@@ -246,8 +235,8 @@
   }
   .a-h1 {
     font-size: 22px;
-    font-weight: 700;
-    letter-spacing: -0.03em;
+    font-weight: var(--fw-title);
+    letter-spacing: -0.025em;
     margin: 0;
     line-height: 1.3;
   }
@@ -256,7 +245,7 @@
     flex-wrap: wrap;
     gap: 4px 16px;
     color: var(--t3);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     font-size: 13.5px;
     margin-top: 6px;
   }
@@ -268,9 +257,9 @@
   .a-h4 {
     margin: 0 0 8px;
     font-size: 14px;
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     color: var(--t2);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     display: flex;
     gap: 8px;
     align-items: baseline;
@@ -287,7 +276,7 @@
     border-radius: 7px;
     background: transparent;
     color: var(--t2);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     font-size: 13px;
   }
   .ib:hover:not(:disabled),
@@ -332,7 +321,7 @@
   .a-rec .lbl span {
     font-size: 13px;
     color: var(--t3);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
   }
   .a-next {
     margin-left: auto;
@@ -343,9 +332,9 @@
   }
   .a-grp {
     font-size: 13px;
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     color: var(--t3);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     padding: 18px 12px 6px;
   }
   .a-row {
@@ -403,7 +392,7 @@
   }
   .a-row .tm {
     color: var(--t2);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     font-variant-numeric: tabular-nums;
   }
   .a-row .ti {
@@ -412,19 +401,19 @@
     min-width: 0;
   }
   .a-row .ti b {
-    font-weight: 500;
+    font-weight: var(--fw-text);
     font-size: 15px;
   }
   .a-row .ti span {
     font-size: 13px;
     color: var(--t3);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
   }
   .a-row .st {
     text-align: right;
     font-size: 13.5px;
     color: var(--t2);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     white-space: nowrap;
   }
   .a-row .st em {
@@ -452,7 +441,7 @@
     background: transparent;
     text-align: left;
     font-size: 13px;
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     line-height: 1.5;
     color: var(--t2);
   }
@@ -470,7 +459,7 @@
   }
   .a-hits .more {
     font-size: 12.5px;
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     color: var(--t3);
     padding: 2px 0 0 62px;
   }
@@ -540,18 +529,18 @@
     border-top: 0;
   }
   .task .who {
-    font-weight: 700;
+    font-weight: var(--fw-strong);
     margin-right: 8px;
   }
   .task .due {
     color: var(--t2);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     font-size: 13.5px;
     white-space: nowrap;
   }
   .task .due.none {
     color: var(--t3);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
   }
   .task .unowned {
     color: var(--t3);
@@ -630,7 +619,7 @@
     color: var(--t3);
     font: inherit;
     font-size: 13px;
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     cursor: pointer;
   }
   .edit-mark:hover,
@@ -686,7 +675,7 @@
     color: var(--t1);
     font: inherit;
     font-size: 13.5px;
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     white-space: nowrap;
     cursor: pointer;
     box-shadow: 0 6px 18px var(--sh);
@@ -702,7 +691,7 @@
     border-radius: 12px;
     background: var(--s1);
     box-shadow: 0 12px 32px var(--sh);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
   }
   .fix-label {
     margin: 0 0 4px;
@@ -735,12 +724,12 @@
     background: var(--s1);
     box-shadow: 0 10px 28px var(--sh);
     font-size: 14px;
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
   }
   /* The vocabulary in the settings: one word to a row, the ways it is
      misheard under it, its keys on the right. */
   .word-row {
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     display: flex;
     gap: 12px;
     align-items: center;
@@ -759,7 +748,7 @@
     color: var(--t3);
     font: inherit;
     font-size: 13px;
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     cursor: pointer;
   }
   .quiet:hover {
@@ -793,7 +782,7 @@
     gap: 10px;
     align-items: center;
     color: var(--t3);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
   }
   .fold svg {
     width: 12px;
@@ -838,7 +827,7 @@
   }
   .fb .note .k {
     color: var(--t3);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     font-size: 13px;
     padding-top: 1px;
   }
@@ -928,12 +917,12 @@
     align-items: center;
     gap: 8px;
     color: var(--rt);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     font-size: 14px;
   }
   .a-timer {
     font-size: 48px;
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     letter-spacing: -0.03em;
     font-variant-numeric: tabular-nums;
     line-height: 1.1;
@@ -943,7 +932,7 @@
     width: min(420px, calc(100vw - 32px));
     text-align: center;
     font-size: 15.5px;
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
   }
   .a-wavebox {
     width: min(600px, calc(100vw - 32px));
@@ -971,7 +960,7 @@
   }
   /* The hint in an empty note must not read like a note someone wrote. */
   .a-marks .m input::placeholder {
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
   }
   .live {
     width: 7px;
@@ -1026,7 +1015,7 @@
     background: transparent;
     text-align: left;
     font-size: 14px;
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     color: var(--t3);
     border-radius: 0;
   }
@@ -1035,7 +1024,7 @@
   }
   .set-nav > [aria-selected="true"] {
     color: var(--t1);
-    font-weight: 700;
+    font-weight: var(--fw-strong);
     border-left-color: var(--t1);
   }
   .set-pane > .set-h:first-child,
@@ -1069,9 +1058,9 @@
   }
   .set-h {
     font-size: 13.5px;
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     color: var(--t3);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     margin: 26px 0 2px;
   }
   .srow {
@@ -1087,12 +1076,12 @@
   }
   .srow .l {
     font-size: 15px;
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
   }
   .srow .h {
     font-size: 13px;
     color: var(--t3);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     margin-top: 2px;
     line-height: 1.45;
   }
@@ -1179,9 +1168,9 @@
     border-radius: 11px;
     background: var(--s1);
     color: var(--t2);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     font-size: 14px;
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
@@ -1266,7 +1255,7 @@
     border-radius: 6px;
     background: transparent;
     color: var(--t3);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
   }
   /* The chosen one stands out by its fill and by the others stepping back
      to the quietest grey; same weight, so nothing shifts when choosing. */
@@ -1354,7 +1343,7 @@
     background: transparent;
     color: var(--t1);
     font-size: 13.5px;
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     white-space: nowrap;
     text-decoration: none;
   }
@@ -1370,9 +1359,9 @@
     height: 13px;
   }
   .btn .k {
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     color: var(--t3);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
   }
   .btn.solid .k {
     color: var(--s2);
@@ -1390,7 +1379,7 @@
     background: transparent;
     color: var(--t1);
     font-size: 13.5px;
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
     text-decoration: underline;
     text-decoration-color: var(--t3);
     text-underline-offset: 3px;
@@ -1409,8 +1398,8 @@
   }
   .cell-head {
     color: var(--t3);
-    font-weight: 500;
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
+    font-weight: var(--fw-quiet);
     font-size: 13.5px;
   }
   .field {
@@ -1443,14 +1432,14 @@
   .must-check {
     color: var(--rt);
     background: transparent;
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
   }
   .t2 {
     color: var(--t2);
   }
   .t3 {
     color: var(--t3);
-    font-weight: 500;
+    font-weight: var(--fw-quiet);
   }
   .rt {
     color: var(--rt);
@@ -1489,9 +1478,9 @@
   background: var(--bg);
   color: var(--t1);
   font-family:
-    "Gmarket Sans", "Pretendard Variable", Pretendard, "Apple SD Gothic Neo",
-    "Malgun Gothic", sans-serif;
-  font-weight: 700;
+    "Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Malgun Gothic",
+    sans-serif;
+  font-weight: var(--fw-text);
   font-size: calc(var(--u) * 12.5);
   line-height: 1.42;
   letter-spacing: -0.01em;
@@ -1520,7 +1509,7 @@
   padding: 0;
 }
 .scard .sc-k {
-  font-weight: 500;
+  font-weight: var(--fw-quiet);
   color: var(--t3);
   font-size: calc(var(--u) * 9.5);
   letter-spacing: 0;
@@ -1539,12 +1528,12 @@
   margin-bottom: calc(var(--u) * 7);
   font-size: calc(var(--u) * 10);
   color: var(--t3);
-  font-weight: 700;
+  font-weight: var(--fw-strong);
   letter-spacing: 0.01em;
 }
 .scard .sc-lab em {
   font-style: normal;
-  font-weight: 500;
+  font-weight: var(--fw-quiet);
 }
 .scard .sc-gl {
   display: inline-block;
@@ -1565,9 +1554,10 @@
   margin-bottom: calc(var(--u) * 8);
   font-size: calc(var(--u) * 10);
   color: var(--t3);
-  font-weight: 500;
+  font-weight: var(--fw-quiet);
 }
 .scard .sc-head {
+  font-weight: var(--fw-title);
   font-size: calc(var(--u) * 23);
   line-height: 1.15;
   letter-spacing: -0.03em;
@@ -1581,7 +1571,7 @@
   margin-top: calc(var(--u) * 5);
   font-size: calc(var(--u) * 12);
   color: var(--t2);
-  font-weight: 500;
+  font-weight: var(--fw-quiet);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1601,6 +1591,7 @@
   color: var(--rt);
 }
 .scard .sc-flag b {
+  font-weight: var(--fw-title);
   display: block;
   font-size: calc(var(--u) * 26);
   letter-spacing: -0.03em;
@@ -1658,7 +1649,7 @@
   display: block;
   font-size: calc(var(--u) * 10);
   color: var(--t3);
-  font-weight: 500;
+  font-weight: var(--fw-quiet);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1666,9 +1657,10 @@
 .scard .sc-more {
   font-size: calc(var(--u) * 10);
   color: var(--t3);
-  font-weight: 500;
+  font-weight: var(--fw-quiet);
 }
 .scard .sc-big {
+  font-weight: var(--fw-title);
   display: flex;
   align-items: baseline;
   gap: calc(var(--u) * 6);
@@ -1684,7 +1676,7 @@
   margin: calc(var(--u) * 5) 0 calc(var(--u) * 8);
   font-size: calc(var(--u) * 10.5);
   color: var(--t2);
-  font-weight: 500;
+  font-weight: var(--fw-quiet);
 }
 .scard .sc-dims {
   font-size: calc(var(--u) * 11);
@@ -1692,7 +1684,7 @@
 }
 .scard .sc-dims .sc-tx {
   color: var(--t2);
-  font-weight: 500;
+  font-weight: var(--fw-quiet);
 }
 .scard .sc-flow {
   padding: calc(var(--u) * 11) 0 calc(var(--u) * 12);
@@ -1733,7 +1725,7 @@
   display: block;
   font-size: calc(var(--u) * 9.5);
   color: var(--t3);
-  font-weight: 500;
+  font-weight: var(--fw-quiet);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -1759,7 +1751,7 @@
   text-overflow: ellipsis;
 }
 .scard .sc-who4 span {
-  font-weight: 500;
+  font-weight: var(--fw-quiet);
   color: var(--t2);
 }
 .scard .sc-chk li {
@@ -1783,14 +1775,14 @@
   gap: calc(var(--u) * 10);
   font-size: calc(var(--u) * 9);
   color: var(--t3);
-  font-weight: 500;
+  font-weight: var(--fw-quiet);
 }
 .scard .sc-brand {
   display: flex;
   align-items: center;
   gap: calc(var(--u) * 5);
   color: var(--t2);
-  font-weight: 700;
+  font-weight: var(--fw-title);
   font-size: calc(var(--u) * 10);
 }
 .scard .sc-brand svg {

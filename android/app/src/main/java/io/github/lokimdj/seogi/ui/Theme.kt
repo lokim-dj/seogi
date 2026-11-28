@@ -47,9 +47,14 @@ val Light = Palette(
 val LocalPalette = staticCompositionLocalOf { Dark }
 val LocalReduceMotion = staticCompositionLocalOf { false }
 
-val Gmarket = FontFamily(
-    Font(R.font.gmarket_medium, FontWeight.Medium),
-    Font(R.font.gmarket_bold, FontWeight.Bold),
+/**
+ * Pretendard, the original OpenType files unchanged (res/raw/license_ofl_pretendard.txt):
+ * Medium for what is read, Regular for the quiet lines, Bold for a title.
+ */
+val Pretendard = FontFamily(
+    Font(R.font.pretendard_regular, FontWeight.Normal),
+    Font(R.font.pretendard_medium, FontWeight.Medium),
+    Font(R.font.pretendard_bold, FontWeight.Bold),
 )
 
 @Composable
@@ -66,14 +71,15 @@ fun SeogiTheme(content: @Composable () -> Unit) {
 
 val pal: Palette @Composable get() = LocalPalette.current
 
-/** Text in Gmarket Sans: Bold for reading, Medium for the quiet lines. */
+/** Text in Pretendard: Medium for reading, Regular for the quiet lines, Bold for a title. */
 @Composable
 fun T(
     text: String,
     modifier: Modifier = Modifier,
     size: TextUnit = 15.sp,
     color: Color = pal.t1,
-    medium: Boolean = false,
+    quiet: Boolean = false,
+    title: Boolean = false,
     align: TextAlign = TextAlign.Start,
     maxLines: Int = Int.MAX_VALUE,
     letterSpacing: TextUnit = (-0.01).em,
@@ -86,8 +92,12 @@ fun T(
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
         style = TextStyle(
-            fontFamily = Gmarket,
-            fontWeight = if (medium) FontWeight.Medium else FontWeight.Bold,
+            fontFamily = Pretendard,
+            fontWeight = when {
+                title -> FontWeight.Bold
+                quiet -> FontWeight.Normal
+                else -> FontWeight.Medium
+            },
             fontSize = size,
             color = color,
             textAlign = align,

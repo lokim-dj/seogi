@@ -54,13 +54,13 @@ fun UploadsScreen(
             LazyColumn(Modifier.fillMaxSize()) {
                 item {
                     Column {
-                        T(stringResource(R.string.upload_dest), size = 12.5.sp, color = pal.t3, medium = true, modifier = Modifier.padding(top = 22.dp))
+                        T(stringResource(R.string.upload_dest), size = 12.5.sp, color = pal.t3, quiet = true, modifier = Modifier.padding(top = 22.dp))
                         T(
                             stringResource(R.string.upload_dest_path), size = 17.sp,
                             modifier = Modifier.padding(top = 2.dp).clickable(enabled = account != null, onClick = onOpenFolder),
                         )
                         if (account != null) {
-                            T(stringResource(R.string.upload_dest_account, account.ifEmpty { "Google" }), size = 12.5.sp, color = pal.t3, medium = true)
+                            T(stringResource(R.string.upload_dest_account, account.ifEmpty { "Google" }), size = 12.5.sp, color = pal.t3, quiet = true)
                         } else {
                             T(
                                 stringResource(R.string.upload_not_logged_in), size = 12.5.sp, color = pal.rt,
@@ -69,7 +69,7 @@ fun UploadsScreen(
                         }
                         if (listProblem != null) {
                             T(
-                                listProblem, size = 12.5.sp, color = pal.rt, medium = true,
+                                listProblem, size = 12.5.sp, color = pal.rt, quiet = true,
                                 modifier = Modifier.padding(top = 10.dp).clickable(onClick = onRefresh),
                             )
                         }
@@ -81,7 +81,7 @@ fun UploadsScreen(
                     val r = e.recording
                     Hairline()
                     ListLine(
-                        e.title, l.state, l.sub, l.color, l.medium, l.progress,
+                        e.title, l.state, l.sub, l.color, l.quiet, l.progress,
                         onClick = when {
                             e.meeting != null -> ({ onOpen(e) })
                             r != null && r.upload == UploadState.FAILED -> ({ onRetry(r) })
@@ -101,10 +101,10 @@ fun UploadsScreen(
         Column(Modifier.padding(top = 14.dp, bottom = 12.dp)) {
             Row(Modifier.fillMaxWidth().clickable { onWifiOnly(!wifiOnly) }.padding(bottom = 8.dp)) {
                 T(stringResource(R.string.wifi_only), size = 14.sp, modifier = Modifier.weight(1f))
-                T(stringResource(if (wifiOnly) R.string.on else R.string.off), size = 14.sp, color = if (wifiOnly) pal.t1 else pal.t3, medium = !wifiOnly)
+                T(stringResource(if (wifiOnly) R.string.on else R.string.off), size = 14.sp, color = if (wifiOnly) pal.t1 else pal.t3, quiet = !wifiOnly)
             }
-            T(stringResource(R.string.originals_stay), size = 11.5.sp, color = pal.t3, medium = true)
-            T(stringResource(R.string.delete_hint), size = 11.5.sp, color = pal.t3, medium = true)
+            T(stringResource(R.string.originals_stay), size = 11.5.sp, color = pal.t3, quiet = true)
+            T(stringResource(R.string.delete_hint), size = 11.5.sp, color = pal.t3, quiet = true)
         }
     }
 }

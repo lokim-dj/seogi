@@ -338,7 +338,7 @@ export default function Onboarding() {
 
   const column = (name: Mode) =>
     `cell !py-2.5 !px-3 ${mode === name ? "!bg-s1" : ""}`;
-  const state = "cell w-[200px] !py-2.5 !px-3 font-medium t2";
+  const state = "cell w-[200px] !py-2.5 !px-3 font-normal t2";
 
   const heading = (index: Step, text: string) => (
     <h1
@@ -366,7 +366,7 @@ export default function Onboarding() {
         <div className="w-[min(860px,calc(100vw-32px))] mx-auto pt-6">
           <ol
             aria-label={t("onboarding.steps")}
-            className="flex flex-wrap gap-x-6 gap-y-1 m-0 mb-4 p-0 list-none text-[13px] font-medium"
+            className="flex flex-wrap gap-x-6 gap-y-1 m-0 mb-4 p-0 list-none text-[13px] font-normal"
           >
             {STEPS.map((name, index) => (
               <li
@@ -396,7 +396,7 @@ export default function Onboarding() {
                           mode === name ? "bg-s1" : ""
                         }`}
                       >
-                        <label className="flex items-center gap-2 text-[15px] font-medium cursor-pointer">
+                        <label className="flex items-center gap-2 text-[15px] font-normal cursor-pointer">
                           <input
                             type="radio"
                             name="how"
@@ -415,7 +415,7 @@ export default function Onboarding() {
                     <tr key={row}>
                       <th
                         scope="row"
-                        className="cell !py-2.5 !px-3 text-left font-medium t3"
+                        className="cell !py-2.5 !px-3 text-left font-normal t3"
                       >
                         {t(
                           `onboarding.row${row[0].toUpperCase()}${row.slice(1)}`,
@@ -426,7 +426,7 @@ export default function Onboarding() {
                           key={name}
                           className={`${column(name)} ${
                             row === "money" && name === "local"
-                              ? "font-medium"
+                              ? "font-normal"
                               : ""
                           }`}
                         >
@@ -438,7 +438,7 @@ export default function Onboarding() {
                   <tr>
                     <th
                       scope="row"
-                      className="cell !py-2.5 !px-3 text-left font-medium t3"
+                      className="cell !py-2.5 !px-3 text-left font-normal t3"
                     >
                       {t("onboarding.rowNeed")}
                     </th>
@@ -473,7 +473,7 @@ export default function Onboarding() {
                       ) : null}
                       {mode === "login" ? (
                         <label className="flex items-center gap-2 mt-3 text-[15px]">
-                          <span className="font-medium">
+                          <span className="font-normal">
                             {t("onboarding.loginWith")}
                           </span>
                           <select
@@ -556,7 +556,7 @@ export default function Onboarding() {
                   <tr>
                     <th
                       scope="row"
-                      className="cell w-[108px] !py-2.5 !px-3 text-left font-medium t3"
+                      className="cell w-[108px] !py-2.5 !px-3 text-left font-normal t3"
                     >
                       {t("onboarding.calendar")}
                     </th>
@@ -656,7 +656,7 @@ export default function Onboarding() {
                               : calendar.ok
                                 ? t("onboarding.calendarOk")
                                 : t("onboarding.calendarBad")}
-                          <div className="text-[13px] font-medium t3">
+                          <div className="text-[13px] font-normal t3">
                             {checking
                               ? null
                               : calendar === null
@@ -681,7 +681,7 @@ export default function Onboarding() {
                   <tr>
                     <th
                       scope="row"
-                      className="cell !py-2.5 !px-3 text-left font-medium t3"
+                      className="cell !py-2.5 !px-3 text-left font-normal t3"
                     >
                       {t("onboarding.inbox")}
                     </th>
@@ -729,7 +729,7 @@ export default function Onboarding() {
                           {made.includes(inboxPath)
                             ? t("onboarding.inboxMade")
                             : t("onboarding.inboxFound")}
-                          <div className="text-[13px] font-medium t3">
+                          <div className="text-[13px] font-normal t3">
                             {t("onboarding.inboxFoundHint")}
                           </div>
                         </>
@@ -744,7 +744,7 @@ export default function Onboarding() {
                               ? t("onboarding.inboxMake")
                               : t("onboarding.inboxMakeHere")}
                           </button>
-                          <div className="mt-1.5 text-[13px] font-medium t3">
+                          <div className="mt-1.5 text-[13px] font-normal t3">
                             {t("onboarding.inboxNewHint")}
                           </div>
                         </>
@@ -754,7 +754,7 @@ export default function Onboarding() {
                   <tr>
                     <th
                       scope="row"
-                      className="cell !py-2.5 !px-3 text-left font-medium t3"
+                      className="cell !py-2.5 !px-3 text-left font-normal t3"
                     >
                       {t("onboarding.speech")}
                     </th>
@@ -763,7 +763,7 @@ export default function Onboarding() {
                     </td>
                     <td className={state}>
                       {speech.head}
-                      <div className="text-[13px] font-medium t3">
+                      <div className="text-[13px] font-normal t3">
                         {speech.hint}
                       </div>
                     </td>
@@ -772,7 +772,7 @@ export default function Onboarding() {
                     <tr>
                       <th
                         scope="row"
-                        className="cell !py-2.5 !px-3 text-left font-medium t3"
+                        className="cell !py-2.5 !px-3 text-left font-normal t3"
                       >
                         {t("dictation.title")}
                       </th>
@@ -822,7 +822,7 @@ export default function Onboarding() {
                     <tr>
                       <th
                         scope="row"
-                        className="cell !py-2.5 !px-3 text-left font-medium t3"
+                        className="cell !py-2.5 !px-3 text-left font-normal t3"
                       >
                         {t("onboarding.atLoginLabel")}
                       </th>
