@@ -212,7 +212,7 @@
     <string name="exit_force_stop">강제 중지</string>
     <string name="exit_signaled">시스템이 끝냄</string>
     <string name="exit_excessive_use">자원을 너무 씀</string>
-    <string name="exit_dependency_died">이어진 부분이 멈춤</string>
+    <string name="exit_dependency_died">함께 돌던 부분이 멈춤</string>
     <string name="exit_init_failure">시작 실패</string>
     <string name="exit_permission_change">권한이 바뀜</string>
     <string name="exit_freezer">잠시 멈춰 둠</string>
