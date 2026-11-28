@@ -171,7 +171,7 @@ export default function SignInRows({
           return (
             <div key={tool}>
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="font-medium">{name(tool)}</span>
+                <span className="font-normal">{name(tool)}</span>
                 {stateText(state, tool)}
                 {action(state, tool)}
               </div>

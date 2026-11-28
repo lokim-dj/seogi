@@ -114,7 +114,7 @@ private fun ComputerAppLine(onOpen: () -> Unit, onCopy: () -> Unit) {
             T("↗", size = 13.5.sp, color = pal.t1, maxLines = 1)
         }
         T(
-            stringResource(R.string.set_computer_app_why), size = 12.5.sp, color = pal.t3, medium = true,
+            stringResource(R.string.set_computer_app_why), size = 12.5.sp, color = pal.t3, quiet = true,
             modifier = Modifier.padding(top = 3.dp, end = 40.dp),
         )
         T(

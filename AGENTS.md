@@ -156,7 +156,7 @@ A debug build runs as `io.github.lokimdj.seogi.dev` (`brand::DEV_IDENTIFIER`), s
 
 **TypeScript/React:** strict TypeScript, no `any`. Functional components. Tailwind CSS. Path alias `@/` → `./src/`.
 
-**Text:** all user-facing strings go through i18next. Seogi's own screens keep theirs in `src/seogi/i18n/ko.ts` and `en.ts` (the type makes a missing English key a build error); other locales fall back to English. No emoji as UI icons. UI text is set in Gmarket Sans (bundled, see `THIRD_PARTY_NOTICES.md`), falling back to Pretendard.
+**Text:** all user-facing strings go through i18next. Seogi's own screens keep theirs in `src/seogi/i18n/ko.ts` and `en.ts` (the type makes a missing English key a build error); other locales fall back to English. No emoji as UI icons. UI text is set in Pretendard on the computer and the phone (bundled, see `THIRD_PARTY_NOTICES.md`): Medium for what is read, Regular for what is around it, SemiBold for a word that stands out, Bold for titles (the `--fw-*` tokens in `seogi.css`; `T(quiet, title)` in `android/…/ui/Theme.kt`).
 
 **Names in examples:** an invented name in a test, a fixture or a comment must not be a real one. `python3 eval/synthetic/check_names.py` compares the practice scripts against a private vocabulary when one is on the computer, and `bun run check:public` compares every file with the private lists (in `~/seogi/private`, or `SEOGI_PRIVATE_DIR`) without printing them.
 

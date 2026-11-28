@@ -143,7 +143,7 @@ export default function MeetingContext({
                 <ul className="m-0 p-0 list-none flex flex-wrap gap-x-4 gap-y-1">
                   {terms.map((term) => (
                     <li key={term} className="flex items-center gap-1.5">
-                      <span className="font-medium">{term}</span>
+                      <span className="font-normal">{term}</span>
                       <button
                         type="button"
                         className="linkish text-[14px]"

@@ -45,9 +45,9 @@ fun OnboardingScreen(
             Spacer(Modifier.height(10.dp))
             BrandBar()
             Spacer(Modifier.height(22.dp))
-            T(stringResource(R.string.onb_title), size = 23.sp, letterSpacing = (-0.03).em, lineHeight = 1.25f)
+            T(stringResource(R.string.onb_title), size = 23.sp, title = true, letterSpacing = (-0.025).em, lineHeight = 1.3f)
             T(
-                stringResource(R.string.onb_lead), size = 12.5.sp, color = pal.t3, medium = true,
+                stringResource(R.string.onb_lead), size = 12.5.sp, color = pal.t3, quiet = true,
                 modifier = Modifier.padding(top = 10.dp, bottom = 22.dp),
             )
             Hairline()
@@ -73,12 +73,12 @@ fun OnboardingScreen(
             }
             Hairline()
             T(
-                stringResource(R.string.onb_dictation_later), size = 11.5.sp, color = pal.t3, medium = true,
+                stringResource(R.string.onb_dictation_later), size = 11.5.sp, color = pal.t3, quiet = true,
                 modifier = Modifier.padding(top = 16.dp),
             )
         }
         Row(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            T(stringResource(R.string.onb_done_count, done), size = 12.5.sp, color = pal.t3, medium = true)
+            T(stringResource(R.string.onb_done_count, done), size = 12.5.sp, color = pal.t3, quiet = true)
             Spacer(Modifier.weight(1f))
             ArrowKey(stringResource(R.string.onb_start), bright = canStart && signedIn, onClick = onStart, enabled = canStart)
         }

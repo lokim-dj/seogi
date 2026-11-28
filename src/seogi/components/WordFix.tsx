@@ -321,7 +321,7 @@ export function WordFixPanel({
       style={{ top, left, width }}
     >
       <p className="fix-label">{t("wordFix.heard")}</p>
-      <p className="m-0 text-[15px] font-bold">
+      <p className="m-0 text-[15px] font-semibold">
         {`「${from}」`}{" "}
         <span className="t3 text-[13.5px]">{clock(picked.atMs)}</span>
       </p>

@@ -812,7 +812,7 @@ function Sheet({
                       data-found={here ? "" : undefined}
                     >
                       {part.title ? (
-                        <h3 className="m-0 mb-0.5 text-[13.5px] font-medium t3">
+                        <h3 className="m-0 mb-0.5 text-[13.5px] font-normal t3">
                           {here ? (
                             <Marked text={part.title} words={words} />
                           ) : (
@@ -1109,7 +1109,7 @@ function TaskGroup({
   return (
     <div className="mb-2">
       {showTitle ? (
-        <h3 className="m-0 mt-2 mb-0.5 text-[13px] font-medium t3">
+        <h3 className="m-0 mt-2 mb-0.5 text-[13px] font-normal t3">
           {section.title}
         </h3>
       ) : null}
@@ -1494,7 +1494,7 @@ function Ask({ id, onListen }: { id: string; onListen: (ms: number) => void }) {
           {item.trouble ? (
             <p
               role="alert"
-              className="must-check mt-1.5 mb-0 px-2 py-1 font-medium"
+              className="must-check mt-1.5 mb-0 px-2 py-1 font-normal"
             >
               {t("failed", { reason: item.trouble })}
             </p>
@@ -1512,7 +1512,7 @@ function Ask({ id, onListen }: { id: string; onListen: (ms: number) => void }) {
                 {item.answer.text}
               </p>
               {item.answer.unsupported ? (
-                <p className="must-check mt-1.5 mb-0 px-2 py-1 text-[13.5px] font-medium">
+                <p className="must-check mt-1.5 mb-0 px-2 py-1 text-[13.5px] font-normal">
                   {t("minutes.askUnsupported")}
                 </p>
               ) : null}
@@ -2066,7 +2066,7 @@ function AskSpeaker({
     >
       {noPeople ? (
         <div className="mb-3 pb-3 border-b border-line">
-          <div className="mb-2 font-medium">{t("names.peopleFirst")}</div>
+          <div className="mb-2 font-normal">{t("names.peopleFirst")}</div>
           <PeopleLine meeting={meeting} onChanged={refreshDetail} open />
         </div>
       ) : null}
@@ -2133,7 +2133,7 @@ function AskSpeaker({
             <TimeKey ms={line.start_ms} onListen={() => listen(line)} />
             <span className="flex-1">{`「${line.text}」`}</span>
           </div>
-          <div className="mt-2.5 mb-1.5 text-[13px] font-medium t2">
+          <div className="mt-2.5 mb-1.5 text-[13px] font-normal t2">
             {t("names.whoSaid")}
           </div>
           <NamePicker
@@ -2155,11 +2155,11 @@ function AskSpeaker({
 
       {v.kind !== "asking" ? (
         <div className="mt-3 pt-3 border-t border-line">
-          <div aria-hidden="true" className="text-[15px] font-bold mb-0.5">
+          <div aria-hidden="true" className="text-[15px] font-semibold mb-0.5">
             {headline}
           </div>
           {v.kind === "decide" ? (
-            <div className="t2 font-medium">
+            <div className="t2 font-normal">
               {t("names.settleAsk", {
                 speaker: shown,
                 name: v.name,
@@ -2176,9 +2176,9 @@ function AskSpeaker({
               ) : null}
             </div>
           ) : v.kind === "mixed" ? (
-            <div className="t2 font-medium">{t("names.mixedHint")}</div>
+            <div className="t2 font-normal">{t("names.mixedHint")}</div>
           ) : (
-            <div className="t2 font-medium">{t("names.unknownHint")}</div>
+            <div className="t2 font-normal">{t("names.unknownHint")}</div>
           )}
           <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 mt-2.5 mb-1.5">
             <button
@@ -2275,8 +2275,8 @@ function AskSpeaker({
                 onListen={() => listen(a.line)}
                 className="!text-[12px]"
               />
-              <span className="t2 font-medium truncate">{`「${a.line.text}」`}</span>
-              <span className={a.name ? "font-bold" : "t3 font-medium"}>
+              <span className="t2 font-normal truncate">{`「${a.line.text}」`}</span>
+              <span className={a.name ? "font-semibold" : "t3 font-normal"}>
                 {a.name ?? t("names.dontKnow")}
               </span>
             </li>
@@ -2552,7 +2552,7 @@ function Transcript({
                 onClick={() =>
                   setNaming(naming === line.startMs ? null : line.startMs)
                 }
-                className={`p-0 border-0 bg-transparent text-[13.5px] font-medium underline decoration-dotted decoration-[var(--t3)] underline-offset-4 cursor-pointer ${
+                className={`p-0 border-0 bg-transparent text-[13.5px] font-normal underline decoration-dotted decoration-[var(--t3)] underline-offset-4 cursor-pointer ${
                   goingOn ? "t3" : ""
                 }`}
               >
@@ -2622,7 +2622,7 @@ function Transcript({
               <p
                 title={noise ? t("minutes.noiseLine") : undefined}
                 className={`mt-1 mb-0 text-[14.5px] leading-[1.7] ${
-                  on ? "font-medium" : ""
+                  on ? "font-normal" : ""
                 } ${noise ? "t3 opacity-60" : ""} ${line.unsure ? "underline decoration-dotted decoration-[var(--t3)] underline-offset-4" : ""}`}
               >
                 {index === foundIndex && !asWritten ? (

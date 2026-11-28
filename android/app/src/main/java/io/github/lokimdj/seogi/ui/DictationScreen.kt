@@ -94,7 +94,7 @@ fun DictationScreen(
                     Keys {
                         ArrowKey(stringResource(R.string.dict_a11y_agree), bright = true, onClick = onAccessibility)
                         T(
-                            stringResource(R.string.dict_a11y_skip), size = 13.sp, color = pal.t3, medium = true,
+                            stringResource(R.string.dict_a11y_skip), size = 13.sp, color = pal.t3, quiet = true,
                             modifier = Modifier.clickable(role = Role.Button, onClick = onCopyOnly).padding(vertical = 10.dp),
                         )
                     }
@@ -118,11 +118,11 @@ private fun DropLog(log: List<A11yLog.Entry>) {
     val zone = ZoneId.systemDefault()
     val at = DateTimeFormatter.ofPattern("M/d HH:mm")
     Column(Modifier.fillMaxWidth().padding(top = 26.dp, bottom = 20.dp)) {
-        T(stringResource(R.string.a11y_log_title), size = 12.5.sp, color = pal.t3, medium = true)
-        T(stringResource(R.string.a11y_log_why), size = 12.sp, color = pal.t3, medium = true, modifier = Modifier.padding(top = 2.dp, bottom = 6.dp))
+        T(stringResource(R.string.a11y_log_title), size = 12.5.sp, color = pal.t3, quiet = true)
+        T(stringResource(R.string.a11y_log_why), size = 12.sp, color = pal.t3, quiet = true, modifier = Modifier.padding(top = 2.dp, bottom = 6.dp))
         for (e in log.takeLast(10).asReversed()) {
             val time = at.format(Instant.ofEpochMilli(e.at).atZone(zone))
-            T("$time  ${dropText(e)}", size = 12.5.sp, color = pal.t2, medium = true, modifier = Modifier.padding(vertical = 3.dp))
+            T("$time  ${dropText(e)}", size = 12.5.sp, color = pal.t2, quiet = true, modifier = Modifier.padding(vertical = 3.dp))
         }
     }
 }
@@ -158,10 +158,10 @@ private fun dropText(e: A11yLog.Entry): String = when (e.kind) {
 private fun Sheet(title: String, position: Pair<Int, Int>?, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 20.dp)) {
         if (position != null) {
-            T(stringResource(R.string.dict_step, position.first, position.second), size = 12.5.sp, color = pal.t3, medium = true, tabular = true)
+            T(stringResource(R.string.dict_step, position.first, position.second), size = 12.5.sp, color = pal.t3, quiet = true, tabular = true)
             Spacer(Modifier.height(8.dp))
         }
-        T(title, size = 23.sp, letterSpacing = (-0.03).em, lineHeight = 1.25f)
+        T(title, size = 23.sp, title = true, letterSpacing = (-0.025).em, lineHeight = 1.3f)
         Spacer(Modifier.height(4.dp))
         content()
     }
@@ -169,11 +169,11 @@ private fun Sheet(title: String, position: Pair<Int, Int>?, content: @Composable
 
 @Composable
 private fun Body(text: String) =
-    T(text, size = 14.5.sp, color = pal.t2, medium = true, modifier = Modifier.padding(top = 12.dp))
+    T(text, size = 14.5.sp, color = pal.t2, quiet = true, modifier = Modifier.padding(top = 12.dp))
 
 @Composable
 private fun Quiet(text: String, color: androidx.compose.ui.graphics.Color = pal.t3) =
-    T(text, size = 12.5.sp, color = color, medium = true, modifier = Modifier.padding(top = 12.dp))
+    T(text, size = 12.5.sp, color = color, quiet = true, modifier = Modifier.padding(top = 12.dp))
 
 @Composable
 private fun Keys(content: @Composable ColumnScope.() -> Unit) {
@@ -219,14 +219,14 @@ private fun ModelPart(download: ModelDownload, metered: Boolean, shortOfSpaceMb:
 
 @Composable
 private fun StopKey(onStop: () -> Unit) = T(
-    stringResource(R.string.dict_model_stop), size = 14.sp, color = pal.t3, medium = true,
+    stringResource(R.string.dict_model_stop), size = 14.sp, color = pal.t3, quiet = true,
     modifier = Modifier.clickable(role = Role.Button, onClick = onStop).padding(vertical = 10.dp),
 )
 
 @Composable
 private fun Ready(state: SetupState, on: Boolean, onSwitch: (Boolean) -> Unit, onAccessibility: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(top = 22.dp)) {
-        T(stringResource(R.string.dict_ready_title), size = 23.sp, letterSpacing = (-0.03).em, lineHeight = 1.25f)
+        T(stringResource(R.string.dict_ready_title), size = 23.sp, title = true, letterSpacing = (-0.025).em, lineHeight = 1.3f)
         Spacer(Modifier.height(18.dp))
         Hairline()
         val direct = state.accessibility
@@ -243,7 +243,7 @@ private fun Ready(state: SetupState, on: Boolean, onSwitch: (Boolean) -> Unit, o
             done = direct, onClick = onAccessibility,
         )
         Hairline()
-        T(stringResource(R.string.dict_how), size = 13.sp, color = pal.t2, medium = true, modifier = Modifier.padding(top = 14.dp))
-        T(stringResource(R.string.dict_privacy), size = 12.5.sp, color = pal.t3, medium = true, modifier = Modifier.padding(top = 12.dp))
+        T(stringResource(R.string.dict_how), size = 13.sp, color = pal.t2, quiet = true, modifier = Modifier.padding(top = 14.dp))
+        T(stringResource(R.string.dict_privacy), size = 12.5.sp, color = pal.t3, quiet = true, modifier = Modifier.padding(top = 12.dp))
     }
 }

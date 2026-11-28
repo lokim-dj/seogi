@@ -517,7 +517,7 @@ function MeetingList({
 
       {meetings.length === 0 ? (
         <div className="px-3 py-6">
-          <p className="m-0 text-[15px] font-medium">{t("home.empty")}</p>
+          <p className="m-0 text-[15px] font-normal">{t("home.empty")}</p>
           <p className="mt-1.5 mb-0 max-w-[52ch] t3">{t("home.emptyHow")}</p>
         </div>
       ) : days.length === 0 ? (

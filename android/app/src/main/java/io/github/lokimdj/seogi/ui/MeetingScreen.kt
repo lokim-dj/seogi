@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import io.github.lokimdj.seogi.R
 import io.github.lokimdj.seogi.data.MeetingDoc
@@ -87,26 +88,26 @@ fun MeetingScreen(
         LazyColumn(Modifier.weight(1f)) {
             item {
                 Column(Modifier.padding(top = 14.dp, bottom = 18.dp)) {
-                    T(title, size = 20.sp)
+                    T(title, size = 20.sp, title = true, letterSpacing = (-0.02).em)
                     val sub = listOf(
                         Format.day(startedAt, now, zone, stringResource(R.string.today), stringResource(R.string.yesterday)),
                         Format.length(durationMs),
                         stringResource(if (fromPhone) R.string.m_from_phone else R.string.m_from_computer),
                     ).joinToString(" · ")
-                    T(sub, size = 12.5.sp, color = pal.t3, medium = true, modifier = Modifier.padding(top = 3.dp))
+                    T(sub, size = 12.5.sp, color = pal.t3, quiet = true, modifier = Modifier.padding(top = 3.dp))
                     if (doc != null && doc.summary.isNotBlank()) {
-                        T(doc.summary, size = 14.sp, color = pal.t2, medium = true, modifier = Modifier.padding(top = 12.dp))
+                        T(doc.summary, size = 14.sp, color = pal.t2, quiet = true, modifier = Modifier.padding(top = 12.dp))
                     }
                 }
             }
             if (doc == null) {
-                item { T(stringResource(R.string.m_not_read), size = 13.sp, color = pal.t3, medium = true) }
+                item { T(stringResource(R.string.m_not_read), size = 13.sp, color = pal.t3, quiet = true) }
                 return@LazyColumn
             }
             if (others.isNotEmpty()) {
                 item {
                     Label(stringResource(R.string.e_other_title))
-                    T(stringResource(R.string.e_other_lead), size = 12.sp, color = pal.t3, medium = true, modifier = Modifier.padding(bottom = 4.dp))
+                    T(stringResource(R.string.e_other_lead), size = 12.sp, color = pal.t3, quiet = true, modifier = Modifier.padding(bottom = 4.dp))
                 }
                 items(others) { o -> OtherLine(o, doc, onTake) }
                 item { Spacer(Modifier.height(18.dp)) }
@@ -114,7 +115,7 @@ fun MeetingScreen(
             item { Label(stringResource(R.string.m_tasks)); Hairline() }
             if (doc.tasks.isEmpty()) {
                 item {
-                    T(stringResource(R.string.m_no_tasks), size = 13.sp, color = pal.t3, medium = true, modifier = Modifier.padding(vertical = 12.dp))
+                    T(stringResource(R.string.m_no_tasks), size = 13.sp, color = pal.t3, quiet = true, modifier = Modifier.padding(vertical = 12.dp))
                     Hairline()
                 }
             }
@@ -127,7 +128,7 @@ fun MeetingScreen(
                 items(doc.story) { part ->
                     Column(Modifier.fillMaxWidth().padding(vertical = 11.dp)) {
                         if (part.title.isNotBlank()) T(part.title, size = 14.5.sp)
-                        T(part.text, size = 13.5.sp, color = pal.t2, medium = true, modifier = Modifier.padding(top = 3.dp))
+                        T(part.text, size = 13.5.sp, color = pal.t2, quiet = true, modifier = Modifier.padding(top = 3.dp))
                         Sources(part.sources, onPlayAt)
                     }
                     Hairline()
@@ -135,7 +136,7 @@ fun MeetingScreen(
             }
             item {
                 T(
-                    stringResource(if (more) R.string.m_less else R.string.m_more), size = 13.5.sp, color = pal.t3, medium = true,
+                    stringResource(if (more) R.string.m_less else R.string.m_more), size = 13.5.sp, color = pal.t3, quiet = true,
                     modifier = Modifier.padding(top = 18.dp).clickable(role = Role.Button) { more = !more }.padding(vertical = 10.dp),
                 )
             }
@@ -144,8 +145,8 @@ fun MeetingScreen(
                     item { Spacer(Modifier.height(10.dp)); Label(section.title); Hairline() }
                     items(section.entries) { e ->
                         Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
-                            T(e.text, size = 13.5.sp, medium = true)
-                            if (e.needsCheck) T(stringResource(R.string.m_needs_check), size = 12.sp, color = pal.rt, medium = true)
+                            T(e.text, size = 13.5.sp, quiet = true)
+                            if (e.needsCheck) T(stringResource(R.string.m_needs_check), size = 12.sp, color = pal.rt, quiet = true)
                             Sources(e.sources, onPlayAt)
                         }
                         Hairline()
@@ -164,7 +165,7 @@ fun MeetingScreen(
                 }
                 if (doc.lines.isNotEmpty()) {
                     item { Spacer(Modifier.height(10.dp)); Label(stringResource(R.string.m_transcript)); Hairline() }
-                    item { T(stringResource(R.string.e_hint), size = 11.5.sp, color = pal.t3, medium = true, modifier = Modifier.padding(vertical = 6.dp)) }
+                    item { T(stringResource(R.string.e_hint), size = 11.5.sp, color = pal.t3, quiet = true, modifier = Modifier.padding(vertical = 6.dp)) }
                     items(doc.lines) { line ->
                         Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
                             TimeKey(line.startMs, onPlayAt)
@@ -173,12 +174,12 @@ fun MeetingScreen(
                                 val who = speakerLabel(doc, line.speaker)
                                 if (who != null) {
                                     T(
-                                        who, size = 11.5.sp, color = pal.t3, medium = true,
+                                        who, size = 11.5.sp, color = pal.t3, quiet = true,
                                         modifier = Modifier.clickable(role = Role.Button) { changing = "speaker:${line.speaker}" },
                                     )
                                 }
                                 T(
-                                    line.text, size = 13.5.sp, medium = true,
+                                    line.text, size = 13.5.sp, quiet = true,
                                     modifier = Modifier.fillMaxWidth().clickable(role = Role.Button) { changing = "line:${line.startMs}" },
                                 )
                             }
@@ -246,8 +247,8 @@ private fun OtherLine(o: OtherEdit, doc: MeetingDoc, onTake: (OtherEdit) -> Unit
     }
     val made = stringResource(if (o.fromComputer) R.string.e_from_computer else R.string.e_from_phone, value)
     Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { onTake(o) }.padding(vertical = 7.dp)) {
-        T("$about · $made", size = 13.sp, color = pal.t3, medium = true)
-        T(stringResource(R.string.e_take), size = 12.sp, color = pal.t2, medium = true, modifier = Modifier.padding(top = 2.dp))
+        T("$about · $made", size = 13.sp, color = pal.t3, quiet = true)
+        T(stringResource(R.string.e_take), size = 12.sp, color = pal.t2, quiet = true, modifier = Modifier.padding(top = 2.dp))
     }
 }
 
@@ -262,10 +263,10 @@ private fun TaskLine(t: MeetingDoc.Entry, onPlayAt: (Long?) -> Unit, onTick: () 
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            T(t.text, size = 14.5.sp, color = if (t.done) pal.t3 else pal.t1, medium = t.done)
+            T(t.text, size = 14.5.sp, color = if (t.done) pal.t3 else pal.t1, quiet = t.done)
             val who = listOf(t.owner, t.due).filter { it.isNotBlank() }
-            if (who.isNotEmpty()) T(who.joinToString(" · "), size = 12.sp, color = pal.t3, medium = true, modifier = Modifier.padding(top = 2.dp))
-            if (t.needsCheck) T(stringResource(R.string.m_needs_check), size = 12.sp, color = pal.rt, medium = true, modifier = Modifier.padding(top = 2.dp))
+            if (who.isNotEmpty()) T(who.joinToString(" · "), size = 12.sp, color = pal.t3, quiet = true, modifier = Modifier.padding(top = 2.dp))
+            if (t.needsCheck) T(stringResource(R.string.m_needs_check), size = 12.sp, color = pal.rt, quiet = true, modifier = Modifier.padding(top = 2.dp))
             Sources(t.sources, onPlayAt)
         }
     }
@@ -279,7 +280,7 @@ private fun Sources(sources: List<MeetingDoc.Source>, onPlayAt: (Long?) -> Unit)
             TimeKey(s.ms, onPlayAt)
             if (s.quote.isNotBlank()) {
                 Spacer(Modifier.width(8.dp))
-                T("「${s.quote}」", size = 12.5.sp, color = pal.t2, medium = true, modifier = Modifier.weight(1f))
+                T("「${s.quote}」", size = 12.5.sp, color = pal.t2, quiet = true, modifier = Modifier.weight(1f))
             }
         }
     }
@@ -289,7 +290,7 @@ private fun Sources(sources: List<MeetingDoc.Source>, onPlayAt: (Long?) -> Unit)
 @Composable
 fun TimeKey(ms: Long, onPlayAt: (Long?) -> Unit) {
     T(
-        Format.clock(ms), size = 12.sp, color = pal.t3, medium = true, tabular = true,
+        Format.clock(ms), size = 12.sp, color = pal.t3, quiet = true, tabular = true,
         modifier = Modifier.clickable(role = Role.Button) { onPlayAt(ms) },
     )
 }
@@ -310,18 +311,18 @@ private fun PlayLine(audio: AudioState, play: PlayState, onPlayAt: (Long?) -> Un
             when (audio) {
                 is AudioState.InDrive -> T(
                     audio.sizeBytes?.let { stringResource(R.string.p_download, mb(it)) } ?: stringResource(R.string.p_download_plain),
-                    size = 13.sp, color = pal.t2, medium = true,
+                    size = 13.sp, color = pal.t2, quiet = true,
                     modifier = Modifier.clickable(role = Role.Button) { onPlayAt(null) }.padding(vertical = 6.dp),
                 )
                 is AudioState.Downloading -> T(
-                    stringResource(R.string.p_downloading, (audio.progress * 100).toInt()), size = 13.sp, color = pal.t3, medium = true,
+                    stringResource(R.string.p_downloading, (audio.progress * 100).toInt()), size = 13.sp, color = pal.t3, quiet = true,
                     modifier = Modifier.padding(vertical = 6.dp),
                 )
                 AudioState.Failed -> T(
                     stringResource(R.string.p_failed), size = 13.sp, color = pal.rt,
                     modifier = Modifier.clickable(role = Role.Button) { onPlayAt(null) }.padding(vertical = 6.dp),
                 )
-                AudioState.None -> T(stringResource(R.string.p_no_audio), size = 13.sp, color = pal.t3, medium = true, modifier = Modifier.padding(vertical = 6.dp))
+                AudioState.None -> T(stringResource(R.string.p_no_audio), size = 13.sp, color = pal.t3, quiet = true, modifier = Modifier.padding(vertical = 6.dp))
                 AudioState.Ready -> {
                     T(
                         stringResource(if (play.playing) R.string.p_pause else R.string.p_play), size = 14.sp,
@@ -331,7 +332,7 @@ private fun PlayLine(audio: AudioState, play: PlayState, onPlayAt: (Long?) -> Un
                     Spacer(Modifier.weight(1f))
                     T(
                         "${Format.clock(play.positionMs)} / ${Format.clock(play.durationMs)}", size = 12.sp, color = pal.t3,
-                        medium = true, tabular = true,
+                        quiet = true, tabular = true,
                     )
                 }
             }

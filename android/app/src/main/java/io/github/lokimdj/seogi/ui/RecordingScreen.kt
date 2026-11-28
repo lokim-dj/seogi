@@ -88,7 +88,7 @@ fun RecordingScreen(rec: RecState, onBack: () -> Unit, onMark: () -> Unit, onSto
             Spacer(Modifier.height(10.dp))
             BackBar(null, onBack)
             Spacer(Modifier.height(30.dp))
-            T(stringResource(R.string.saving), size = 18.sp, color = pal.t3, medium = true)
+            T(stringResource(R.string.saving), size = 18.sp, color = pal.t3, quiet = true)
         }
         return
     }
@@ -98,15 +98,15 @@ fun RecordingScreen(rec: RecState, onBack: () -> Unit, onMark: () -> Unit, onSto
                 RecDot(9.dp)
                 Spacer(Modifier.width(9.dp))
                 T(stringResource(R.string.recording_now), size = 12.5.sp, color = pal.rt)
-                if (r.fromCalendar) T(" · " + stringResource(R.string.from_calendar), size = 12.5.sp, color = pal.t3, medium = true)
+                if (r.fromCalendar) T(" · " + stringResource(R.string.from_calendar), size = 12.5.sp, color = pal.t3, quiet = true)
             }
-            T(r.title, size = 18.sp, maxLines = 2, modifier = Modifier.padding(top = 6.dp))
+            T(r.title, size = 18.sp, title = true, maxLines = 2, modifier = Modifier.padding(top = 6.dp))
             T(
                 Format.clock(elapsed), size = 54.sp, letterSpacing = (-0.04).em, lineHeight = 1f, tabular = true,
                 modifier = Modifier.padding(top = 34.dp),
             )
             LevelBars(levels, Modifier.padding(top = 22.dp, bottom = 8.dp))
-            T(stringResource(R.string.recording_note), size = 11.5.sp, color = pal.t3, medium = true)
+            T(stringResource(R.string.recording_note), size = 11.5.sp, color = pal.t3, quiet = true)
         }
     }
     val marks: @Composable (Modifier) -> Unit = { modifier ->
@@ -115,7 +115,7 @@ fun RecordingScreen(rec: RecState, onBack: () -> Unit, onMark: () -> Unit, onSto
             LazyColumn(Modifier.weight(1f)) {
                 itemsIndexed(r.marksMs) { _, ms ->
                     Hairline()
-                    ListLine(stringResource(R.string.mark), Format.mark(ms), null, pal.t3, stateMedium = true)
+                    ListLine(stringResource(R.string.mark), Format.mark(ms), null, pal.t3, stateQuiet = true)
                 }
                 if (r.marksMs.isNotEmpty()) item { Hairline() }
             }
@@ -183,7 +183,7 @@ private fun RingKey(icon: Int, label: String, hint: String?, modifier: Modifier)
             contentAlignment = Alignment.Center,
         ) { Icon(icon, 28.dp, pal.t1) }
         T(label, size = 13.5.sp, align = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
-        if (hint != null) T(hint, size = 11.5.sp, color = pal.t3, medium = true)
+        if (hint != null) T(hint, size = 11.5.sp, color = pal.t3, quiet = true)
     }
 }
 

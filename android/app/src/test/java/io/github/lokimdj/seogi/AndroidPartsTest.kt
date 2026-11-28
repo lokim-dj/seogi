@@ -39,7 +39,7 @@ class AndroidPartsTest {
         val read = { res: Int -> context.resources.openRawResource(res).bufferedReader().use { it.readText() } }
         assertTrue(read(R.raw.license_apache_2_0).contains("Apache License"))
         assertTrue(read(R.raw.license_android_sdk).contains("Android Software Development Kit License Agreement"))
-        assertTrue(read(R.raw.license_ofl_gmarket_sans).contains("SIL Open Font License"))
+        assertTrue(read(R.raw.license_ofl_pretendard).contains("SIL Open Font License"))
     }
 
     /** Minor: nothing of the app's own storage leaves through backup or a phone transfer. */

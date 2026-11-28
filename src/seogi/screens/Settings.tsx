@@ -927,7 +927,7 @@ export default function Settings() {
                                 className="w-3.5 h-3.5 mt-[3px] m-0 accent-[var(--red)]"
                               />
                               <span>
-                                <span className="text-[14px] font-medium">
+                                <span className="text-[14px] font-normal">
                                   {shortModel(option.id)}
                                   {index === 0
                                     ? ` · ${t("settings.speechDefault")}`

@@ -91,7 +91,7 @@ export default function Feedback({
                   key={s.speaker}
                   className="flex flex-wrap items-center gap-x-2"
                 >
-                  <span className="font-medium">{nameOf(s.speaker)}</span>
+                  <span className="font-normal">{nameOf(s.speaker)}</span>
                   <span className="tab">
                     {t("feedback.speakerLine", {
                       share: Math.round(s.share),

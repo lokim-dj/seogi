@@ -141,7 +141,7 @@ export default function DocumentWords({
                         }
                         className="chk"
                       />
-                      <span className="font-medium">{term}</span>
+                      <span className="font-normal">{term}</span>
                     </label>
                   </li>
                 ))}

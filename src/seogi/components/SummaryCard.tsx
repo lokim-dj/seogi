@@ -23,8 +23,7 @@ import { clock, hm } from "../lib/format";
 import { A4_POINTS, jpegPdf } from "../lib/pdf";
 import { useLength, useSpeakerName } from "./common";
 import { Mark } from "./Mark";
-import gmarketMedium from "../fonts/GmarketSansMedium.otf?url";
-import gmarketBold from "../fonts/GmarketSansBold.otf?url";
+import pretendardVariable from "pretendard/dist/web/variable/woff2/PretendardVariable.woff2?url";
 
 export type CardTheme = "dark" | "light";
 
@@ -407,25 +406,18 @@ export function useCardWords() {
   };
 }
 
-/** The bundled Gmarket Sans for the picture, so the saved file is set in
- *  the same type as the screen (and only it: no other font is fetched). A
- *  picture cannot load files, so the fonts go in as data; read once. */
+/** The bundled Pretendard for the picture, so the saved file is set in the
+ *  same type as the screen (and only it: no other font is fetched). A
+ *  picture cannot load files, so the font goes in as data, one variable file
+ *  for every weight the card uses; read once. */
 let fontCss: Promise<string> | null = null;
 function fontsAsData(): Promise<string> {
-  fontCss ??= Promise.all(
-    (
-      [
-        [gmarketMedium, 500],
-        [gmarketBold, 700],
-      ] as const
-    ).map(async ([src, weight]) => {
-      const response = await fetch(new URL(src, document.baseURI));
+  fontCss ??= fetch(new URL(pretendardVariable, document.baseURI))
+    .then(async (response) => {
       if (!response.ok) throw new Error(`font ${response.status}`);
       const bytes = new Uint8Array(await response.arrayBuffer());
-      return `@font-face{font-family:"Gmarket Sans";src:url(data:font/otf;base64,${base64(bytes)}) format("opentype");font-weight:${weight};font-style:normal;}`;
-    }),
-  )
-    .then((faces) => faces.join("\n"))
+      return `@font-face{font-family:"Pretendard Variable";src:url(data:font/woff2;base64,${base64(bytes)}) format("woff2-variations");font-weight:45 920;font-style:normal;}`;
+    })
     .catch((error: unknown) => {
       fontCss = null;
       throw error;

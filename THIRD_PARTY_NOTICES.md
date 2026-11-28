@@ -90,19 +90,17 @@ package ships its license text in its source distribution. Notable ones:
 
 ## Fonts
 
-- Gmarket Sans (G마켓 산스) Medium and Bold (SIL Open Font License 1.1),
-  Copyright (c) 2019 eBay Korea Co., Ltd. (now Gmarket), with Reserved Font
-  Name "Gmarket Sans Font". Source: <https://corp.gmarket.com/fonts/>. The
-  original OpenType files are bundled unchanged in `src/seogi/fonts/` (and,
-  under lower-case file names Android requires, in
-  `android/app/src/main/res/font/`), with
-  the license text in `src/seogi/fonts/GmarketSans-OFL.txt`. The license
-  allows bundling with software and commercial use; selling the font on its
-  own is not allowed, and a modified version may not use the font's name.
 - Pretendard (SIL Open Font License 1.1), Copyright (c) 2021 Kil Hyung-jin,
   with Reserved Font Name Pretendard.
-  <https://github.com/orioncactus/pretendard>. Shipped with the app, unchanged,
-  from the `pretendard` npm package.
+  <https://github.com/orioncactus/pretendard>. The typeface of every screen.
+  The computer app ships the web files of the `pretendard` npm package
+  unchanged; the phone app bundles the original Regular, Medium and Bold
+  OpenType files unchanged in `android/app/src/main/res/font/` (under the
+  lower-case file names Android requires) and shows the license from
+  `android/app/src/main/res/raw/license_ofl_pretendard.txt`. The license text
+  is also in `src/seogi/fonts/Pretendard-OFL.txt`. The license allows
+  bundling with software and commercial use; selling the font on its own is
+  not allowed, and a modified version may not use the font's name.
 
 ## Models
 
