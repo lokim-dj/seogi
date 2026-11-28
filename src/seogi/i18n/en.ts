@@ -499,6 +499,19 @@ const en: Strings = {
     transcribedBy: "Transcribed by {{speech}}",
     redoWith: "Transcribe again with {{model}}",
   },
+  polish: {
+    title: "Tidy the transcript",
+    hint: 'Fixes spacing and punctuation and leaves out fillers like "uh" so it reads easily. The transcript as first written and the minutes stay as they are.',
+    with: "Tidied by the minutes' model: {{who}} · {{model}}",
+    change: "Change",
+    showSaid: "Show as said",
+    showPolished: "Show tidied",
+    saidLead: "As said: the transcript as first written.",
+    polishedLead:
+      "Tidied for reading. Numbers, names, dates and negations are left as said.",
+    limit: "Some lines are not tidied: the plan's limit was reached.",
+    failed: "Some lines are not tidied: the model could not be reached.",
+  },
   edit: {
     fix: "Edit",
     remove: "Remove",

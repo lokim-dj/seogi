@@ -33,6 +33,7 @@ pub mod numbers;
 pub mod phone;
 pub mod pipeline;
 pub mod platform;
+pub mod polish;
 pub mod power;
 pub mod recorder;
 pub mod render;

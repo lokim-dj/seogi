@@ -232,7 +232,7 @@ const SMALL: &[char] = &[
 /// letters (its stem, near enough for Korean endings) are found there, or
 /// it only tells how something was said. A softer sentence may reword, but
 /// not bring in a word no one said ("메모했다", a name, a material).
-fn words_from(softer: &str, source: &str) -> bool {
+pub(super) fn words_from(softer: &str, source: &str) -> bool {
     let source: String = source.chars().filter(|c| c.is_alphanumeric()).collect();
     softer.split_whitespace().all(|word| {
         let letters: Vec<char> = word.chars().filter(|c| c.is_alphanumeric()).collect();

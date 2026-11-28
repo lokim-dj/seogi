@@ -126,6 +126,11 @@ pub struct Config {
     /// And their recordings with them ("녹음 파일도 올리기"); the text goes
     /// either way.
     pub drive_upload_audio: bool,
+    /// Polish each meeting's transcript for reading (spacing, punctuation,
+    /// filler words) with the model that writes the minutes. Off until the
+    /// user turns it on: with a signed-in plan or a key the text leaves the
+    /// computer. The transcript itself never changes (#108).
+    pub polish: bool,
     /// Dictation: a shortcut, speech, and the words typed where the cursor
     /// is. On for a new install.
     pub dictation: DictationConfig,
@@ -153,6 +158,7 @@ impl Default for Config {
             minutes_beside_source: true,
             drive_upload_own: true,
             drive_upload_audio: true,
+            polish: false,
             dictation: DictationConfig::default(),
         }
     }

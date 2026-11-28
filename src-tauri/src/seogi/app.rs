@@ -30,6 +30,7 @@ use super::llm::{self, Provider, Ways};
 use super::minutes;
 use super::phone::{self, Arrival, Phone, PhoneStatus};
 use super::pipeline::{self, Monitor, Request, Stage};
+use super::polish;
 use super::power::KeepAwake;
 use super::recorder;
 use super::store::{self, EventRef, Found, Library, Meeting, MeetingSummary, Origin, Status};
@@ -1961,8 +1962,39 @@ impl Secretary {
             actions: summary.actions,
             to_check: summary.to_check,
         });
+        self.polish(&meeting.id, &cancel);
         self.put_in_drive(&meeting);
         Ok(())
+    }
+
+    /// Polishes a finished meeting's transcript for reading, when the user
+    /// turned it on (#108), with the model that writes the minutes. Only the
+    /// polished layer is saved, onto the meeting as it is by then, so a fix
+    /// the user made meanwhile stays; nothing else of it changes.
+    fn polish(&self, id: &str, cancel: &AtomicBool) {
+        let config = self.config();
+        if !config.polish {
+            return;
+        }
+        let Ok(meeting) = self.meeting(id) else {
+            return;
+        };
+        let keychain = |name: &str| super::secrets::get(name);
+        let vocabulary = config.vocabulary(&self.data_dir);
+        let Some(polished) =
+            polish::meeting(&meeting, &vocabulary, &config.summary, &keychain, cancel)
+        else {
+            return;
+        };
+        let _editing = lock(&self.edit_lock);
+        let saved = self.folder(id).and_then(|folder| {
+            let mut now = Library::read(&folder)?;
+            now.polish = Some(polished);
+            self.save(&now, &folder)
+        });
+        if let Err(e) = saved {
+            warn!("The polished transcript of {id} could not be saved: {e:#}");
+        }
     }
 
     /// Has a meeting whose minutes are ready put in the shared Drive

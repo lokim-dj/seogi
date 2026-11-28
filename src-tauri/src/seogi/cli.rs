@@ -4,6 +4,7 @@
 //!     seogi --seogi-transcribe meeting.m4a --seogi-out out/ --seogi-minutes
 //!     seogi --seogi-minutes-from out/transcript.json --seogi-out out/ --seogi-llm claude:sonnet
 //!     seogi --seogi-minutes-from meeting.json --seogi-out out/   # with its people, place, event
+//!     seogi --seogi-polish-from meeting.json --seogi-out out/ --seogi-llm claude:sonnet
 //!
 //! and of the whole secretary, as the app runs it, against a library folder
 //! of its own:
@@ -76,6 +77,9 @@ enum Failure {
 fn run_inner(app: &AppHandle, args: &CliArgs) -> Result<(), Failure> {
     if let Some(library) = &args.seogi_library {
         return run_secretary(app, args, library);
+    }
+    if let Some(json) = &args.seogi_polish_from {
+        return polish_from(args, json);
     }
     let wants_minutes = args.seogi_minutes || args.seogi_minutes_from.is_some();
     if wants_minutes && args.seogi_out.is_none() && args.seogi_ask.is_none() {
@@ -232,6 +236,95 @@ fn run_inner(app: &AppHandle, args: &CliArgs) -> Result<(), Failure> {
         output.minutes.verified,
         output.minutes.to_check,
         output.minutes.dropped
+    );
+    Ok(())
+}
+
+/// Polishes the lines of a meeting.json (or transcript.json) and writes
+/// `polish.json`: each line with the model's answer and what the checks
+/// kept, so `eval/polish.py` can count what a polish changed.
+fn polish_from(args: &CliArgs, json: &Path) -> Result<(), Failure> {
+    let out_dir = args
+        .seogi_out
+        .as_deref()
+        .ok_or_else(|| Failure::Input(anyhow!("polishing needs --seogi-out")))?;
+    let provider = Provider::parse(&args.seogi_llm).ok_or_else(|| {
+        Failure::Input(anyhow!(
+            "--seogi-llm takes ollama:<model>, claude[:<model>] or codex[:<model>]"
+        ))
+    })?;
+    let text = std::fs::read_to_string(json)
+        .with_context(|| format!("cannot read {}", json.display()))
+        .map_err(Failure::Input)?;
+    let value: serde_json::Value = serde_json::from_str(&text)
+        .context("it is not a transcript.json")
+        .map_err(Failure::Input)?;
+    let transcript: Transcript =
+        serde_json::from_value(value.get("transcript").cloned().unwrap_or(value.clone()))
+            .context("it is not a transcript.json")
+            .map_err(Failure::Input)?;
+    let mut given: Vec<String> = Vec::new();
+    for key in ["people", "terms"] {
+        if let Some(list) = value.get(key).and_then(serde_json::Value::as_array) {
+            given.extend(list.iter().filter_map(|v| v.as_str().map(str::to_string)));
+        }
+    }
+    if let Some(customer) = value.get("customer").and_then(serde_json::Value::as_str) {
+        given.push(customer.to_string());
+    }
+    let names = super::polish::names_in(&transcript, &given, &[]);
+    let no_secrets = |_: &str| None;
+    let input = super::polish::Input {
+        transcript: &transcript,
+        names: &names,
+        provider: &provider,
+        secrets: &no_secrets,
+    };
+    let started = Instant::now();
+    let (answered, note) = super::polish::ask_all(&input, &AtomicBool::new(false));
+    let polish = super::polish::checked(&transcript, &answered, &names);
+    let shown = polish.shown(&transcript);
+    let lines: Vec<serde_json::Value> = transcript
+        .segments
+        .iter()
+        .enumerate()
+        .map(|(i, segment)| {
+            serde_json::json!({
+                "start_ms": segment.start_ms,
+                "text": segment.text,
+                "answer": answered.get(&i),
+                "shown": shown.get(&segment.start_ms).unwrap_or(&segment.text),
+            })
+        })
+        .collect();
+    let record = serde_json::json!({
+        "model": provider.label(),
+        "note": note,
+        "names": names,
+        "polished": polish.lines.len(),
+        "kept_as_said": polish.kept_as_said,
+        "elapsed_secs": started.elapsed().as_secs_f64(),
+        "lines": lines,
+    });
+    std::fs::create_dir_all(out_dir)
+        .and_then(|()| {
+            std::fs::write(
+                out_dir.join("polish.json"),
+                serde_json::to_string_pretty(&record).map_err(std::io::Error::other)?,
+            )
+        })
+        .with_context(|| format!("cannot write to {}", out_dir.display()))
+        .map_err(Failure::Run)?;
+    eprintln!(
+        "polished {} lines with {}, {} left as said{}",
+        polish.lines.len(),
+        provider.label(),
+        polish.kept_as_said,
+        if note.is_empty() {
+            String::new()
+        } else {
+            format!(" ({note})")
+        }
     );
     Ok(())
 }
