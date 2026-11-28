@@ -863,6 +863,67 @@ async fn find_in(token: &str, parent: &str, q: &str) -> Result<Option<FileInfo>>
         .and_then(|file| serde_json::from_value(file.clone()).ok()))
 }
 
+/// A file found anywhere this app may see, with Drive's version of it
+/// (it goes up whenever the file changes).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+pub struct Versioned {
+    pub id: String,
+    #[serde(default)]
+    pub parents: Vec<String>,
+    #[serde(default, deserialize_with = "number_in_text")]
+    pub version: Option<u64>,
+}
+
+/// Every file named `name` (not in the trash) this app may see: with
+/// `drive.file`, those a Seogi app made. One search for all meetings.
+pub fn find_everywhere(token: &str, name: &str) -> Result<Vec<Versioned>> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Page {
+        #[serde(default)]
+        files: Vec<Versioned>,
+        next_page_token: Option<String>,
+    }
+    let q = format!("name = '{}' and trashed = false", quoted(name));
+    tauri::async_runtime::block_on(async {
+        let client = http()?;
+        let mut all = Vec::new();
+        let mut next: Option<String> = None;
+        loop {
+            let mut query = vec![
+                ("spaces", "drive".to_string()),
+                ("pageSize", "1000".to_string()),
+                (
+                    "fields",
+                    "nextPageToken,files(id,parents,version)".to_string(),
+                ),
+                ("q", q.clone()),
+            ];
+            if let Some(token) = &next {
+                query.push(("pageToken", token.clone()));
+            }
+            let page: Page = checked(
+                client
+                    .get(format!("{API}/files"))
+                    .header("Authorization", bearer(token))
+                    .query(&query)
+                    .send()
+                    .await
+                    .map_err(reached)?,
+            )
+            .await?
+            .json()
+            .await
+            .map_err(reached)?;
+            all.extend(page.files);
+            match page.next_page_token {
+                Some(token) if !token.is_empty() => next = Some(token),
+                _ => return Ok(all),
+            }
+        }
+    })
+}
+
 /// The folder in `parent` marked as the meeting `meeting_id`'s.
 pub fn find_meeting_folder(token: &str, parent: &str, meeting_id: &str) -> Result<Option<String>> {
     let q = format!(

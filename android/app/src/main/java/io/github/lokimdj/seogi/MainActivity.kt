@@ -43,6 +43,7 @@ import androidx.work.WorkManager
 import com.google.android.gms.auth.api.identity.AuthorizationResult
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.CommonStatusCodes
+import io.github.lokimdj.seogi.data.Edits
 import io.github.lokimdj.seogi.data.ListEntry
 import io.github.lokimdj.seogi.data.MeetingLibrary
 import io.github.lokimdj.seogi.data.MeetingList
@@ -89,6 +90,7 @@ import io.github.lokimdj.seogi.upload.GoogleAuth
 import io.github.lokimdj.seogi.upload.UploadQueue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.coroutines.withContext
 
 private enum class Screen { ONBOARDING, HOME, RECORDING, UPLOADS, SETTINGS, DICTATION, LICENSES, MEETING }
@@ -406,6 +408,7 @@ class MainActivity : ComponentActivity() {
         val saveProblem by app.saveProblem.collectAsState()
         val driveMeetings by app.meetings.all.collectAsState()
         val meetingsProblem by app.meetingsProblem.collectAsState()
+        val editsChanged by app.meetings.editsChanged.collectAsState()
         val entries = MeetingList.merge(recordings, driveMeetings)
         var openEntry by rememberSaveable { mutableStateOf<String?>(null) }
         var openedFrom by rememberSaveable { mutableStateOf(Screen.HOME) }
@@ -618,12 +621,20 @@ class MainActivity : ComponentActivity() {
                     } else {
                         // Back from the background: the recording's place is found again.
                         LaunchedEffect(e.key) { openAudio(e) }
+                        val view = remember(m.id, m.jsonVersion, m.jsonFileId, m.computerEditsVersion, editsChanged) {
+                            app.meetings.view(m.id)
+                        }
                         MeetingScreen(
                             title = m.title,
                             startedAt = m.startedAtMs,
                             durationMs = m.durationMs,
                             fromPhone = m.origin == "phone",
-                            doc = remember(m.id, m.jsonVersion, m.jsonFileId) { app.meetings.doc(m.id) },
+                            doc = view?.first,
+                            others = view?.second.orEmpty(),
+                            onTick = { task, done -> app.editMeeting(m.id, Edits.doneKey(task), JsonPrimitive(done)) },
+                            onFixLine = { ms, text -> app.editMeeting(m.id, Edits.lineKey(ms), JsonPrimitive(text)) },
+                            onNameSpeaker = { sp, name -> app.editMeeting(m.id, Edits.speakerKey(sp), JsonPrimitive(name)) },
+                            onTake = { o -> app.editMeeting(m.id, o.key, o.value) },
                             now = now,
                             audio = audioState,
                             play = playState,

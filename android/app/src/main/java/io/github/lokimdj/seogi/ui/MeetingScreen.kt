@@ -31,6 +31,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.lokimdj.seogi.R
 import io.github.lokimdj.seogi.data.MeetingDoc
+import io.github.lokimdj.seogi.data.OtherEdit
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import java.time.ZoneId
 
 /** Where the recording of an open meeting stands, for the playing line. */
@@ -67,9 +71,16 @@ fun MeetingScreen(
     onBack: () -> Unit,
     onPlayAt: (Long?) -> Unit,
     onPause: () -> Unit,
+    others: List<OtherEdit> = emptyList(),
+    onTick: (taskId: String, done: Boolean) -> Unit = { _, _ -> },
+    onFixLine: (startMs: Long, text: String) -> Unit = { _, _ -> },
+    onNameSpeaker: (id: Int, name: String) -> Unit = { _, _ -> },
+    onTake: (OtherEdit) -> Unit = {},
 ) {
     val zone = ZoneId.systemDefault()
     var more by rememberSaveable { mutableStateOf(false) }
+    // The line or speaker being changed: "line:<ms>" or "speaker:<id>".
+    var changing by rememberSaveable { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize().padding(horizontal = Gutter)) {
         Spacer(Modifier.height(10.dp))
         BackBar(null, onBack)
@@ -92,6 +103,14 @@ fun MeetingScreen(
                 item { T(stringResource(R.string.m_not_read), size = 13.sp, color = pal.t3, medium = true) }
                 return@LazyColumn
             }
+            if (others.isNotEmpty()) {
+                item {
+                    Label(stringResource(R.string.e_other_title))
+                    T(stringResource(R.string.e_other_lead), size = 12.sp, color = pal.t3, medium = true, modifier = Modifier.padding(bottom = 4.dp))
+                }
+                items(others) { o -> OtherLine(o, doc, onTake) }
+                item { Spacer(Modifier.height(18.dp)) }
+            }
             item { Label(stringResource(R.string.m_tasks)); Hairline() }
             if (doc.tasks.isEmpty()) {
                 item {
@@ -100,7 +119,7 @@ fun MeetingScreen(
                 }
             }
             items(doc.tasks) { t ->
-                TaskLine(t, onPlayAt)
+                TaskLine(t, onPlayAt) { if (t.id.isNotEmpty()) onTick(t.id, !t.done) }
                 Hairline()
             }
             if (doc.story.isNotEmpty()) {
@@ -145,15 +164,23 @@ fun MeetingScreen(
                 }
                 if (doc.lines.isNotEmpty()) {
                     item { Spacer(Modifier.height(10.dp)); Label(stringResource(R.string.m_transcript)); Hairline() }
+                    item { T(stringResource(R.string.e_hint), size = 11.5.sp, color = pal.t3, medium = true, modifier = Modifier.padding(vertical = 6.dp)) }
                     items(doc.lines) { line ->
                         Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
                             TimeKey(line.startMs, onPlayAt)
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                val who = doc.speakerName(line.speaker)
-                                    ?: line.speaker?.takeIf { it > 0 }?.let { stringResource(R.string.m_speaker_n, it) }
-                                if (who != null) T(who, size = 11.5.sp, color = pal.t3, medium = true)
-                                T(line.text, size = 13.5.sp, medium = true)
+                                val who = speakerLabel(doc, line.speaker)
+                                if (who != null) {
+                                    T(
+                                        who, size = 11.5.sp, color = pal.t3, medium = true,
+                                        modifier = Modifier.clickable(role = Role.Button) { changing = "speaker:${line.speaker}" },
+                                    )
+                                }
+                                T(
+                                    line.text, size = 13.5.sp, medium = true,
+                                    modifier = Modifier.fillMaxWidth().clickable(role = Role.Button) { changing = "line:${line.startMs}" },
+                                )
                             }
                         }
                     }
@@ -163,13 +190,73 @@ fun MeetingScreen(
         }
         PlayLine(audio, play, onPlayAt, onPause)
     }
+    val what = changing
+    if (doc != null && what != null) {
+        val target = what.substringAfter(':')
+        if (what.startsWith("line:")) {
+            val line = doc.lines.firstOrNull { it.startMs.toString() == target }
+            if (line != null) {
+                TextDialog(
+                    title = stringResource(R.string.e_fix_line), initial = line.text,
+                    confirm = stringResource(R.string.e_keep), cancel = stringResource(R.string.cancel),
+                    onConfirm = { text ->
+                        changing = null
+                        // An empty line would take the line's words out: not from here.
+                        if (text.isNotBlank() && text != line.text.trim()) onFixLine(line.startMs, text)
+                    },
+                    onDismiss = { changing = null },
+                )
+            }
+        } else {
+            val id = target.toIntOrNull()
+            if (id != null) {
+                val name = speakerLabel(doc, id).orEmpty()
+                TextDialog(
+                    title = stringResource(R.string.e_name_speaker), initial = name,
+                    confirm = stringResource(R.string.e_keep), cancel = stringResource(R.string.cancel),
+                    onConfirm = { text ->
+                        changing = null
+                        if (text.isNotBlank() && text != name) onNameSpeaker(id, text)
+                    },
+                    onDismiss = { changing = null },
+                )
+            }
+        }
+    }
 }
 
 @Composable
-private fun TaskLine(t: MeetingDoc.Entry, onPlayAt: (Long?) -> Unit) {
+private fun speakerLabel(doc: MeetingDoc, id: Int?): String? =
+    doc.speakerName(id) ?: id?.takeIf { it > 0 }?.let { stringResource(R.string.m_speaker_n, it) }
+
+/** A change that did not stand: faint, and one tap takes it instead. */
+@Composable
+private fun OtherLine(o: OtherEdit, doc: MeetingDoc, onTake: (OtherEdit) -> Unit) {
+    val (kind, target) = o.key.substringBefore(':') to o.key.substringAfter(':')
+    val about = when (kind) {
+        "done" -> stringResource(R.string.e_other_task, doc.tasks.firstOrNull { it.id == target }?.text.orEmpty())
+        "speaker" -> stringResource(R.string.e_other_speaker, speakerLabel(doc, target.toIntOrNull()) ?: target)
+        else -> stringResource(R.string.e_other_line, Format.clock(target.toLongOrNull() ?: 0))
+    }
+    val p = o.value as? JsonPrimitive
+    val value = if (kind == "done") {
+        stringResource(if (p?.booleanOrNull == true) R.string.e_ticked else R.string.e_unticked)
+    } else {
+        "「${p?.contentOrNull.orEmpty()}」"
+    }
+    val made = stringResource(if (o.fromComputer) R.string.e_from_computer else R.string.e_from_phone, value)
+    Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { onTake(o) }.padding(vertical = 7.dp)) {
+        T("$about · $made", size = 13.sp, color = pal.t3, medium = true)
+        T(stringResource(R.string.e_take), size = 12.sp, color = pal.t2, medium = true, modifier = Modifier.padding(top = 2.dp))
+    }
+}
+
+@Composable
+private fun TaskLine(t: MeetingDoc.Entry, onPlayAt: (Long?) -> Unit, onTick: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(vertical = 11.dp)) {
         Box(
-            Modifier.padding(top = 2.dp).size(16.dp).clip(RoundedCornerShape(4.dp))
+            Modifier.clickable(role = Role.Checkbox, onClick = onTick).padding(top = 2.dp, end = 4.dp)
+                .size(16.dp).clip(RoundedCornerShape(4.dp))
                 .border(1.5.dp, if (t.done) pal.t3 else pal.t1, RoundedCornerShape(4.dp))
                 .background(if (t.done) pal.t3 else Color.Transparent),
         )

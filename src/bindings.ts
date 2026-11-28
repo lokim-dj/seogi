@@ -1314,6 +1314,29 @@ async seogiSetMeetingInfo(id: string, info: MeetingInfo) : Promise<Result<null, 
 }
 },
 /**
+ * The things changed both here and on the phone that say different
+ * things: the other change, kept as a faint line under the one that stands.
+ */
+async seogiEditConflicts(id: string) : Promise<Result<Conflict[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_edit_conflicts", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Takes the faint line's change instead of the one that stands.
+ */
+async seogiTakeOtherEdit(id: string, key: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_take_other_edit", { id, key }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Ticks a task of the minutes off, or back on.
  */
 async seogiSetActionDone(id: string, section: string, index: number, done: boolean) : Promise<Result<null, string>> {
@@ -2470,6 +2493,20 @@ drive_upload_audio: boolean;
  * is. On for a new install.
  */
 dictation: DictationConfig }
+/**
+ * Two changes of one thing that say different things: the later one
+ * stands, the other is kept to be taken instead.
+ */
+export type Conflict = { key: string; 
+/**
+ * The change that lost, as text for the screen (`true`/`false` for a
+ * task's tick).
+ */
+other: string; 
+/**
+ * Where the change that lost was made.
+ */
+other_side: Side; other_at_ms: number }
 /**
  * A word the user's vocabulary corrected, and where: the minutes list these
  * so a reader can see what was changed after the speech model.
@@ -3694,6 +3731,10 @@ export type ShortcutActivation =
  */
 "hold_or_toggle"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
+/**
+ * Which side made a change.
+ */
+export type Side = "computer" | "phone"
 /**
  * Where a tool stands on this computer.
  */

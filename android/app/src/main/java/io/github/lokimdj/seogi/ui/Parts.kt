@@ -16,6 +16,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -295,6 +299,45 @@ fun ConfirmDialog(
                 T(
                     confirm, size = 14.sp, color = pal.rt,
                     modifier = Modifier.clickable(role = Role.Button) { onConfirm(checked) }.padding(12.dp),
+                )
+            }
+        }
+    }
+}
+
+/** A quiet in-app question that asks for words: a title, a text field, two keys. */
+@Composable
+fun TextDialog(
+    title: String,
+    initial: String,
+    confirm: String,
+    cancel: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var text by remember { mutableStateOf(initial) }
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(pal.s1)
+                .padding(start = 22.dp, end = 22.dp, top = 20.dp, bottom = 8.dp),
+        ) {
+            T(title, size = 16.sp)
+            BasicTextField(
+                value = text,
+                onValueChange = { text = it },
+                textStyle = TextStyle(fontFamily = Gmarket, fontWeight = FontWeight.Medium, fontSize = 15.sp, color = pal.t1),
+                cursorBrush = SolidColor(pal.t1),
+                modifier = Modifier.fillMaxWidth().padding(top = 14.dp)
+                    .border(1.dp, pal.line, RoundedCornerShape(8.dp)).padding(12.dp),
+            )
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.End) {
+                T(
+                    cancel, size = 14.sp, color = pal.t3, medium = true,
+                    modifier = Modifier.clickable(role = Role.Button, onClick = onDismiss).padding(12.dp),
+                )
+                T(
+                    confirm, size = 14.sp,
+                    modifier = Modifier.clickable(role = Role.Button) { onConfirm(text.trim()) }.padding(12.dp),
                 )
             }
         }

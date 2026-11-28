@@ -36,8 +36,8 @@ left alone.
   left beside it; otherwise the text goes up without it and the recording
   follows when there is room.
 - Only the computer writes `전사.txt`, `회의록.md` and `회의.json`. Changes made
-  on either side will go to `고친것-컴퓨터.json` and `고친것-폰.json`, one file
-  per device (a later stage).
+  on either side go to `고친것-컴퓨터.json` and `고친것-폰.json`, one file per
+  device, each written only by its own device (below).
 - "드라이브에서 빼기" moves a meeting's folder to Drive's trash. Nothing is
   deleted for good.
 
@@ -57,6 +57,50 @@ network. A meeting whose folder went to the trash leaves the phone's list.
   by `appProperties seogi_rec` on the moved files (by the file name for files
   uploaded before that was written), and shows as one line; it plays the
   phone's own copy, nothing is downloaded.
+
+## Changes made on either side
+
+A task ticked, a line fixed or a speaker named can be changed on the computer
+and on the phone. Each device keeps its latest change of each thing, with the
+time it was made, in its own file in the meeting's folder:
+
+```json
+{
+  "format": 1,
+  "device": "phone",
+  "meeting": "20261127-100000-1a2b",
+  "edits": [
+    { "key": "done:3f9a0c12b7de", "value": true, "at_ms": 1795741800000 },
+    {
+      "key": "line:61000",
+      "value": "견적서는 금요일까지",
+      "at_ms": 1795741900000
+    },
+    { "key": "speaker:1", "value": "가", "at_ms": 1795742000000 }
+  ]
+}
+```
+
+- Keys: `done:<task id>` (`true`/`false`), `line:<start_ms>` (the line as the
+  user reads it), `speaker:<id>` (the speaker's name).
+- For each key changed on either side, the later change stands; at the very
+  same `at_ms`, the computer's. Both sides decide it the same way.
+- When a meeting is transcribed or its minutes written again, the changes so
+  far were for what was replaced: the computer sets them aside and writes the
+  moment in `회의.json` as `edits_since`; both sides leave changes made before
+  it alone.
+- A folder may hold more than one `고친것-폰.json` (two phones, or a reply
+  lost while one was made): the computer reads them as one, the latest change
+  of each key, and the phone writes to the one there before making one.
+- The change that did not stand, when it says something else, is shown on
+  both sides as a faint line under "다르게 고친 것"; pressing it takes that
+  change instead, as made now. Nothing is dropped without a trace.
+- The computer reads every `고친것-폰.json` with one search, when its Drive
+  `version` changed, makes the phone's standing changes to the meeting (a line
+  keeps the words heard beside the user's; the recording is never touched)
+  and puts `회의.json` and `회의록.md` up again. The phone reads
+  `고친것-컴퓨터.json` with the meeting's other files and shows the minutes
+  with every standing change, also before `회의.json` has them.
 
 ## `회의.json`
 
@@ -94,6 +138,7 @@ Fields are only ever added; `format` changes only if one changes meaning.
     { "key": "actions", "title": "할 일", "kind": "tasks", "entries": [] }
   ],
   "marks_ms": [120000],
+  "edits_since": 0,
   "speakers": [{ "id": 1, "name": "화자 1" }],
   "lines": [{ "start_ms": 0, "end_ms": 4200, "speaker": 1, "text": "…" }]
 }

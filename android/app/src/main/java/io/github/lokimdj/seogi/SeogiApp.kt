@@ -81,7 +81,18 @@ class SeogiApp : Application() {
         scope.launch {
             val outcome = meetings.refresh()
             meetingsProblem.value = outcome.takeIf { it != MeetingLibrary.Outcome.DONE }
+            if (outcome == MeetingLibrary.Outcome.DONE) meetings.pushEdits()
         }
+    }
+
+    /**
+     * A change made on the phone (a task ticked, a line fixed, a speaker
+     * named): kept at once, and sent to the meeting's Drive folder for the
+     * computer. Changes waiting go again at the next look at the folder.
+     */
+    fun editMeeting(id: String, key: String, value: kotlinx.serialization.json.JsonElement) {
+        meetings.edit(id, key, value)
+        scope.launch { meetings.pushEdits() }
     }
 
     /** A recording could not be saved; it stays for the next start. Shown in red on the home. */

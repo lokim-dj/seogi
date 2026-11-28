@@ -1002,6 +1002,8 @@ pub fn run(cli_args: CliArgs) {
             seogi::commands::seogi_set_mark_note,
             seogi::commands::seogi_set_meeting_info,
             seogi::commands::seogi_set_action_done,
+            seogi::commands::seogi_edit_conflicts,
+            seogi::commands::seogi_take_other_edit,
             seogi::commands::seogi_edit_task,
             seogi::commands::seogi_remove_task,
             seogi::commands::seogi_restore_task,

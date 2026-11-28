@@ -25,6 +25,8 @@ data class MeetingDoc(
     val story: List<StoryPart> = emptyList(),
     val sections: List<Section> = emptyList(),
     @SerialName("marks_ms") val marksMs: List<Long> = emptyList(),
+    /** Changes made before this (ms since 1970) were for a transcript or minutes since replaced. */
+    @SerialName("edits_since") val editsSince: Long = 0,
     val speakers: List<Speaker> = emptyList(),
     val lines: List<Line> = emptyList(),
 ) {

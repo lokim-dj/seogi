@@ -15,6 +15,7 @@ use super::app::{
 use super::calendar::{self, Event, TitleRule};
 use super::config::{self, Config};
 use super::dictation::{self, Dictation, DictationStatus};
+use super::edits::Conflict;
 use super::llm::{self, Provider};
 use super::mac_calendar::{self, MacCalendar};
 use super::phone::PhoneStatus;
@@ -183,6 +184,30 @@ pub async fn seogi_set_meeting_info(
 ) -> Result<(), String> {
     let secretary = secretary.inner().clone();
     off_screen(move || secretary.set_meeting_info(&id, info).map_err(text)).await
+}
+
+/// The things changed both here and on the phone that say different
+/// things: the other change, kept as a faint line under the one that stands.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_edit_conflicts(
+    secretary: State<'_, Arc<Secretary>>,
+    id: String,
+) -> Result<Vec<Conflict>, String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || Ok(secretary.edit_conflicts(&id))).await
+}
+
+/// Takes the faint line's change instead of the one that stands.
+#[tauri::command]
+#[specta::specta]
+pub async fn seogi_take_other_edit(
+    secretary: State<'_, Arc<Secretary>>,
+    id: String,
+    key: String,
+) -> Result<(), String> {
+    let secretary = secretary.inner().clone();
+    off_screen(move || secretary.take_other_edit(&id, &key).map_err(text)).await
 }
 
 /// Ticks a task of the minutes off, or back on.
