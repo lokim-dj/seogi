@@ -263,10 +263,10 @@ class DictationTest {
         assertEquals(listOf(Act.DragEnd), g.up(2000))
     }
 
-    @Test fun whileWritingATouchOnlyDrags() {
+    @Test fun whileWritingATouchDragsOrStopsWaiting() {
         val g = BubbleGesture(holdMs = 400, slop = 10f)
         assertEquals(emptyList<Act>(), g.down(0, 50f, 50f, Mode.WORKING))
-        assertEquals(emptyList<Act>(), g.up(1000))
+        assertEquals(listOf(Act.LetGo), g.up(1000))
         g.down(0, 50f, 50f, Mode.WORKING)
         assertEquals(listOf(Act.Move(30f, 0f)), g.move(80f, 50f))
         assertEquals(listOf(Act.DragEnd), g.up(500))
@@ -436,10 +436,11 @@ class DictationTest {
         assertFalse(KeyRule.wanted(Mode.IDLE, userHidden = false, meeting = false, followsTyping = true, typing = false))
     }
 
-    @Test fun listeningOrWritingKeepsTheKeyWhateverTheFocusDoes() {
+    @Test fun listeningOrWritingKeepsTheKeyWhileTypingEvenInAMeeting() {
         for (m in listOf(Mode.LISTENING, Mode.WORKING)) {
-            assertTrue(KeyRule.wanted(m, userHidden = false, meeting = false, followsTyping = true, typing = false))
-            assertTrue(KeyRule.wanted(m, userHidden = false, meeting = true, followsTyping = true, typing = false))
+            assertTrue(KeyRule.wanted(m, userHidden = false, meeting = false, followsTyping = true, typing = true))
+            assertTrue(KeyRule.wanted(m, userHidden = false, meeting = true, followsTyping = true, typing = true))
+            assertTrue(KeyRule.wanted(m, userHidden = false, meeting = false, followsTyping = false, typing = false))
         }
     }
 

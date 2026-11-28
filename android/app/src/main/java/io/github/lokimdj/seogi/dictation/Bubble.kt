@@ -93,7 +93,9 @@ object KeyFace {
  * - let go sooner: keep listening, and the next touch stops (tap, tap);
  * - move further than [slop] before letting go: it was a drag, the listening
  *   that just began is thrown away and the key follows the finger.
- * While the text is being made a touch only drags.
+ * While the text is being made a touch drags, or, let go where it began,
+ * stops waiting for the text ([Act.LetGo]): a key that seems stuck can
+ * always be put to rest.
  */
 class BubbleGesture(private val holdMs: Long = 400, private val slop: Float = 24f) {
     sealed interface Act {
@@ -102,6 +104,9 @@ class BubbleGesture(private val holdMs: Long = 400, private val slop: Float = 24
         data object Cancel : Act
         data class Move(val dx: Float, val dy: Float) : Act
         data object DragEnd : Act
+
+        /** Stop waiting for the text being made: the key rests, the words are copied when they come. */
+        data object LetGo : Act
     }
 
     enum class Mode { IDLE, LISTENING, WORKING }
@@ -111,6 +116,7 @@ class BubbleGesture(private val holdMs: Long = 400, private val slop: Float = 24
     private var downY = 0f
     private var startedHere = false
     private var stopOnUp = false
+    private var letGoOnUp = false
     private var dragging = false
 
     fun down(t: Long, x: Float, y: Float, mode: Mode): List<Act> {
@@ -118,6 +124,7 @@ class BubbleGesture(private val holdMs: Long = 400, private val slop: Float = 24
         dragging = false
         startedHere = mode == Mode.IDLE
         stopOnUp = mode == Mode.LISTENING
+        letGoOnUp = mode == Mode.WORKING
         return if (startedHere) listOf(Act.Start) else emptyList()
     }
 
@@ -138,6 +145,7 @@ class BubbleGesture(private val holdMs: Long = 400, private val slop: Float = 24
         startedHere && t - downAt >= holdMs -> listOf(Act.Stop)
         startedHere -> emptyList()
         stopOnUp -> listOf(Act.Stop)
+        letGoOnUp -> listOf(Act.LetGo)
         else -> emptyList()
     }
 
@@ -174,11 +182,15 @@ object Typing {
 /**
  * Whether the floating key should be on the screen right now.
  * - Hidden from the notification: hidden.
- * - Listening or making the text: shown, whatever the focus does, so the
- *   key the user is speaking into never vanishes.
+ * - With the accessibility service ([followsTyping]) and the user not typing
+ *   (the home screen, the lock screen): hidden, whatever the key is doing.
+ *   A key that listens or makes text must never be left on a screen with no
+ *   field (#96); listening that is hidden this way stops and writes, and
+ *   text made meanwhile still arrives.
+ * - Listening or making the text: shown, also while a meeting records.
  * - Seogi is recording a meeting: hidden (dictation cannot listen then).
  * - Without the accessibility service there is no way to tell when the user
- *   types ([followsTyping] false): always shown, as before.
+ *   types: always shown, as before.
  * - Otherwise: only while the user is typing.
  */
 object KeyRule {
@@ -190,6 +202,7 @@ object KeyRule {
         typing: Boolean,
     ): Boolean = when {
         userHidden -> false
+        followsTyping && !typing -> false
         mode != BubbleGesture.Mode.IDLE -> true
         meeting -> false
         !followsTyping -> true
@@ -222,14 +235,15 @@ class KeyPresence(private val showAfterMs: Long = 120, private val hideAfterMs: 
      * Feed what is wanted at [now]. Returns 0 when [shown] just changed (apply
      * it), the milliseconds to wait before calling again, or null when
      * nothing is pending. [atOnce] skips the wait (a choice from the user).
+     * [hideAfter] replaces the usual wait before hiding (longer while listening).
      */
-    fun update(wanted: Boolean, now: Long, atOnce: Boolean = false): Long? {
+    fun update(wanted: Boolean, now: Long, atOnce: Boolean = false, hideAfter: Long = hideAfterMs): Long? {
         if (wanted != want) {
             want = wanted
             since = now
         }
         if (want == shown) return null
-        val wait = (if (want) showAfterMs else hideAfterMs) - (now - since)
+        val wait = (if (want) showAfterMs else hideAfter) - (now - since)
         if (atOnce || wait <= 0) {
             shown = want
             return 0

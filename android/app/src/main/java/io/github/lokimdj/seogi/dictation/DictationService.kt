@@ -90,7 +90,7 @@ class DictationService : Service() {
     /** The user left the key on, as last read from [DictationPrefs]. */
     private var on = false
     private val way get() = KeyKeeper.way(bound)
-    private val presence = KeyPresence()
+    private val presence = KeyPresence(hideAfterMs = HIDE_AFTER_MS)
     private val settle = Runnable { refresh() }
     private var followsShown: Boolean? = null
     private var destroyed = false
@@ -222,7 +222,8 @@ class DictationService : Service() {
         }
         val alive = KeyKeeper.alive(way, foreground, on)
         val want = alive && KeyRule.wanted(mode, hidden, meeting, follows, InsertService.typing)
-        val wait = presence.update(want, SystemClock.uptimeMillis(), atOnce || !alive)
+        val hideAfter = if (mode == BubbleGesture.Mode.LISTENING) KeyWork.LISTEN_HIDE_MS else HIDE_AFTER_MS
+        val wait = presence.update(want, SystemClock.uptimeMillis(), atOnce || !alive, hideAfter)
         if (wait != null && wait > 0) main.postDelayed(settle, wait)
         // Put up again when the way changed: the accessibility overlay belongs to that service.
         if (view != null && viewWay != way) removeBubble()
@@ -308,7 +309,9 @@ class DictationService : Service() {
         params = null
         keyWm = null
         viewWay = null
-        if (mode == BubbleGesture.Mode.LISTENING) cancelListening()
+        // The key goes while listening (the user left the field, the screen
+        // locked): what was said is kept, typed if a field still takes it, or copied.
+        if (mode == BubbleGesture.Mode.LISTENING) stopAndWrite()
         try { host.removeView(v) } catch (_: Exception) {}
     }
 
@@ -420,6 +423,7 @@ class DictationService : Service() {
             BubbleGesture.Act.Start -> startListening()
             BubbleGesture.Act.Stop -> stopAndWrite()
             BubbleGesture.Act.Cancel -> cancelListening()
+            BubbleGesture.Act.LetGo -> letGo()
             is BubbleGesture.Act.Move -> {
                 val p = params ?: return
                 val (w, h) = dragScreen
@@ -438,12 +442,12 @@ class DictationService : Service() {
         }
     }
 
-    /** A tap from TalkBack: start, or stop and write. */
+    /** A tap from TalkBack: start, stop and write, or stop waiting for the text. */
     private fun tap() {
         when (mode) {
             BubbleGesture.Mode.IDLE -> startListening()
             BubbleGesture.Mode.LISTENING -> stopAndWrite()
-            BubbleGesture.Mode.WORKING -> {}
+            BubbleGesture.Mode.WORKING -> letGo()
         }
     }
 
@@ -476,7 +480,10 @@ class DictationService : Service() {
             toast(getString(R.string.dict_err_mic_silenced))
             return
         }
-        val m = Mic(onFull = { main.post { if (mode == BubbleGesture.Mode.LISTENING) stopAndWrite() } })
+        var self: Mic? = null
+        // Stopped on its own (full, or Android stopped sending sound): write what was heard.
+        val m = Mic(onEnd = { main.post { if (mic != null && mic === self) stopAndWrite() } })
+        self = m
         if (!m.start()) {
             settleForeground()
             toast(getString(R.string.dict_err_mic_busy))
@@ -488,7 +495,11 @@ class DictationService : Service() {
         // Load the model while the user is still speaking, once the touch is
         // not a drag (a drag cancels this before it runs).
         main.postDelayed(warm, WARM_AFTER_MS)
+        main.postDelayed(listenCap, KeyWork.LISTEN_CAP_MS)
     }
+
+    /** A microphone that stopped sending sound never fills up: listening ends here all the same. */
+    private val listenCap = Runnable { if (mode == BubbleGesture.Mode.LISTENING) stopAndWrite() }
 
     private val warm = Runnable {
         engineScope.launch {
@@ -498,14 +509,29 @@ class DictationService : Service() {
 
     private fun cancelListening() {
         main.removeCallbacks(warm)
+        main.removeCallbacks(listenCap)
         mic?.cancel()
         mic = null
         settleForeground()
         if (mode == BubbleGesture.Mode.LISTENING) setMode(BubbleGesture.Mode.IDLE)
     }
 
+    /** Counts the runs; [waitingFor] is the one the key turns for (0: none); [inFlight] are under way. */
+    private var runs = 0
+    private var waitingFor = 0
+    private var inFlight = 0
+
+    /** Making the text took far too long: the key stops waiting ([KeyWork.workCapMs]). */
+    private val workCap = Runnable { letGo() }
+
     private fun stopAndWrite() {
-        val m = mic ?: return
+        main.removeCallbacks(listenCap)
+        val m = mic
+        if (m == null) {
+            // Nothing to write; never leave the key listening to nothing.
+            if (mode == BubbleGesture.Mode.LISTENING) setMode(BubbleGesture.Mode.IDLE)
+            return
+        }
         mic = null
         val pcm = m.stop()
         // The microphone is closed: the accessibility way leaves the foreground now, before the writing.
@@ -521,7 +547,18 @@ class DictationService : Service() {
             toast(getString(R.string.dict_err_mic_silenced))
             return
         }
-        setMode(BubbleGesture.Mode.WORKING)
+        val run = ++runs
+        if (KeyWork.turns(inFlight)) {
+            waitingFor = run
+            // Armed before anything else can go wrong, so the key always comes back to rest.
+            main.postDelayed(workCap, KeyWork.workCapMs(pcm.size))
+            setMode(BubbleGesture.Mode.WORKING)
+        } else {
+            // An earlier run still holds the engine: this one waits its turn without the key.
+            setMode(BubbleGesture.Mode.IDLE)
+            toast(getString(R.string.dict_queued))
+        }
+        inFlight++
         ui.launch {
             val text = try {
                 withContext(engineContext) {
@@ -533,13 +570,37 @@ class DictationService : Service() {
                 Log.w(TAG, "transcription failed", e)
                 null
             }
-            setMode(BubbleGesture.Mode.IDLE)
-            when {
-                text == null -> toast(getString(R.string.dict_err_failed))
-                text.isEmpty() -> toast(getString(R.string.dict_heard_nothing))
-                else -> deliver(text)
+            inFlight--
+            val waited = waitingFor == run
+            if (waited) {
+                waitingFor = 0
+                main.removeCallbacks(workCap)
+                setMode(BubbleGesture.Mode.IDLE)
+            } else {
+                Log.i(TAG, "the text came after the key stopped waiting")
+            }
+            when (KeyWork.end(text, waited)) {
+                KeyWork.End.TYPE -> deliver(text.orEmpty())
+                KeyWork.End.COPY -> copy(text.orEmpty())
+                KeyWork.End.FAILED -> toast(getString(R.string.dict_err_failed))
+                KeyWork.End.HEARD_NOTHING -> toast(getString(R.string.dict_heard_nothing))
+                KeyWork.End.QUIET -> {}
             }
         }
+    }
+
+    /**
+     * Stops waiting for the text (the time cap, or the user tapped the turning
+     * key): the key rests now, and the run goes on; its words are copied when
+     * they come ([KeyWork.end]).
+     */
+    private fun letGo() {
+        main.removeCallbacks(workCap)
+        if (mode != BubbleGesture.Mode.WORKING) return
+        Log.w(TAG, "stopped waiting for the text")
+        waitingFor = 0
+        setMode(BubbleGesture.Mode.IDLE)
+        toast(getString(R.string.dict_slow))
     }
 
     /** Into the field with the cursor; when there is none (or no accessibility), onto the clipboard. */
@@ -552,7 +613,10 @@ class DictationService : Service() {
             Log.i(TAG, "copying instead of typing: the insert failed", e)
             false
         }
-        if (typed) return
+        if (!typed) copy(text)
+    }
+
+    private fun copy(text: String) {
         getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText(getString(R.string.app_name), text))
         toast(getString(R.string.dict_copied))
     }
@@ -631,6 +695,8 @@ class DictationService : Service() {
         destroyed = true
         main.removeCallbacks(warm)
         main.removeCallbacks(settle)
+        main.removeCallbacks(listenCap)
+        main.removeCallbacks(workCap)
         InsertService.listener = null
         InsertService.keystroke = null
         try { getSystemService(AudioManager::class.java).unregisterAudioRecordingCallback(recordings) } catch (_: Exception) {}
@@ -654,6 +720,8 @@ class DictationService : Service() {
         /** The least room at each side, wider than the back gesture strips of common phones. */
         private const val EDGE_DP = 28
         private const val WARM_AFTER_MS = 250L
+        /** How long the wish to hide the key must hold before it goes, at rest or making text. */
+        private const val HIDE_AFTER_MS = 300L
         /** The model is let go after this long without speaking. */
         const val IDLE_MS = 3 * 60_000L
         private const val ACTION_HIDE = "io.github.lokimdj.seogi.dictation.HIDE"
