@@ -198,8 +198,9 @@
     <string name="action_dictation_off">끄기</string>
     <string name="bubble_idle">말로 입력 · 눌러서 말하기</string>
     <string name="bubble_listening">말로 입력 · 듣는 중 · 다시 누르면 끝</string>
-    <string name="bubble_working">말로 입력 · 글자로 바꾸는 중</string>
+    <string name="bubble_working">말로 입력 · 글자로 바꾸는 중 · 누르면 기다리지 않기</string>
     <string name="dict_copied">복사했어요, 붙여 넣으세요</string>
+    <string name="dict_slow">기다리지 않아도 돼요. 글자가 다 되면 복사해 둘게요.</string>
     <string name="dict_heard_nothing">말소리를 듣지 못했어요</string>
     <string name="dict_err_failed">글자로 바꾸지 못했어요. 다시 해 보세요.</string>
     <string name="dict_err_mic_permission">마이크를 허용해야 말로 입력할 수 있어요. 서기를 열어 허용해 주세요.</string>

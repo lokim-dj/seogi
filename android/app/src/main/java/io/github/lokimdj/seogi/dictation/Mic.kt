@@ -9,8 +9,13 @@ import android.media.MediaRecorder
  * The microphone while the floating key listens: 16 kHz mono, kept in memory
  * only. Nothing is written to a file and nothing leaves the phone; the sound
  * is dropped as soon as it has become text.
+ *
+ * [onEnd] is called (on the microphone's thread) when listening stops on its
+ * own: the longest speech was reached, or Android stopped sending sound (the
+ * microphone was taken away or failed). Without it the key would listen on
+ * for nothing.
  */
-class Mic(private val onFull: () -> Unit) {
+class Mic(private val onEnd: () -> Unit) {
     private var record: AudioRecord? = null
     private var reader: Thread? = null
     @Volatile private var running = false
@@ -50,7 +55,14 @@ class Mic(private val onFull: () -> Unit) {
             val chunk = ShortArray(rate / 10)
             while (running) {
                 val n = rec.read(chunk, 0, chunk.size)
-                if (n < 0) break
+                if (n < 0) {
+                    // An error, not our stop (that clears running first): what was heard so far is kept.
+                    if (running) {
+                        running = false
+                        onEnd()
+                    }
+                    break
+                }
                 if (n == 0) continue
                 synchronized(this) {
                     if (size + n > buf.size) buf = buf.copyOf(maxOf(buf.size * 2, size + n))
@@ -59,7 +71,7 @@ class Mic(private val onFull: () -> Unit) {
                 }
                 if (size >= Speech.MAX_SAMPLES) {
                     running = false
-                    onFull()
+                    onEnd()
                 }
             }
         }, "seogi-mic").apply { start() }
