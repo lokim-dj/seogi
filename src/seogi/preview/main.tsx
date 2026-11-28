@@ -1465,7 +1465,7 @@ async function show() {
     const { default: Banner } = await import("../banner/Banner");
     document.body.style.background = "#d9dbdf";
     root.render(
-      <div style={{ width: screen === "banner-starting" ? 680 : 324 }}>
+      <div style={{ width: screen === "banner-starting" ? 584 : 312 }}>
         <Banner />
       </div>,
     );
