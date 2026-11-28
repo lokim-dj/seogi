@@ -18,14 +18,14 @@ fun localValue(key: String, env: String): String? =
 
 android {
     namespace = "io.github.lokimdj.seogi"
-    compileSdk = 35
+    compileSdk = 36
     buildToolsVersion = "35.0.0"
 
     defaultConfig {
         applicationId = "io.github.lokimdj.seogi"
         minSdk = 33
-        targetSdk = 35
-        versionCode = 1
+        targetSdk = 36
+        versionCode = 2
         versionName = "0.1.0"
         // Optional: a Web OAuth client ID lets the app show Google's account
         // picker (Credential Manager) before asking for Drive. Drive itself

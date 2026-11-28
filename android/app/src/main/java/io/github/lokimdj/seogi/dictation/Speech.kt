@@ -121,21 +121,79 @@ object Inserter {
  * 2. else the last field that took text while the user was typing, if it is
  *    still on the screen (touching the key or the keyboard closing can move
  *    the focus away); it gets the focus back first;
- * 3. else none: the text is copied, and [Choice.why] says why for the log.
+ * 3. else the field inside the focused part, when that part takes no text
+ *    itself ([inside], see [InnerField]); asked only here, as finding it
+ *    walks the part's children;
+ * 4. else none: the text is copied, and [Choice.why] says why for the log.
  */
 object InsertTarget {
     data class Choice<F>(val field: F?, val refocus: Boolean, val why: String)
 
-    fun <F> pick(focused: F?, remembered: F?, editable: (F) -> Boolean, onScreen: (F) -> Boolean): Choice<F> {
+    fun <F> pick(
+        focused: F?,
+        remembered: F?,
+        editable: (F) -> Boolean,
+        onScreen: (F) -> Boolean,
+        inside: (F) -> F? = { null },
+    ): Choice<F> {
         if (focused != null && editable(focused)) return Choice(focused, refocus = false, why = "focused field")
         val now = when {
             focused == null -> "no focused field"
             else -> "focused field takes no text"
         }
-        if (remembered == null) return Choice(null, false, "$now, none remembered")
-        if (remembered == focused) return Choice(null, false, "$now, the remembered one is it")
-        if (!onScreen(remembered)) return Choice(null, false, "$now, the remembered one is gone")
-        if (!editable(remembered)) return Choice(null, false, "$now, the remembered one takes no text")
-        return Choice(remembered, refocus = true, why = "$now, using the remembered field")
+        val rememberedNot = when {
+            remembered == null -> "none remembered"
+            remembered == focused -> "the remembered one is it"
+            !onScreen(remembered) -> "the remembered one is gone"
+            !editable(remembered) -> "the remembered one takes no text"
+            else -> return Choice(remembered, refocus = true, why = "$now, using the remembered field")
+        }
+        val inner = focused?.let(inside)
+        if (inner != null && editable(inner)) {
+            return Choice(inner, refocus = false, why = "$now, $rememberedNot, using the field inside it")
+        }
+        val innerNot = if (focused == null) "" else ", none inside it"
+        return Choice(null, false, "$now, $rememberedNot$innerNot")
+    }
+}
+
+/**
+ * The text field inside a focused part that takes no text itself. Some apps
+ * give the input focus to a scrolling frame around the field (Samsung Notes'
+ * body: a ScrollView with the EditText inside, which never reports a cursor
+ * change). Among the fields under [top], in this order:
+ * 1. the one with the input focus, if it is the only one;
+ * 2. else the one with a cursor position, if it is the only one;
+ * 3. else the only field there is;
+ * 4. else none (several fields and nothing tells which): the text is copied.
+ *
+ * At most [limit] parts are looked at, so a long list cannot stall the key;
+ * when the walk stops early only rule 1 is used (a field could be unseen,
+ * but the input focus is never on two).
+ */
+object InnerField {
+    fun <F> pick(
+        top: F,
+        children: (F) -> List<F>,
+        editable: (F) -> Boolean,
+        focused: (F) -> Boolean,
+        hasCursor: (F) -> Boolean,
+        limit: Int = 300,
+    ): F? {
+        val fields = ArrayList<F>()
+        val queue = ArrayDeque(children(top))
+        var seen = 0
+        while (queue.isNotEmpty()) {
+            if (seen >= limit) break
+            val n = queue.removeFirst()
+            seen++
+            // A field's own parts are not fields of their own.
+            if (editable(n)) fields.add(n) else queue.addAll(children(n))
+        }
+        val complete = queue.isEmpty()
+        fields.filter(focused).singleOrNull()?.let { return it }
+        if (!complete) return null
+        fields.filter(hasCursor).singleOrNull()?.let { return it }
+        return fields.singleOrNull()
     }
 }

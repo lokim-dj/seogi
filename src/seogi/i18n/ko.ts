@@ -1158,7 +1158,7 @@ const ko = {
     startingNow: "지금 시작하는 일정입니다",
     startingSoon: "{{n}}분 뒤에 시작하는 일정입니다",
     record: "녹음 시작",
-    later: "닫기",
+    close: "닫기",
     mute: "이 일정 알림 끄기",
     startLabel: "일정 시작 알림",
     readyLabel: "정리 끝 알림",
