@@ -28,6 +28,32 @@ class MeetingLookTest {
         assertTrue(look.start(signedIn = true, nowMs = 20, now = true))
     }
 
+    @Test fun aPullDuringAReadIsDropped() {
+        val look = MeetingLook()
+        assertTrue(look.start(signedIn = true, nowMs = 0, now = false))
+        assertFalse(look.start(signedIn = true, nowMs = 10, now = true, pull = true))
+        assertFalse(look.done())
+    }
+
+    @Test fun aReadAfterSignInWaitsForTheRunningOne() {
+        val look = MeetingLook()
+        assertTrue(look.start(signedIn = true, nowMs = 0, now = false))
+        assertFalse(look.start(signedIn = true, nowMs = 10, now = true))
+        assertTrue(look.done())
+        assertFalse(look.done())
+    }
+
+    @Test fun onlyAPulledReadShowsTheRing() {
+        val look = MeetingLook()
+        assertTrue(look.start(signedIn = true, nowMs = 0, now = false))
+        assertFalse(look.pulled.value)
+        look.done()
+        assertTrue(look.start(signedIn = true, nowMs = 10, now = true, pull = true))
+        assertTrue(look.pulled.value)
+        look.done()
+        assertFalse(look.pulled.value)
+    }
+
     @Test fun notSignedInEndsAtOnce() {
         val look = MeetingLook()
         assertFalse(look.start(signedIn = false, nowMs = 0, now = true))

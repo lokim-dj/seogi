@@ -618,7 +618,7 @@ class MainActivity : ComponentActivity() {
                     a11yProblem = dictOn && A11yHealth.needsFix(a11y),
                     onFixA11y = ::openAccessibilitySettings,
                     reading = readingMeetings,
-                    onPull = { app.refreshMeetings(now = true) },
+                    onPull = { app.refreshMeetings(now = true, pull = true) },
                 )
                 Screen.RECORDING -> RecordingScreen(
                     rec = rec,
@@ -653,7 +653,7 @@ class MainActivity : ComponentActivity() {
                         if (meetingsProblem == MeetingLibrary.Outcome.NEED_LOGIN) login() else app.refreshMeetings(now = true)
                     },
                     reading = readingMeetings,
-                    onPull = { app.refreshMeetings(now = true) },
+                    onPull = { app.refreshMeetings(now = true, pull = true) },
                 )
                 Screen.MEETING -> {
                     val e = entries.firstOrNull { it.key == openEntry }

@@ -18,7 +18,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -36,7 +35,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import io.github.lokimdj.seogi.R
-import kotlinx.coroutines.launch
 
 /** The arithmetic of pulling a list down to read it again (issue #102). */
 object Pull {
@@ -63,7 +61,9 @@ private const val TURN_MS = 1500
  * A list that reads the shared folder again when pulled down. The Seogi
  * mark is the sign: it follows the pull, turns slowly while [reading], then
  * stops and goes. With motion reduced it fades in and out instead of turning.
- * [onPull] decides whether a read really starts (and never two at once).
+ * [onPull] decides whether a read really starts (and never two at once);
+ * [reading] is true only for a read that came from a pull, so reads on
+ * opening the app neither show the ring nor move the list.
  */
 @Composable
 fun PullToRead(reading: Boolean, onPull: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
@@ -74,7 +74,6 @@ fun PullToRead(reading: Boolean, onPull: () -> Unit, modifier: Modifier = Modifi
     val reduce = LocalReduceMotion.current
     val pullNow by rememberUpdatedState(onPull)
     val readingNow by rememberUpdatedState(reading)
-    val scope = rememberCoroutineScope()
     val spin = remember { Animatable(0f) }
     var pulled by remember { mutableFloatStateOf(0f) }
 
@@ -89,7 +88,7 @@ fun PullToRead(reading: Boolean, onPull: () -> Unit, modifier: Modifier = Modifi
             }
 
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                // At the top and still going down: that is the pull. Not while a read runs.
+                // At the top and still going down: that is the pull. Not while a pulled read runs.
                 if (source != NestedScrollSource.UserInput || available.y <= 0f || readingNow) return Offset.Zero
                 pulled = Pull.drag(pulled, available.y, max)
                 return Offset(0f, available.y)
@@ -98,8 +97,8 @@ fun PullToRead(reading: Boolean, onPull: () -> Unit, modifier: Modifier = Modifi
             override suspend fun onPreFling(available: Velocity): Velocity {
                 if (pulled <= 0f) return Velocity.Zero
                 val at = pulled
-                scope.launch { spin.snapTo(Pull.turn(at, threshold)) }
                 pulled = 0f
+                spin.snapTo(Pull.turn(at, threshold))
                 if (Pull.reads(at, threshold)) pullNow()
                 return available
             }

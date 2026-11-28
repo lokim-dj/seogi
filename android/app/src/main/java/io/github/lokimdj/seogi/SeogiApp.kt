@@ -79,24 +79,27 @@ class SeogiApp : Application() {
     val meetingsProblem = MutableStateFlow<MeetingLibrary.Outcome?>(null)
     private val look = MeetingLook()
 
-    /** A look at the shared folder is under way: the lists' ring turns (issue #102). */
-    val readingMeetings: StateFlow<Boolean> get() = look.reading
+    /** A look the user pulled the list for is under way: the lists' ring turns (issue #102). */
+    val readingMeetings: StateFlow<Boolean> get() = look.pulled
 
     /**
      * Looks at the shared Drive folder for new or changed meetings, at most
-     * once a minute unless [now] (a pull on the list). Does nothing before
-     * the first sign-in, or while a look is already under way.
+     * once a minute unless [now]. Does nothing before the first sign-in. A
+     * [pull] on the list while a look runs is dropped; any other call with
+     * [now] runs once that look ends.
      */
-    fun refreshMeetings(now: Boolean = false) {
-        if (!look.start(settings.email.value != null, System.currentTimeMillis(), now)) return
+    fun refreshMeetings(now: Boolean = false, pull: Boolean = false) {
+        if (!look.start(settings.email.value != null, System.currentTimeMillis(), now, pull)) return
         scope.launch {
+            var again = false
             val outcome = try {
                 meetings.refresh()
             } finally {
-                look.done()
+                again = look.done()
             }
             meetingsProblem.value = outcome.takeIf { it != MeetingLibrary.Outcome.DONE }
             if (outcome == MeetingLibrary.Outcome.DONE) meetings.pushEdits()
+            if (again) refreshMeetings(now = true)
         }
     }
 
