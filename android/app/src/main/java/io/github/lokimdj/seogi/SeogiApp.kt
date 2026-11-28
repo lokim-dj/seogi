@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.MediaStore
 import io.github.lokimdj.seogi.data.ListEntry
 import io.github.lokimdj.seogi.data.MeetingLibrary
+import io.github.lokimdj.seogi.data.MeetingLook
 import io.github.lokimdj.seogi.data.PhoneFile
 import io.github.lokimdj.seogi.data.Reconcile
 import io.github.lokimdj.seogi.data.RecordingStore
@@ -27,6 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.io.File
 import java.time.ZoneId
@@ -75,21 +77,29 @@ class SeogiApp : Application() {
 
     /** How the last look at the shared folder went; null while it went fine. */
     val meetingsProblem = MutableStateFlow<MeetingLibrary.Outcome?>(null)
-    private var lastLook = 0L
+    private val look = MeetingLook()
+
+    /** A look the user pulled the list for is under way: the lists' ring turns (issue #102). */
+    val readingMeetings: StateFlow<Boolean> get() = look.pulled
 
     /**
      * Looks at the shared Drive folder for new or changed meetings, at most
-     * once a minute unless [now]. Does nothing before the first sign-in.
+     * once a minute unless [now]. Does nothing before the first sign-in. A
+     * [pull] on the list while a look runs is dropped; any other call with
+     * [now] runs once that look ends.
      */
-    fun refreshMeetings(now: Boolean = false) {
-        if (settings.email.value == null) return
-        val t = System.currentTimeMillis()
-        if (!now && t - lastLook < 60_000) return
-        lastLook = t
+    fun refreshMeetings(now: Boolean = false, pull: Boolean = false) {
+        if (!look.start(settings.email.value != null, System.currentTimeMillis(), now, pull)) return
         scope.launch {
-            val outcome = meetings.refresh()
+            var again = false
+            val outcome = try {
+                meetings.refresh()
+            } finally {
+                again = look.done()
+            }
             meetingsProblem.value = outcome.takeIf { it != MeetingLibrary.Outcome.DONE }
             if (outcome == MeetingLibrary.Outcome.DONE) meetings.pushEdits()
+            if (again) refreshMeetings(now = true)
         }
     }
 

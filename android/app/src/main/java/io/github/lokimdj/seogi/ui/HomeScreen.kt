@@ -65,6 +65,8 @@ fun HomeScreen(
     onDeleteMeeting: (ListEntry) -> Unit = {},
     a11yProblem: Boolean = false,
     onFixA11y: () -> Unit = {},
+    reading: Boolean = false,
+    onPull: () -> Unit = {},
 ) {
     val zone = ZoneId.systemDefault()
     val eventLine: @Composable () -> Unit = {
@@ -179,25 +181,30 @@ fun HomeScreen(
                         keyBlock(minOf(240.dp, h * 0.42f))
                     }
                     Spacer(Modifier.width(40.dp))
-                    Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
-                        Spacer(Modifier.height(20.dp))
-                        recent()
+                    // Pulled down, the meetings are read from Drive again (#102).
+                    PullToRead(reading, onPull, Modifier.weight(1f).fillMaxHeight()) {
+                        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                            Spacer(Modifier.height(20.dp))
+                            recent()
+                        }
                     }
                 }
             }
         } else {
-            // Upright: one column that scrolls when the screen is short.
-            Column(
-                Modifier.fillMaxWidth().heightIn(min = maxHeight).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Column {
-                    bar()
-                    Spacer(Modifier.height(26.dp))
-                    eventLine()
-                    keyBlock(minOf(240.dp, h * 0.32f))
+            // Upright: one column that scrolls when the screen is short; pulled down, it reads the meetings again.
+            PullToRead(reading, onPull, Modifier.fillMaxSize()) {
+                Column(
+                    Modifier.fillMaxWidth().heightIn(min = h).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column {
+                        bar()
+                        Spacer(Modifier.height(26.dp))
+                        eventLine()
+                        keyBlock(minOf(240.dp, h * 0.32f))
+                    }
+                    Column(Modifier.padding(top = 24.dp)) { recent() }
                 }
-                Column(Modifier.padding(top = 24.dp)) { recent() }
             }
         }
     }

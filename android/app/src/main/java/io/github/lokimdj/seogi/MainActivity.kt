@@ -433,6 +433,7 @@ class MainActivity : ComponentActivity() {
         val saveProblem by app.saveProblem.collectAsState()
         val driveMeetings by app.meetings.all.collectAsState()
         val meetingsProblem by app.meetingsProblem.collectAsState()
+        val readingMeetings by app.readingMeetings.collectAsState()
         val editsChanged by app.meetings.editsChanged.collectAsState()
         val deletingMeetings by app.deletingMeetings.collectAsState()
         val entries = MeetingList.merge(recordings, driveMeetings.filter { it.id !in deletingMeetings })
@@ -616,6 +617,8 @@ class MainActivity : ComponentActivity() {
                     onDeleteMeeting = { deleteMeetingTarget = it },
                     a11yProblem = dictOn && A11yHealth.needsFix(a11y),
                     onFixA11y = ::openAccessibilitySettings,
+                    reading = readingMeetings,
+                    onPull = { app.refreshMeetings(now = true, pull = true) },
                 )
                 Screen.RECORDING -> RecordingScreen(
                     rec = rec,
@@ -649,6 +652,8 @@ class MainActivity : ComponentActivity() {
                     onRefresh = {
                         if (meetingsProblem == MeetingLibrary.Outcome.NEED_LOGIN) login() else app.refreshMeetings(now = true)
                     },
+                    reading = readingMeetings,
+                    onPull = { app.refreshMeetings(now = true, pull = true) },
                 )
                 Screen.MEETING -> {
                     val e = entries.firstOrNull { it.key == openEntry }
