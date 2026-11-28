@@ -41,6 +41,23 @@ left alone.
 - "드라이브에서 빼기" moves a meeting's folder to Drive's trash. Nothing is
   deleted for good.
 
+## How the phone reads it
+
+The phone lists the folders in `서기` that carry `seogi_meeting`, then the
+files in them (one search for many folders). A folder without `회의.json` is
+not ready yet and is left out. Each `회의.json` is read when it is new or its
+Drive `version` changed, and kept on the phone, so the minutes open without a
+network. A meeting whose folder went to the trash leaves the phone's list.
+
+- The recording is the file `audio.file` names (else the only file that is
+  not `.json`, `.txt` or `.md`). It is downloaded only when the user presses
+  play, into the app's cache; a download cut off goes on from where it
+  stopped. The file in Drive is only read.
+- A meeting recorded on the phone is matched with the phone's own recording
+  by `appProperties seogi_rec` on the moved files (by the file name for files
+  uploaded before that was written), and shows as one line; it plays the
+  phone's own copy, nothing is downloaded.
+
 ## `회의.json`
 
 Written last, so a phone may take the meeting as ready once it is there.

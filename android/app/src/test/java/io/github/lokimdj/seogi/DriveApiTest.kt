@@ -48,7 +48,7 @@ class DriveApiTest {
         assertEquals("F2", DriveApi(http).ensureFolder("t"))
         val body = http.lastBody!!
         assertTrue(body, body.contains("\"appProperties\":{\"seogi\":\"recordings-root\"}"))
-        assertTrue(body.contains("서기 폰 녹음"))
+        assertTrue(body.contains("\"name\":\"서기\""))
     }
 
     @Test fun sessionAddressComesFromLocation() {
@@ -145,5 +145,42 @@ class DriveApiTest {
         assertTrue(http.lastBody!!, http.lastBody!!.contains(mark))
         DriveApi(http).uploadSmall("t", "F", "a.json", "application/json", "{}".toByteArray(), "rec-1")
         assertTrue(http.lastBody!!, http.lastBody!!.contains(mark))
+    }
+
+    /** The phone reads the meetings' folders page after page, by their marker. */
+    @Test fun listsMeetingFoldersAcrossPages() {
+        val http = Fake(
+            HttpResponse(200, emptyMap(), """{"nextPageToken":"P2","files":[{"id":"F1","name":"a","appProperties":{"seogi_meeting":"m1"}}]}"""),
+            HttpResponse(200, emptyMap(), """{"files":[{"id":"F2","name":"b"}]}"""),
+        )
+        val got = DriveApi(http).folders("t", "ROOT")
+        assertEquals(listOf("m1", null), got.map { it.meetingId })
+        val first = decoded(http.sent[0].second)
+        assertTrue(first, first.contains("'ROOT' in parents"))
+        assertTrue(first.contains("trashed = false"))
+        assertTrue(decoded(http.sent[1].second).contains("pageToken=P2"))
+    }
+
+    @Test fun filesInSeveralFoldersComeWithTheirFolder() {
+        val http = Fake(
+            HttpResponse(
+                200, emptyMap(),
+                """{"files":[{"id":"J","name":"회의.json","parents":["F2"],"version":"7","size":"300"},
+                   {"id":"A","name":"a.m4a","parents":["F1"],"appProperties":{"seogi_rec":"r1"}}]}""",
+            ),
+        )
+        val got = DriveApi(http).filesIn("t", listOf("F1", "F2"))
+        assertEquals("F2", got[0].parent)
+        assertEquals(7L, got[0].version)
+        assertEquals(300L, got[0].size)
+        assertEquals("r1", got[1].recordingId)
+        val q = decoded(http.sent[0].second)
+        assertTrue(q, q.contains("('F1' in parents or 'F2' in parents)"))
+    }
+
+    @Test fun readsASmallFile() {
+        val http = Fake(HttpResponse(200, emptyMap(), """{"id":"m1"}"""))
+        assertEquals("""{"id":"m1"}""", DriveApi(http).readText("t", "J"))
+        assertTrue(http.sent[0].second.endsWith("/files/J?alt=media"))
     }
 }

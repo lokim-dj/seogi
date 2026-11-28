@@ -4,6 +4,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import io.github.lokimdj.seogi.R
+import io.github.lokimdj.seogi.data.DriveMeeting
+import io.github.lokimdj.seogi.data.ListEntry
 import io.github.lokimdj.seogi.data.Recording
 import io.github.lokimdj.seogi.data.UploadError
 import io.github.lokimdj.seogi.data.UploadState
@@ -55,3 +57,25 @@ fun lineText(r: Recording, all: List<Recording>, wifiOnly: Boolean, now: Long, d
         }
     }
 }
+
+/** How a meeting from the shared Drive folder reads on a list line. */
+@Composable
+fun meetingLineText(m: DriveMeeting, now: Long): LineText {
+    val p = pal
+    val zone = ZoneId.systemDefault()
+    val sub = buildList {
+        add(Format.day(m.startedAtMs, now, zone, stringResource(R.string.today), stringResource(R.string.yesterday)))
+        add(Format.length(m.durationMs))
+        if (m.origin != "phone") add(stringResource(R.string.sub_from_computer))
+    }.joinToString(" · ")
+    return if (m.openTasks > 0) {
+        LineText(stringResource(R.string.st_open_tasks, m.openTasks), p.t1, false, sub, null)
+    } else {
+        LineText(stringResource(R.string.st_minutes), p.t3, true, sub, null)
+    }
+}
+
+/** One line of the meeting list: the meeting when its minutes are in, else the recording's upload. */
+@Composable
+fun entryLineText(e: ListEntry, recordings: List<Recording>, wifiOnly: Boolean, now: Long, detailed: Boolean): LineText =
+    e.meeting?.let { meetingLineText(it, now) } ?: lineText(e.recording!!, recordings, wifiOnly, now, detailed)

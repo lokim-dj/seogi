@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.lokimdj.seogi.R
+import io.github.lokimdj.seogi.data.ListEntry
 import io.github.lokimdj.seogi.data.Recording
 import io.github.lokimdj.seogi.data.UploadState
 import io.github.lokimdj.seogi.record.CalendarEvent
@@ -40,7 +41,8 @@ import java.time.ZoneId
 
 /**
  * Home, A: the symbol is the record key. One line for the next event above,
- * the last three recordings and their upload state below.
+ * the last three meetings below: a recording made here with its upload
+ * state, or a meeting whose minutes are in the shared Drive folder.
  */
 @Composable
 fun HomeScreen(
@@ -48,6 +50,7 @@ fun HomeScreen(
     event: CalendarEvent?,
     now: Long,
     recordings: List<Recording>,
+    entries: List<ListEntry>,
     wifiOnly: Boolean,
     signedIn: Boolean,
     onRecord: () -> Unit,
@@ -58,6 +61,7 @@ fun HomeScreen(
     onLogin: () -> Unit,
     onDelete: (Recording) -> Unit = {},
     saveProblem: Boolean = false,
+    onOpen: (ListEntry) -> Unit = {},
 ) {
     val zone = ZoneId.systemDefault()
     val eventLine: @Composable () -> Unit = {
@@ -105,20 +109,25 @@ fun HomeScreen(
                 )
                 Hairline()
             }
-            if (recordings.isEmpty()) {
+            if (entries.isEmpty()) {
                 T(
                     stringResource(R.string.no_recordings), size = 12.5.sp, color = pal.t3, medium = true,
                     modifier = Modifier.padding(vertical = 14.dp),
                 )
                 Hairline()
             }
-            recordings.take(3).forEach { r ->
-                val l = lineText(r, recordings, wifiOnly, now, detailed = false)
+            entries.take(3).forEach { e ->
+                val l = entryLineText(e, recordings, wifiOnly, now, detailed = false)
+                val r = e.recording
                 ListLine(
-                    r.title, l.state, l.sub, l.color, l.medium, l.progress,
-                    onClick = if (r.upload == UploadState.FAILED) ({ onRetry(r) }) else onUploads,
-                    onLongClick = { onDelete(r) },
-                    longClickLabel = stringResource(R.string.delete_confirm),
+                    e.title, l.state, l.sub, l.color, l.medium, l.progress,
+                    onClick = when {
+                        e.meeting != null -> ({ onOpen(e) })
+                        r != null && r.upload == UploadState.FAILED -> ({ onRetry(r) })
+                        else -> onUploads
+                    },
+                    onLongClick = r?.let { ({ onDelete(it) }) },
+                    longClickLabel = if (r != null) stringResource(R.string.delete_confirm) else null,
                 )
                 Hairline()
             }

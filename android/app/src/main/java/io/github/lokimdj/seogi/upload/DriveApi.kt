@@ -57,7 +57,7 @@ data class DriveFile(
 
 /** The Drive calls the uploader makes, with the `drive.file` scope only. */
 interface Drive {
-    /** The app-made `서기 폰 녹음` folder; made when there is none. */
+    /** The app-made `서기` folder (once `서기 폰 녹음`); made when there is none. */
     fun ensureFolder(token: String): String
     /** The saved folder still exists, is a marked folder, and is not in the trash. */
     fun folderUsable(token: String, folderId: String): Boolean
@@ -81,8 +81,52 @@ interface Drive {
     fun cancelSession(session: String)
 }
 
+/** A folder in the `서기` folder, as a listing finds it. */
+data class DriveFolder(
+    val id: String,
+    val name: String,
+    /** `appProperties seogi_meeting`: the meeting it holds, null on any other folder. */
+    val meetingId: String?,
+)
+
+/** A file in a meeting's folder, as a listing finds it. */
+data class DriveItem(
+    val id: String,
+    val name: String,
+    val parent: String,
+    val size: Long?,
+    val mime: String?,
+    /** Drive's own version number; it goes up whenever the file changes. */
+    val version: Long?,
+    /** `appProperties seogi_rec`: the phone recording it was uploaded for. */
+    val recordingId: String?,
+)
+
+/**
+ * The Drive calls the phone makes to read the meetings in the shared folder
+ * (issue #67), with the `drive.file` scope only: it sees what a Seogi app,
+ * the phone's or the computer's, made.
+ */
+interface DriveReader {
+    /** The marked `서기` folder; made when there is none. */
+    fun ensureFolder(token: String): String
+    /** The saved folder still exists, is a marked folder, and is not in the trash. */
+    fun folderUsable(token: String, folderId: String): Boolean
+    /** The folders in [root] (not in the trash). */
+    fun folders(token: String, root: String): List<DriveFolder>
+    /** The files in any of [parents] (not in the trash, not folders). */
+    fun filesIn(token: String, parents: List<String>): List<DriveItem>
+    /** A small file's content, as text. */
+    fun readText(token: String, fileId: String): String
+    /**
+     * Downloads a file into [to], going on from what [to] already holds;
+     * [onProgress] gets the bytes so far and the whole size (0 when unknown).
+     */
+    fun download(token: String, fileId: String, to: java.io.File, onProgress: (Long, Long) -> Unit)
+}
+
 /** [Drive] over the Drive REST API v3. */
-class DriveApi(private val http: Http = OkHttpHttp) : Drive {
+class DriveApi(private val http: Http = OkHttpHttp) : Drive, DriveReader {
     private val json = Json { ignoreUnknownKeys = true }
 
     /**
@@ -193,6 +237,58 @@ class DriveApi(private val http: Http = OkHttpHttp) : Drive {
         http.send("DELETE", session, emptyMap(), null)
     }
 
+    override fun folders(token: String, root: String): List<DriveFolder> {
+        val q = "'${quote(root)}' in parents and mimeType = '$FOLDER_MIME' and trashed = false"
+        return pages(token, q, "id,name,appProperties").map { o ->
+            DriveFolder(
+                id = o["id"]!!.jsonPrimitive.content,
+                name = o["name"]?.jsonPrimitive?.content.orEmpty(),
+                meetingId = (o["appProperties"] as? JsonObject)?.get(MEETING_KEY)?.jsonPrimitive?.content,
+            )
+        }
+    }
+
+    override fun filesIn(token: String, parents: List<String>): List<DriveItem> =
+        parents.distinct().chunked(PARENTS_PER_QUERY).flatMap { some ->
+            val q = "(" + some.joinToString(" or ") { "'${quote(it)}' in parents" } + ") and " +
+                "mimeType != '$FOLDER_MIME' and trashed = false"
+            pages(token, q, "id,name,parents,size,mimeType,version,appProperties").mapNotNull { o ->
+                val parent = o["parents"]?.jsonArray?.map { it.jsonPrimitive.content }?.firstOrNull { it in some }
+                    ?: return@mapNotNull null
+                DriveItem(
+                    id = o["id"]!!.jsonPrimitive.content,
+                    name = o["name"]?.jsonPrimitive?.content.orEmpty(),
+                    parent = parent,
+                    size = o["size"]?.jsonPrimitive?.content?.toLongOrNull(),
+                    mime = o["mimeType"]?.jsonPrimitive?.content,
+                    version = o["version"]?.jsonPrimitive?.content?.toLongOrNull(),
+                    recordingId = (o["appProperties"] as? JsonObject)?.get(REC_KEY)?.jsonPrimitive?.content,
+                )
+            }
+        }
+
+    override fun readText(token: String, fileId: String): String =
+        call("GET", "$API/files/${enc(fileId)}?alt=media", token).body
+
+    override fun download(token: String, fileId: String, to: java.io.File, onProgress: (Long, Long) -> Unit) {
+        val code = http.download("$API/files/${enc(fileId)}?alt=media", auth(token), to, onProgress)
+        if (code !in 200..299) throw DriveHttpException(code, "download")
+    }
+
+    /** Every file a search finds, page after page. */
+    private fun pages(token: String, q: String, fields: String): List<JsonObject> {
+        val out = mutableListOf<JsonObject>()
+        var page: String? = null
+        do {
+            val url = "$API/files?spaces=drive&pageSize=1000&fields=nextPageToken,files($fields)&q=${enc(q)}" +
+                (page?.let { "&pageToken=${enc(it)}" } ?: "")
+            val o = json.parseToJsonElement(call("GET", url, token).body).jsonObject
+            o["files"]?.jsonArray?.forEach { out += it.jsonObject }
+            page = o["nextPageToken"]?.jsonPrimitive?.content
+        } while (page != null)
+        return out
+    }
+
     override fun email(token: String): String? {
         val r = call("GET", "$API/about?fields=user(emailAddress)", token)
         return (json.parseToJsonElement(r.body).jsonObject["user"] as? JsonObject)
@@ -223,13 +319,18 @@ class DriveApi(private val http: Http = OkHttpHttp) : Drive {
     private fun idOf(body: String) = json.parseToJsonElement(body).jsonObject["id"]!!.jsonPrimitive.content
 
     companion object {
-        const val FOLDER_NAME = "서기 폰 녹음"
+        /** The shared folder's name (it was `서기 폰 녹음` while only the phone wrote to it). */
+        const val FOLDER_NAME = "서기"
         const val FOLDER_MIME = "application/vnd.google-apps.folder"
         /** The marker every Seogi app looks for (Android, and the Mac and Windows app). */
         const val MARK_KEY = "seogi"
         const val MARK_VALUE = "recordings-root"
         /** On each uploaded file: the recording it belongs to. */
         const val REC_KEY = "seogi_rec"
+        /** On each meeting's folder, made by the computer: the meeting's id. */
+        const val MEETING_KEY = "seogi_meeting"
+        /** Drive searches stay short: this many folders in one. */
+        private const val PARENTS_PER_QUERY = 40
         const val SCOPE = "https://www.googleapis.com/auth/drive.file"
         private const val API = "https://www.googleapis.com/drive/v3"
         private const val UPLOAD = "https://www.googleapis.com/upload/drive/v3"
