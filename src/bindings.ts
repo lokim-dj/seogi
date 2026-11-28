@@ -1038,8 +1038,10 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, stri
 }
 },
 /**
- * Stub implementation for non-macOS platforms
- * Always returns false since laptop detection is macOS-specific
+ * Checks if the Mac is a laptop by detecting battery presence
+ * 
+ * This uses pmset to check for battery information.
+ * Returns true if a battery is detected (laptop), false otherwise (desktop)
  */
 async isLaptop() : Promise<Result<boolean, string>> {
     try {
@@ -1312,17 +1314,6 @@ async seogiSetMeetingInfo(id: string, info: MeetingInfo) : Promise<Result<null, 
 }
 },
 /**
- * Ticks a task of the minutes off, or back on.
- */
-async seogiSetActionDone(id: string, section: string, index: number, done: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("seogi_set_action_done", { id, section, index, done }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * The things changed both here and on the phone that say different
  * things: the other change, kept as a faint line under the one that stands.
  */
@@ -1340,6 +1331,17 @@ async seogiEditConflicts(id: string) : Promise<Result<Conflict[], string>> {
 async seogiTakeOtherEdit(id: string, key: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("seogi_take_other_edit", { id, key }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Ticks a task of the minutes off, or back on.
+ */
+async seogiSetActionDone(id: string, section: string, index: number, done: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seogi_set_action_done", { id, section, index, done }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1919,10 +1921,7 @@ async seogiMacCalendarRequest() : Promise<Result<string, string>> {
 }
 },
 /**
- * The calendars in macOS's Calendar app. The error is `mac_unreadable`
- * when the Calendar app has accounts but none of their calendars came
- * back (restarting Seogi reads them again); an empty list means it has no
- * account at all.
+ * The calendars in macOS's Calendar app.
  */
 async seogiMacCalendars() : Promise<Result<MacCalendar[], string>> {
     try {
@@ -2798,7 +2797,7 @@ ms: number | null }
  * written for it, so the recording goes straight on from that moment.
  */
 export type Gap = { at_ms: number; gap_ms: number }
-export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
+export type GpuDeviceOption ={ id: string; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean; 
 /**
  * The name of the file this entry was transcribed from; `None` for a
@@ -3038,13 +3037,13 @@ mark_notes?: string[]; event?: EventRef | null;
 /**
  * The microphone, for a recording made in the app.
  */
-device?: string; 
+device?: string;
 /**
  * Where the microphone went away while this was being recorded (a
  * laptop's lid closed, a headset dropped) and came back, in the order
  * they happened. The recording itself holds only what was heard.
  */
-gaps?: Gap[]; 
+gaps?: Gap[];
 /**
  * Set when a recording made here did not end as it should have:
  * `app_stopped`, `microphone_lost` or `file_incomplete`. It stays with
@@ -3283,13 +3282,13 @@ export type NoticeCode = "TranscriptionFailed" | "PasteFailed" | "PasteBlockedEl
  * as `mac_calendar::access` says it: `not_determined` (macOS no longer
  * knows Seogi, so it is asked again) or `denied`.
  */
-"CalendarPermissionLost" | 
+"CalendarPermissionLost" |
 /**
  * The microphone went away while a meeting is being recorded (a
  * laptop's lid closed, a headset dropped). The meeting stays open and
  * the microphone is opened again as soon as it is back.
  */
-"MicrophoneReconnecting" | 
+"MicrophoneReconnecting" |
 /**
  * Seogi may read the Calendar app, yet no calendar came back, even
  * after a refresh and over a fresh connection, so no meeting is
@@ -3319,7 +3318,7 @@ export type NoticeSource = "dictation" | "file" | "model" |
  * Whether the system lets dictation type. Its own slot, so a take's
  * notice neither replaces nor clears it.
  */
-"typing" | 
+"typing" |
 /**
  * A meeting being recorded.
  */
@@ -3413,6 +3412,36 @@ trouble: string }
  */
 export type Point = { text: string; sources: Source[] }
 /**
+ * Request format a post-processing endpoint speaks. Built-in providers have a
+ * fixed format; only the custom provider lets the user change it.
+ */
+export type PostProcessApiFormat = 
+/**
+ * OpenAI-compatible Chat Completions (`/chat/completions`)
+ */
+"openai" | 
+/**
+ * Anthropic Messages (`/messages`)
+ */
+"anthropic"
+export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean; api_format?: PostProcessApiFormat }
+/**
+ * How the shortcut is pressed.
+ */
+export type Press = 
+/**
+ * Held while speaking.
+ */
+"hold" | 
+/**
+ * Pressed once to start and once to stop.
+ */
+"toggle" | 
+/**
+ * Either: a short press keeps listening, a long one listens while held.
+ */
+"both"
+/**
  * The polished lines of a meeting.
  */
 export type Polish = { 
@@ -3454,36 +3483,6 @@ from: string;
  * The polished words.
  */
 text: string }
-/**
- * Request format a post-processing endpoint speaks. Built-in providers have a
- * fixed format; only the custom provider lets the user change it.
- */
-export type PostProcessApiFormat = 
-/**
- * OpenAI-compatible Chat Completions (`/chat/completions`)
- */
-"openai" | 
-/**
- * Anthropic Messages (`/messages`)
- */
-"anthropic"
-export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean; api_format?: PostProcessApiFormat }
-/**
- * How the shortcut is pressed.
- */
-export type Press = 
-/**
- * Held while speaking.
- */
-"hold" | 
-/**
- * Pressed once to start and once to stop.
- */
-"toggle" | 
-/**
- * Either: a short press keeps listening, a long one listens while held.
- */
-"both"
 /**
  * Where the summary model runs. The default is local and free.
  */
@@ -3630,7 +3629,7 @@ marks_ms: number[]; device: string;
 /**
  * No sound at all is arriving: the microphone is muted or not allowed.
  */
-no_sound: boolean; 
+no_sound: boolean;
 /**
  * The microphone went away (a lid closed, a headset dropped) and is
  * being opened again. The meeting stays open meanwhile.
@@ -3767,7 +3766,7 @@ edited?: string | null;
  * when the user rewrote it whole (then `edited` alone says what it
  * reads). Absent in meetings saved before words could be fixed.
  */
-fixes: WordFix[] }
+fixes?: WordFix[] }
 /**
  * How the transcribe shortcut's key events drive a recording.
  */
@@ -3893,6 +3892,9 @@ bytes: number }
  * a second or two of the last one spoken.
  */
 export type Speed = "fast" | "fair" | "slow"
+/**
+ * A place on the screen, in logical pixels.
+ */
 /**
  * What happened along the way, for the log and for honest reporting.
  */

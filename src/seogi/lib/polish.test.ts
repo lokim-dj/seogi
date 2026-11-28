@@ -5,14 +5,15 @@ import type { Meeting, Segment } from "@/bindings";
 import { polishedLines, withPolish } from "./polish";
 
 const segments: Segment[] = [
-  { start_ms: 0, end_ms: 1000, speaker: 1, text: "음 안녕하세요" },
-  { start_ms: 2000, end_ms: 3000, speaker: 1, text: "자료 보내요" },
+  { start_ms: 0, end_ms: 1000, speaker: 1, text: "음 안녕하세요", fixes: [] },
+  { start_ms: 2000, end_ms: 3000, speaker: 1, text: "자료 보내요", fixes: [] },
   {
     start_ms: 4000,
     end_ms: 5000,
     speaker: 2,
     text: "어 그건 안돼요",
     edited: "그건 안 돼요!",
+    fixes: [],
   },
 ];
 
