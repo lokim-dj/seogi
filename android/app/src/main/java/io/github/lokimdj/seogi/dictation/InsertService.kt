@@ -1,10 +1,16 @@
 package io.github.lokimdj.seogi.dictation
 
 import android.accessibilityservice.AccessibilityService
+import android.app.KeyguardManager
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
+import android.content.Intent
+import android.content.ServiceConnection
 import android.content.res.Configuration
+import android.graphics.Rect
 import android.os.Bundle
+import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
@@ -21,7 +27,8 @@ import android.view.accessibility.AccessibilityWindowInfo
  * whether the focused field takes text and that a field changed, never at
  * what is written or shown. It keeps
  * nothing and sends nothing. Runs in the `:dictation` process beside
- * [DictationService].
+ * [DictationService], which it holds bound: Android keeps an accessibility
+ * service running, so the key needs no notification of its own while it waits.
  */
 class InsertService : AccessibilityService() {
     /**
@@ -30,16 +37,36 @@ class InsertService : AccessibilityService() {
      * ready; it is used then ([InsertTarget]). Only the reference is kept.
      */
     private var last: AccessibilityNodeInfo? = null
-    private var lastResume = 0L
     private var wroteAt = 0L
+    private var holdsKey = false
+    private val key = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {}
+        override fun onServiceDisconnected(name: ComponentName?) {}
+    }
 
     override fun onServiceConnected() {
         instance = this
-        // Bound again after an update or a restart: the key the user left on comes back.
-        lastResume = SystemClock.elapsedRealtime()
-        DictationService.resume(this, "accessibility bound")
+        // Also bound again after an update or a restart: the key the user left on comes back.
+        holdKey()
         check()
         listener?.invoke()
+    }
+
+    /** Keeps [DictationService] alive for as long as this service is on; it shows the key when the user left it on. */
+    private fun holdKey() {
+        if (holdsKey) return
+        holdsKey = try {
+            bindService(Intent(this, DictationService::class.java), key, BIND_AUTO_CREATE)
+        } catch (e: Exception) {
+            Log.w(TAG, "could not hold the key's service", e)
+            false
+        }
+    }
+
+    private fun letKeyGo() {
+        if (!holdsKey) return
+        holdsKey = false
+        try { unbindService(key) } catch (_: Exception) {}
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -64,20 +91,26 @@ class InsertService : AccessibilityService() {
     /** Looks again whether the user is typing, and tells the key when that changed. */
     private fun check() {
         val now = try {
-            Typing.from(keyboardShowing(), editableFocused(), hardKeyboard())
+            Typing.from(keyboardShowing(), editableFocused(), hardKeyboard(), locked())
         } catch (e: Exception) {
             false
         }
-        if (now != typing) {
+        val top = try { keyboardEdge() } catch (e: Exception) { null }
+        if (now != typing || top != keyboardTop) {
             typing = now
+            keyboardTop = top
             listener?.invoke()
         }
-        // The user types but the key's service is not running (Android stopped
-        // it, or it never came back): try again, at most twice a minute.
-        if (now && !DictationService.running && SystemClock.elapsedRealtime() - lastResume > RESUME_EVERY_MS) {
-            lastResume = SystemClock.elapsedRealtime()
-            DictationService.resume(this, "typing")
-        }
+    }
+
+    private fun locked() = getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
+
+    /** The top edge of the on-screen keyboard on the screen, or null when none is up. */
+    private fun keyboardEdge(): Int? {
+        val ime = windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD } ?: return null
+        val r = Rect()
+        ime.getBoundsInScreen(r)
+        return if (r.isEmpty) null else r.top
     }
 
     /** Null when Android does not give the window list. */
@@ -109,6 +142,24 @@ class InsertService : AccessibilityService() {
         return inWindow ?: first
     }
 
+    /**
+     * The field inside [node] when the focus is on a frame that takes no text
+     * itself ([InnerField]). Only when writing ([InsertTarget] asks last):
+     * walking the parts on every focus change would cost the phone for nothing.
+     */
+    private fun inner(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        return try {
+            InnerField.pick(
+                node,
+                children = { n -> (0 until n.childCount).mapNotNull { i -> n.getChild(i) } },
+                // A field kept out of sight (some pages hold one for their own use) is not the user's.
+                editable = { it.isEditable && it.isVisibleToUser },
+                focused = { it.isFocused },
+                hasCursor = { it.textSelectionStart >= 0 },
+            )
+        } catch (e: Exception) { null }
+    }
+
     private fun hardKeyboard(): Boolean {
         val c = resources.configuration
         return c.keyboard != Configuration.KEYBOARD_NOKEYS && c.hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO
@@ -129,9 +180,11 @@ class InsertService : AccessibilityService() {
     /** Switched off: the key can no longer tell when the user types. */
     private fun gone() {
         last = null
+        letKeyGo()
         if (instance !== this) return
         instance = null
         typing = false
+        keyboardTop = null
         listener?.invoke()
     }
 
@@ -146,6 +199,7 @@ class InsertService : AccessibilityService() {
             focused(), last,
             editable = { it.isEditable },
             onScreen = { n -> n.refresh() && n.isVisibleToUser && (shown.isEmpty() || n.windowId in shown) },
+            inside = ::inner,
         )
         val node = choice.field
         if (node == null) {
@@ -189,7 +243,6 @@ class InsertService : AccessibilityService() {
 
     companion object {
         private const val TAG = "SeogiDictation"
-        private const val RESUME_EVERY_MS = 30_000L
 
         /** The running service, when the user has switched it on. Read and set on the main thread. */
         @Volatile
@@ -200,7 +253,11 @@ class InsertService : AccessibilityService() {
         var typing = false
             private set
 
-        /** Told (on the main thread) when [instance] or [typing] changes; set by [DictationService]. */
+        /** The top edge of the on-screen keyboard, as last seen; null when none is up. Main thread. */
+        var keyboardTop: Int? = null
+            private set
+
+        /** Told (on the main thread) when [instance], [typing] or [keyboardTop] changes; set by [DictationService]. */
         var listener: (() -> Unit)? = null
 
         /** Told (on the main thread) when the user changed a field by hand; set by [DictationService]. */

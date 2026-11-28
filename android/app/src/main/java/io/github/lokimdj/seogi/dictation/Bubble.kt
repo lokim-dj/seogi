@@ -11,12 +11,17 @@ import kotlin.math.hypot
  * go back instead.
  */
 data class BubblePlace(val x: Float, val y: Float) {
-    /** Top-left pixel of a [size] key on a [w]×[h] screen, kept fully on it and off the side margins. */
-    fun toPixels(w: Int, h: Int, size: Int, margin: Int = 0): Pair<Int, Int> {
+    /**
+     * Top-left pixel of a [size] key on a [w]×[h] screen, kept fully on it and
+     * off the side margins, and above [floor] (the keyboard's top edge, when
+     * it is up: the key would otherwise cover keys).
+     */
+    fun toPixels(w: Int, h: Int, size: Int, margin: Int = 0, floor: Int? = null): Pair<Int, Int> {
         val m = sideMargin(w, size, margin)
         val spanX = (w - size - 2 * m).coerceAtLeast(0)
         val maxY = (h - size).coerceAtLeast(0)
-        return Pair(m + (x.coerceIn(0f, 1f) * spanX).toInt(), (y.coerceIn(0f, 1f) * maxY).toInt())
+        val y = (y.coerceIn(0f, 1f) * maxY).toInt()
+        return Pair(m + (x.coerceIn(0f, 1f) * spanX).toInt(), above(y, size, floor))
     }
 
     fun encode() = "$x,$y"
@@ -32,6 +37,10 @@ data class BubblePlace(val x: Float, val y: Float) {
             val maxY = (h - size).coerceAtLeast(1)
             return BubblePlace(((px - m).toFloat() / spanX).coerceIn(0f, 1f), (py.toFloat() / maxY).coerceIn(0f, 1f))
         }
+
+        /** [y] moved up, if need be, so a [size] key ends above [floor]; never off the top. */
+        fun above(y: Int, size: Int, floor: Int?): Int =
+            if (floor == null) y else y.coerceAtMost((floor - size).coerceAtLeast(0))
 
         /** The side margin, made smaller on a screen too narrow to keep it. */
         private fun sideMargin(w: Int, size: Int, margin: Int): Int =
@@ -114,14 +123,18 @@ class BubbleGesture(private val holdMs: Long = 400, private val slop: Float = 24
  * Whether the user is typing somewhere, from what the accessibility service
  * can see: the on-screen keyboard is up, or (with a keyboard plugged in, or
  * when Android does not list its windows) a text field has the cursor.
+ * Never on the lock screen: the key is an accessibility overlay, which shows
+ * above it, and typing a password there is not for dictation.
  */
 object Typing {
     /**
      * [keyboardShowing] is null when the window list could not be read.
      * [editableFocused]: the field with the input focus takes text.
      * [hardKeyboard]: a physical keyboard is in use, so no on-screen one comes up.
+     * [locked]: the lock screen is up.
      */
-    fun from(keyboardShowing: Boolean?, editableFocused: Boolean, hardKeyboard: Boolean): Boolean = when {
+    fun from(keyboardShowing: Boolean?, editableFocused: Boolean, hardKeyboard: Boolean, locked: Boolean = false): Boolean = when {
+        locked -> false
         keyboardShowing == true -> true
         keyboardShowing == null || hardKeyboard -> editableFocused
         else -> false
@@ -193,4 +206,25 @@ class KeyPresence(private val showAfterMs: Long = 120, private val hideAfterMs: 
         }
         return wait
     }
+}
+
+/**
+ * How the floating key's service stays alive, and so when Android needs a
+ * notification for it.
+ * - [Way.ACCESSIBILITY]: the accessibility service is on and holds the key's
+ *   service bound, so Android keeps both; the key is the accessibility
+ *   service's overlay. Only listening runs as a microphone foreground service.
+ * - [Way.FOREGROUND]: without accessibility nothing else keeps it, so it is a
+ *   microphone foreground service all along, with its notification.
+ */
+object KeyKeeper {
+    enum class Way { ACCESSIBILITY, FOREGROUND }
+
+    fun way(boundByAccessibility: Boolean): Way = if (boundByAccessibility) Way.ACCESSIBILITY else Way.FOREGROUND
+
+    /** Whether the service must be in the foreground now: the microphone is open, or nothing else keeps it. */
+    fun foreground(way: Way, micOpen: Boolean): Boolean = way == Way.FOREGROUND || micOpen
+
+    /** Whether the key may be on screen: the user left it on and the service is kept one way or the other. */
+    fun alive(way: Way, foreground: Boolean, on: Boolean): Boolean = on && (way == Way.ACCESSIBILITY || foreground)
 }

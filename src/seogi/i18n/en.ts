@@ -1178,7 +1178,7 @@ const en: Strings = {
     startingNow: "This event is starting now",
     startingSoon: "This event starts in {{n}} min",
     record: "Record",
-    later: "Close",
+    close: "Close",
     mute: "Stop reminders for this event",
     startLabel: "An event is starting",
     readyLabel: "Minutes are ready",

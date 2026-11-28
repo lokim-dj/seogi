@@ -604,6 +604,9 @@ pub fn time_in_name(name: &str) -> Option<i64> {
         Regex::new(r"(?:^|\D)(\d{2})(\d{2})(\d{2})[-_ ](\d{2})(\d{2})(\d{2})(?:\D|$)")
             .expect("a valid pattern")
     });
+    if let Some((at, _)) = dated_prefix(name) {
+        return Some(at);
+    }
     let number = |captures: &regex::Captures<'_>, index: usize| -> Option<u32> {
         captures.get(index).and_then(|m| m.as_str().parse().ok())
     };
@@ -629,8 +632,37 @@ pub fn time_in_name(name: &str) -> Option<i64> {
     (time <= latest).then(|| time.timestamp_millis())
 }
 
+/// The start time in front of a name the way the phone (and this app's own
+/// folders) write it, `2026-11-24 1400 제목`, and what follows it. `None`
+/// unless the name starts exactly so and the date is a real one that has
+/// happened.
+pub fn dated_prefix(name: &str) -> Option<(i64, &str)> {
+    use regex::Regex;
+    use std::sync::LazyLock;
+    static PREFIX: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^(20\d{2})-(\d{2})-(\d{2}) (\d{2})(\d{2}) ").expect("a valid pattern")
+    });
+    let captures = PREFIX.captures(name)?;
+    let number = |index: usize| -> Option<u32> { captures.get(index)?.as_str().parse().ok() };
+    let time = Local
+        .with_ymd_and_hms(
+            number(1)? as i32,
+            number(2)?,
+            number(3)?,
+            number(4)?,
+            number(5)?,
+            0,
+        )
+        .single()?;
+    let latest = Local::now() + chrono::Duration::days(1);
+    let rest = &name[captures.get(0)?.end()..];
+    (time <= latest).then(|| (time.timestamp_millis(), rest))
+}
+
 /// The title a person gave a file by naming it, or nothing when the name is
 /// only what a recorder made up (a date, a counter, "녹음", "Recording").
+/// A start time in front, as the phone writes it, is not part of the title:
+/// the meeting's folder puts it there again.
 pub fn title_in_name(stem: &str) -> String {
     use regex::Regex;
     use std::sync::LazyLock;
@@ -640,6 +672,9 @@ pub fn title_in_name(stem: &str) -> String {
         )
         .expect("a valid pattern")
     });
+    if let Some((_, rest)) = dated_prefix(stem) {
+        return title_in_name(rest);
+    }
     let left = NOISE.replace_all(stem, " ");
     let letters = left.chars().filter(|c| c.is_alphabetic()).count();
     if letters >= 2 {
@@ -1163,6 +1198,11 @@ mod tests {
             time_in_name("2025-11-24 1400 주간 회의.wav"),
             Some(at(2025, 11, 24, 14, 0, 0))
         );
+        // A title that starts with a number does not become the seconds.
+        assert_eq!(
+            time_in_name("2025-11-24 1400 12월 계획.m4a"),
+            Some(at(2025, 11, 24, 14, 0, 0))
+        );
         assert_eq!(time_in_name("회의.m4a"), None);
         assert_eq!(time_in_name("IMG_1234.m4a"), None);
         // Not a date, and not a time that has happened yet.
@@ -1171,11 +1211,47 @@ mod tests {
     }
 
     #[test]
+    fn a_phone_s_dated_file_gets_its_date_once_in_the_folder() {
+        // As `Secretary::bring_in` names a file brought in by hand or from
+        // a watched folder: the start from the name, the title from the stem.
+        let name = "2025-11-26 1335 동네 모임.m4a";
+        let stem = "2025-11-26 1335 동네 모임";
+        let start = time_in_name(name).unwrap();
+        assert_eq!(
+            start,
+            Local
+                .with_ymd_and_hms(2025, 11, 26, 13, 35, 0)
+                .unwrap()
+                .timestamp_millis()
+        );
+        let title = title_in_name(stem);
+        assert_eq!(title, "동네 모임");
+        assert_eq!(
+            Library::folder_name(start, &title),
+            "2025-11-26 1335 동네 모임"
+        );
+        // A file without the date in front is named as before.
+        assert_eq!(title_in_name("동네 모임"), "동네 모임");
+    }
+
+    #[test]
     fn a_name_a_person_gave_is_a_title_and_a_recorder_s_is_not() {
         assert_eq!(title_in_name("한빛아파트 상담"), "한빛아파트 상담");
+        // The phone's names: the time in front is the start, not the title.
+        assert_eq!(title_in_name("2025-11-24 1400 주간 회의"), "주간 회의");
+        assert_eq!(title_in_name("2025-11-24 1400 녹음"), "");
+        // Only exactly that form, and only a real date, is taken off.
         assert_eq!(
-            title_in_name("2025-11-24 1400 주간 회의"),
-            "2025-11-24 1400 주간 회의"
+            title_in_name("2025-11-24 14-00 주간 회의"),
+            "2025-11-24 14-00 주간 회의"
+        );
+        assert_eq!(
+            title_in_name("2025-13-24 1400 주간 회의"),
+            "2025-13-24 1400 주간 회의"
+        );
+        assert_eq!(
+            title_in_name("주간 회의 2025-11-24 1400"),
+            "주간 회의 2025-11-24 1400"
         );
         assert_eq!(title_in_name("녹음 2025-11-24 14-00-12"), "");
         assert_eq!(title_in_name("20251124_140012"), "");
