@@ -235,14 +235,15 @@ class KeyPresence(private val showAfterMs: Long = 120, private val hideAfterMs: 
      * Feed what is wanted at [now]. Returns 0 when [shown] just changed (apply
      * it), the milliseconds to wait before calling again, or null when
      * nothing is pending. [atOnce] skips the wait (a choice from the user).
+     * [hideAfter] replaces the usual wait before hiding (longer while listening).
      */
-    fun update(wanted: Boolean, now: Long, atOnce: Boolean = false): Long? {
+    fun update(wanted: Boolean, now: Long, atOnce: Boolean = false, hideAfter: Long = hideAfterMs): Long? {
         if (wanted != want) {
             want = wanted
             since = now
         }
         if (want == shown) return null
-        val wait = (if (want) showAfterMs else hideAfterMs) - (now - since)
+        val wait = (if (want) showAfterMs else hideAfter) - (now - since)
         if (atOnce || wait <= 0) {
             shown = want
             return 0

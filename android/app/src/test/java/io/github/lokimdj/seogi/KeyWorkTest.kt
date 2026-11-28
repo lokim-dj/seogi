@@ -33,6 +33,12 @@ class KeyWorkTest {
         assertTrue(KeyWork.LISTEN_CAP_MS <= full + 10_000)
     }
 
+    @Test fun aRunBehindAnUnfinishedOneDoesNotTurnTheKey() {
+        assertTrue(KeyWork.turns(0))
+        assertFalse(KeyWork.turns(1)) // the engine is still on a run the key stopped waiting for
+        assertFalse(KeyWork.turns(3))
+    }
+
     // --- what becomes of the text ---
 
     @Test fun whileTheKeyWaitsTheTextIsTypedOrTheTroubleSaid() {
@@ -94,6 +100,18 @@ class KeyWorkTest {
         val wait = p.update(KeyRule.wanted(Mode.WORKING, false, false, followsTyping = true, typing = false), 1_000)
         assertEquals(300L, wait)
         assertEquals(0L, p.update(KeyRule.wanted(Mode.WORKING, false, false, followsTyping = true, typing = false), 1_300))
+        assertFalse(p.shown)
+    }
+
+    @Test fun aListeningKeyWaitsLongerBeforeItGoes() {
+        // The keyboard folds away for a moment while the user speaks: the sentence is not cut.
+        val p = KeyPresence(showAfterMs = 120, hideAfterMs = 300)
+        p.update(true, 0, atOnce = true)
+        assertEquals(KeyWork.LISTEN_HIDE_MS, p.update(false, 1_000, hideAfter = KeyWork.LISTEN_HIDE_MS))
+        assertEquals(null, p.update(true, 1_800)) // back before the wait ran out: it stayed
+        assertTrue(p.shown)
+        p.update(false, 2_000, hideAfter = KeyWork.LISTEN_HIDE_MS)
+        assertEquals(0L, p.update(false, 2_000 + KeyWork.LISTEN_HIDE_MS, hideAfter = KeyWork.LISTEN_HIDE_MS))
         assertFalse(p.shown)
     }
 }

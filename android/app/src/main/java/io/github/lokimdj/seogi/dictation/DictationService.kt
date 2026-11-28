@@ -90,7 +90,7 @@ class DictationService : Service() {
     /** The user left the key on, as last read from [DictationPrefs]. */
     private var on = false
     private val way get() = KeyKeeper.way(bound)
-    private val presence = KeyPresence()
+    private val presence = KeyPresence(hideAfterMs = HIDE_AFTER_MS)
     private val settle = Runnable { refresh() }
     private var followsShown: Boolean? = null
     private var destroyed = false
@@ -222,7 +222,8 @@ class DictationService : Service() {
         }
         val alive = KeyKeeper.alive(way, foreground, on)
         val want = alive && KeyRule.wanted(mode, hidden, meeting, follows, InsertService.typing)
-        val wait = presence.update(want, SystemClock.uptimeMillis(), atOnce || !alive)
+        val hideAfter = if (mode == BubbleGesture.Mode.LISTENING) KeyWork.LISTEN_HIDE_MS else HIDE_AFTER_MS
+        val wait = presence.update(want, SystemClock.uptimeMillis(), atOnce || !alive, hideAfter)
         if (wait != null && wait > 0) main.postDelayed(settle, wait)
         // Put up again when the way changed: the accessibility overlay belongs to that service.
         if (view != null && viewWay != way) removeBubble()
@@ -515,9 +516,10 @@ class DictationService : Service() {
         if (mode == BubbleGesture.Mode.LISTENING) setMode(BubbleGesture.Mode.IDLE)
     }
 
-    /** Counts the runs; [waitingFor] is the one the key turns for (0: none). */
+    /** Counts the runs; [waitingFor] is the one the key turns for (0: none); [inFlight] are under way. */
     private var runs = 0
     private var waitingFor = 0
+    private var inFlight = 0
 
     /** Making the text took far too long: the key stops waiting ([KeyWork.workCapMs]). */
     private val workCap = Runnable { letGo() }
@@ -546,10 +548,17 @@ class DictationService : Service() {
             return
         }
         val run = ++runs
-        waitingFor = run
-        // Armed before anything else can go wrong, so the key always comes back to rest.
-        main.postDelayed(workCap, KeyWork.workCapMs(pcm.size))
-        setMode(BubbleGesture.Mode.WORKING)
+        if (KeyWork.turns(inFlight)) {
+            waitingFor = run
+            // Armed before anything else can go wrong, so the key always comes back to rest.
+            main.postDelayed(workCap, KeyWork.workCapMs(pcm.size))
+            setMode(BubbleGesture.Mode.WORKING)
+        } else {
+            // An earlier run still holds the engine: this one waits its turn without the key.
+            setMode(BubbleGesture.Mode.IDLE)
+            toast(getString(R.string.dict_queued))
+        }
+        inFlight++
         ui.launch {
             val text = try {
                 withContext(engineContext) {
@@ -561,6 +570,7 @@ class DictationService : Service() {
                 Log.w(TAG, "transcription failed", e)
                 null
             }
+            inFlight--
             val waited = waitingFor == run
             if (waited) {
                 waitingFor = 0
@@ -710,6 +720,8 @@ class DictationService : Service() {
         /** The least room at each side, wider than the back gesture strips of common phones. */
         private const val EDGE_DP = 28
         private const val WARM_AFTER_MS = 250L
+        /** How long the wish to hide the key must hold before it goes, at rest or making text. */
+        private const val HIDE_AFTER_MS = 300L
         /** The model is let go after this long without speaking. */
         const val IDLE_MS = 3 * 60_000L
         private const val ACTION_HIDE = "io.github.lokimdj.seogi.dictation.HIDE"

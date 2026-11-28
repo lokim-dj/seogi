@@ -28,6 +28,24 @@ object KeyWork {
      */
     fun workCapMs(samples: Int): Long = WORK_BASE_MS + samples.coerceAtLeast(0) * 1000L / SpeechEngine.RATE
 
+    /**
+     * How long a listening key waits, once no field is in sight, before it
+     * goes (and listening stops and writes): longer than at rest, so the
+     * keyboard folding away for a moment while the user speaks does not cut
+     * the sentence.
+     */
+    const val LISTEN_HIDE_MS = 1_500L
+
+    /**
+     * Whether the key turns while new speech is made into text: not while
+     * [inFlight] earlier runs are still under way. One the key stopped
+     * waiting for still holds the engine (stuck, or crawling), and the new
+     * one can only start after it, so the key rests at once and the words
+     * are copied when their turn comes, instead of turning out its time cap
+     * again on every try.
+     */
+    fun turns(inFlight: Int): Boolean = inFlight <= 0
+
     /** What is done with a run's result. */
     enum class End {
         /** Into the field with the cursor (or the clipboard, when none takes it). */
