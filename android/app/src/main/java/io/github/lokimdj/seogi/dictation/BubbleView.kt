@@ -6,10 +6,13 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.RectF
+import android.graphics.Region
 import android.graphics.SweepGradient
+import android.os.Build
 import android.view.MotionEvent
 import android.view.View
 import android.view.animation.DecelerateInterpolator
@@ -27,13 +30,24 @@ import io.github.lokimdj.seogi.R
  *   stays, so the key never turns into a red blob);
  * - while the speech becomes text, the mark fades and a light arc turns;
  * - once the user types by hand ([stepBack]), it shrinks and fades so it is
- *   out of the way, until it is touched.
+ *   out of the way, until it is touched. The window itself shrinks with it
+ *   ([onSmall]): the face is drawn relative to the window.
  *
- * The face is drawn at [FACE] of the window, so the spring has room to grow
- * without being cut off. Touches go to [onTouch] as they are.
+ * The face is drawn at [KeyFace.FACE] of the window, just leaving the spring
+ * room to grow without being cut off. Only the face takes touches: the
+ * window hugs it, and (Android 14 and later) its touchable part is the face.
+ * The accessibility key lets a touch outside that through to the keyboard;
+ * the copy-only key is an ordinary overlay, through which Android blocks a
+ * touch to another app wherever the window lies, so the small window is
+ * what keeps the keyboard free there. Touches go to [onTouch] as they are.
  */
 @SuppressLint("ViewConstructor")
-class BubbleView(context: Context, private val onTouch: (MotionEvent) -> Unit) : View(context) {
+class BubbleView(
+    context: Context,
+    private val onTouch: (MotionEvent) -> Unit,
+    /** The key stepped back (true) or came back (false): the window is made to fit the face. */
+    private val onSmall: (Boolean) -> Unit,
+) : View(context) {
     private val density = resources.displayMetrics.density
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = INK }
     private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -78,7 +92,7 @@ class BubbleView(context: Context, private val onTouch: (MotionEvent) -> Unit) :
                 BubbleGesture.Mode.WORKING -> { spinner.duration = WORK_TURN_MS; spinner.start() }
                 BubbleGesture.Mode.IDLE -> turn = 0f
             }
-            if (v != BubbleGesture.Mode.IDLE) steppedBack = false
+            if (v != BubbleGesture.Mode.IDLE) small(false)
             settle()
             contentDescription = context.getString(
                 when (v) {
@@ -96,22 +110,31 @@ class BubbleView(context: Context, private val onTouch: (MotionEvent) -> Unit) :
 
     /**
      * Whether a touch at window pixel ([x], [y]) is on the face as it is drawn
-     * now (smaller when stepped back), with a little room. The window is a
-     * bit larger than the face; a touch in that margin is not meant for it.
-     * The key is the window's root view, so touches arrive unscaled.
+     * now, with a little room. The window's corners are outside the face; a
+     * touch there is not meant for it. The key is the window's root view, so
+     * touches arrive unscaled.
      */
-    fun onFace(x: Float, y: Float): Boolean {
+    fun onFace(x: Float, y: Float): Boolean = KeyFace.contains(x, y, width, scaleX, SLACK_DP * density)
+
+    /**
+     * Tells Android (14 and later) that only the face takes touches: a touch
+     * in the window's corners can then reach what is below where Android lets
+     * it (its own windows, or a window it does not count as covered).
+     */
+    private fun touchFace() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE || width == 0) return
+        val surface = rootSurfaceControl ?: return
         val c = width / 2f
-        val r = c * FACE * scaleX + 4 * density
-        val dx = x - c
-        val dy = y - c
-        return dx * dx + dy * dy <= r * r
+        val r = KeyFace.radius(width, 1f, SLACK_DP * density)
+        val circle = Path().apply { addCircle(c, c, r, Path.Direction.CW) }
+        val area = Region().apply { setPath(circle, Region(0, 0, width, height)) }
+        try { surface.setTouchableRegion(area) } catch (_: Exception) {}
     }
 
     /** The finger came down: the key gives a little. */
     fun press() {
         pressed = true
-        steppedBack = false
+        small(false)
         animate().cancel()
         animate().scaleX(PRESSED).scaleY(PRESSED).alpha(1f)
             .setDuration(90).setInterpolator(DecelerateInterpolator()).start()
@@ -126,22 +149,29 @@ class BubbleView(context: Context, private val onTouch: (MotionEvent) -> Unit) :
     /** Step out of the way ([on]) or come back; [animate] false puts it there at once (a key just shown). */
     fun stepBack(on: Boolean, animate: Boolean = true) {
         if (pressed || mode != BubbleGesture.Mode.IDLE || steppedBack == on) return
-        steppedBack = on
+        small(on)
         if (animate) {
             settle()
         } else {
-            val s = if (on) BACK else 1f
-            scaleX = s
-            scaleY = s
             alpha = if (on) BACK_ALPHA else 1f
         }
+    }
+
+    /**
+     * The smaller size comes from the window (the face is drawn relative to
+     * it), not from scaling, so a touch beside the small face is not taken.
+     */
+    private fun small(on: Boolean) {
+        if (steppedBack == on) return
+        steppedBack = on
+        onSmall(on)
     }
 
     private fun settle() {
         if (pressed) return
         animate().cancel()
         if (steppedBack) {
-            animate().scaleX(BACK).scaleY(BACK).alpha(BACK_ALPHA)
+            animate().scaleX(1f).scaleY(1f).alpha(BACK_ALPHA)
                 .setDuration(180).setInterpolator(DecelerateInterpolator()).start()
         } else {
             animate().scaleX(1f).scaleY(1f).alpha(1f)
@@ -153,12 +183,13 @@ class BubbleView(context: Context, private val onTouch: (MotionEvent) -> Unit) :
         super.onSizeChanged(w, h, oldw, oldh)
         val c = w / 2f
         tail.shader = SweepGradient(c, c, intArrayOf(Color.TRANSPARENT, Color.TRANSPARENT, RED), floatArrayOf(0f, 0.35f, 1f))
+        touchFace()
     }
 
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat()
         val c = w / 2
-        val r = c * FACE
+        val r = c * KeyFace.FACE
         canvas.drawCircle(c, c, r, fill)
         canvas.drawCircle(c, c, r, ring)
 
@@ -212,8 +243,8 @@ class BubbleView(context: Context, private val onTouch: (MotionEvent) -> Unit) :
         val TEXT = Color.rgb(0xED, 0xEB, 0xE7)
         val RED = Color.rgb(0xE9, 0x48, 0x3A)
 
-        /** The face's radius as a share of the window's half: room for the spring's overshoot. */
-        const val FACE = 0.86f
+        /** Room around the face that still counts as touching it. */
+        const val SLACK_DP = 4f
 
         /**
          * The launcher layer is a 108-unit canvas with the mark about 45 units
@@ -222,7 +253,6 @@ class BubbleView(context: Context, private val onTouch: (MotionEvent) -> Unit) :
          */
         const val MARK_SCALE = 1.2f
         const val PRESSED = 0.86f
-        const val BACK = 0.55f
         const val BACK_ALPHA = 0.45f
         const val LISTEN_TURN_MS = 2400L
         const val WORK_TURN_MS = 900L
