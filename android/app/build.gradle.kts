@@ -25,8 +25,8 @@ android {
         applicationId = "io.github.lokimdj.seogi"
         minSdk = 33
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.1.18"
+        versionCode = 4
+        versionName = "0.1.19"
         // Optional: a Web OAuth client ID lets the app show Google's account
         // picker (Credential Manager) before asking for Drive. Drive itself
         // needs only the Android OAuth client (package name + SHA-1).
