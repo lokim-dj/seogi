@@ -63,6 +63,8 @@ fun HomeScreen(
     saveProblem: Boolean = false,
     onOpen: (ListEntry) -> Unit = {},
     onDeleteMeeting: (ListEntry) -> Unit = {},
+    a11yProblem: Boolean = false,
+    onFixA11y: () -> Unit = {},
 ) {
     val zone = ZoneId.systemDefault()
     val eventLine: @Composable () -> Unit = {
@@ -152,6 +154,15 @@ fun HomeScreen(
                     modifier = Modifier.clickable(role = Role.Button, onClick = onSettings),
                 )
             }
+        }
+        // The floating key's accessibility dropped (#98): one tap to its switch, at the top.
+        if (a11yProblem) {
+            Spacer(Modifier.height(8.dp))
+            ListLine(
+                stringResource(R.string.a11y_dropped_line), stringResource(R.string.a11y_dropped_action), null,
+                stateColor = pal.rt, onClick = onFixA11y,
+            )
+            Hairline()
         }
     }
 

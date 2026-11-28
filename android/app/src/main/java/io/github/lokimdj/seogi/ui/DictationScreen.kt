@@ -19,7 +19,11 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import io.github.lokimdj.seogi.R
+import io.github.lokimdj.seogi.dictation.A11yLog
 import io.github.lokimdj.seogi.dictation.SetupState
 import io.github.lokimdj.seogi.dictation.SetupStep
 
@@ -53,12 +57,23 @@ fun DictationScreen(
     onGetModel: () -> Unit,
     onStopModel: () -> Unit,
     onSwitch: (Boolean) -> Unit,
+    a11yProblem: Boolean = false,
+    onFixA11y: () -> Unit = {},
+    log: List<A11yLog.Entry> = emptyList(),
 ) {
     val step = state.current()
     Column(Modifier.fillMaxSize().padding(horizontal = Gutter)) {
         Spacer(Modifier.height(10.dp))
         BackBar(stringResource(R.string.dictation), onBack)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            // Accessibility dropped after it was set up (#98): the same one tap as the notification, on top.
+            if (a11yProblem && cpuSupported) {
+                ListLine(
+                    stringResource(R.string.a11y_dropped_line), stringResource(R.string.a11y_dropped_action),
+                    stringResource(R.string.a11y_dropped_why), stateColor = pal.rt, onClick = onFixA11y,
+                )
+                Hairline()
+            }
             when {
                 !cpuSupported -> Sheet(stringResource(R.string.dict_cpu_title), null) {
                     Body(stringResource(R.string.dict_cpu_body))
@@ -92,7 +107,50 @@ fun DictationScreen(
                     if (state.copyOnly && !state.accessibility) onAccessibility()
                 })
             }
+            if (log.isNotEmpty()) DropLog(log)
         }
+    }
+}
+
+/** The short drop log ([A11yLog]), newest first, so the next try on a phone can show why it went. */
+@Composable
+private fun DropLog(log: List<A11yLog.Entry>) {
+    val zone = ZoneId.systemDefault()
+    val at = DateTimeFormatter.ofPattern("M/d HH:mm")
+    Column(Modifier.fillMaxWidth().padding(top = 26.dp, bottom = 20.dp)) {
+        T(stringResource(R.string.a11y_log_title), size = 12.5.sp, color = pal.t3, medium = true)
+        T(stringResource(R.string.a11y_log_why), size = 12.sp, color = pal.t3, medium = true, modifier = Modifier.padding(top = 2.dp, bottom = 6.dp))
+        for (e in log.takeLast(10).asReversed()) {
+            val time = at.format(Instant.ofEpochMilli(e.at).atZone(zone))
+            T("$time  ${dropText(e)}", size = 12.5.sp, color = pal.t2, medium = true, modifier = Modifier.padding(vertical = 3.dp))
+        }
+    }
+}
+
+@Composable
+private fun dropText(e: A11yLog.Entry): String = when (e.kind) {
+    A11yLog.Kind.DROPPED -> stringResource(R.string.a11y_log_dropped)
+    A11yLog.Kind.TURNED_OFF -> stringResource(R.string.a11y_log_turned_off)
+    A11yLog.Kind.BACK -> stringResource(R.string.a11y_log_back)
+    A11yLog.Kind.EXIT -> {
+        val why = stringResource(
+            when (e.detail.substringAfter(':')) {
+                "low-memory" -> R.string.exit_low_memory
+                "crash" -> R.string.exit_crash
+                "native-crash" -> R.string.exit_native_crash
+                "anr" -> R.string.exit_anr
+                "force-stop" -> R.string.exit_force_stop
+                "signaled" -> R.string.exit_signaled
+                "excessive-use" -> R.string.exit_excessive_use
+                "dependency-died" -> R.string.exit_dependency_died
+                "init-failure" -> R.string.exit_init_failure
+                "permission-change" -> R.string.exit_permission_change
+                "freezer" -> R.string.exit_freezer
+                "user-stopped" -> R.string.exit_user_stopped
+                else -> R.string.exit_other
+            },
+        )
+        stringResource(if (e.detail.startsWith("engine")) R.string.a11y_log_exit_engine else R.string.a11y_log_exit_dictation, why)
     }
 }
 

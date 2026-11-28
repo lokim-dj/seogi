@@ -2,7 +2,6 @@ package io.github.lokimdj.seogi.dictation
 
 import android.Manifest
 import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
@@ -28,6 +27,7 @@ import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.WindowManager
+import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import io.github.lokimdj.seogi.R
@@ -51,9 +51,11 @@ import java.util.concurrent.Executors
  * types (a field has the cursor or the keyboard is up) and goes shortly after;
  * without it there is no way to know, so it stays up ([KeyRule]).
  *
- * Runs in its own process (`:dictation`): the speech engine is native code
- * holding 1.4 GB, and if it ever crashes or is killed for memory, a meeting
- * being recorded by [io.github.lokimdj.seogi.record.RecorderService] goes on.
+ * Runs in its own process (`:dictation`) with [InsertService], so a meeting
+ * being recorded by [io.github.lokimdj.seogi.record.RecorderService] never
+ * goes down with it. The speech engine (native code holding 1.4 GB) runs in a
+ * third process ([EngineService]): when it crashes or is killed for memory,
+ * the accessibility service stays connected (#98).
  *
  * How it stays alive ([KeyKeeper]): with the accessibility service on,
  * [InsertService] holds it bound and the key is that service's overlay, so
@@ -69,7 +71,7 @@ class DictationService : Service() {
     private val engineThread = Executors.newSingleThreadExecutor { Thread(it, "seogi-asr") }
     private val engineContext = engineThread.asCoroutineDispatcher()
     private val engineScope = CoroutineScope(SupervisorJob() + engineContext)
-    private val engine = Loaded(engineScope, IDLE_MS) { SpeechEngine.open(DictationModel.file(this)) }
+    private val engine = Loaded(engineScope, IDLE_MS) { RemoteEngine.open(this) }
 
     private val wm by lazy { getSystemService(WindowManager::class.java) }
     private var view: BubbleView? = null
@@ -97,6 +99,11 @@ class DictationService : Service() {
     private val recordings = object : AudioManager.AudioRecordingCallback() {
         override fun onRecordingConfigChanged(configs: MutableList<AudioRecordingConfiguration>?) = refresh()
     }
+    /** Where the accessibility connection stands, as last looked ([A11yWatch]). */
+    private var a11y = A11yStatus.NOT_NEEDED
+    private val lookAgain = Runnable { lookA11y() }
+    /** Android says an accessibility service was connected or went: look again. */
+    private val a11yChanged = AccessibilityManager.AccessibilityServicesStateChangeListener { lookA11y() }
 
     override fun onCreate() {
         super.onCreate()
@@ -105,6 +112,26 @@ class DictationService : Service() {
         InsertService.keystroke = { typedByHand() }
         // A meeting starting or ending changes whether the key may show.
         getSystemService(AudioManager::class.java).registerAudioRecordingCallback(recordings, main)
+        try {
+            getSystemService(AccessibilityManager::class.java)?.addAccessibilityServicesStateChangeListener(mainExecutor, a11yChanged)
+        } catch (_: Exception) {}
+        A11yWatch.noteExits(this)
+        lookA11y()
+    }
+
+    /**
+     * Looks where the accessibility connection stands; the notification says
+     * so when it needs the user's tap. While Android may still be bringing it
+     * back, looks again once the grace has passed.
+     */
+    private fun lookA11y() {
+        main.removeCallbacks(lookAgain)
+        if (destroyed) return
+        val now = A11yWatch.look(this, bound = bound || InsertService.instance != null)
+        if (now == A11yStatus.CONNECTING) main.postDelayed(lookAgain, A11yHealth.GRACE_MS)
+        if (now == a11y) return
+        a11y = now
+        if (foreground) updateNotification()
     }
 
     // --- staying alive ---
@@ -124,6 +151,7 @@ class DictationService : Service() {
         // otherwise Android ends this service now and opening Seogi brings the
         // key back, with its notification.
         refresh(atOnce = true)
+        lookA11y()
         if (foreground) updateNotification()
         return true
     }
@@ -135,6 +163,7 @@ class DictationService : Service() {
         hidden = false
         settleForeground()
         refresh(atOnce = true)
+        lookA11y()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -465,7 +494,8 @@ class DictationService : Service() {
         val why = when {
             checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED -> R.string.dict_err_mic_permission
             !DictationModel.isReady(this) -> R.string.dict_err_no_model
-            !SpeechEngine.available() -> R.string.dict_err_cpu
+            // Asked without loading the engine here: it loads in its own process ([EngineService]).
+            !SpeechEngine.cpuSupportedHere() -> R.string.dict_err_cpu
             MeetingCheck.recording(
                 RecorderService.sessionDir(this), System.currentTimeMillis(),
                 getSystemService(AudioManager::class.java).activeRecordingConfigurations.isNotEmpty(),
@@ -568,6 +598,8 @@ class DictationService : Service() {
                 throw e // the key was turned off meanwhile: nothing failed, nothing to say
             } catch (e: Throwable) {
                 Log.w(TAG, "transcription failed", e)
+                // The engine's process ended: let it go, so the next sentence starts it again.
+                if (e is EngineGone) engineScope.launch { engine.close() }
                 null
             }
             inFlight--
@@ -632,12 +664,7 @@ class DictationService : Service() {
      * sentence shows only the microphone dot.
      */
     private fun notification(): Notification {
-        val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(
-            NotificationChannel(CHANNEL, getString(R.string.channel_dictation), NotificationManager.IMPORTANCE_LOW).apply {
-                setShowBadge(false)
-            },
-        )
+        A11yWatch.channel(this)
         if (way == KeyKeeper.Way.ACCESSIBILITY) {
             return NotificationCompat.Builder(this, CHANNEL)
                 .setSmallIcon(R.drawable.ic_dictation)
@@ -653,22 +680,26 @@ class DictationService : Service() {
             this, a.hashCode(), Intent(this, DictationService::class.java).setAction(a),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+        val line = KeyNotice.line(hidden, InsertService.instance != null, a11y)
+        // Accessibility dropped: the whole notification is the one tap that brings it back (#98).
+        val fix = line == KeyNotice.Line.FIX
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_dictation)
-            .setContentTitle(getString(R.string.notif_dictation))
+            .setContentTitle(getString(if (fix) R.string.notif_a11y_dropped else R.string.notif_dictation))
             .setContentText(
                 getString(
-                    when {
-                        hidden -> R.string.notif_dictation_hidden
-                        InsertService.instance != null -> R.string.notif_dictation_typing
-                        else -> R.string.notif_dictation_text
+                    when (line) {
+                        KeyNotice.Line.FIX -> R.string.notif_a11y_fix
+                        KeyNotice.Line.HIDDEN -> R.string.notif_dictation_hidden
+                        KeyNotice.Line.TYPING -> R.string.notif_dictation_typing
+                        KeyNotice.Line.ALWAYS -> R.string.notif_dictation_text
                     },
                 ),
             )
             .setOngoing(true)
             .setSilent(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setContentIntent(Notifications.openApp(this))
+            .setContentIntent(if (fix) A11yWatch.fixIntent(this) else Notifications.openApp(this))
             .addAction(
                 0, getString(if (hidden) R.string.action_show_key else R.string.action_hide_key),
                 action(if (hidden) ACTION_SHOW else ACTION_HIDE),
@@ -697,6 +728,8 @@ class DictationService : Service() {
         main.removeCallbacks(settle)
         main.removeCallbacks(listenCap)
         main.removeCallbacks(workCap)
+        main.removeCallbacks(lookAgain)
+        try { getSystemService(AccessibilityManager::class.java)?.removeAccessibilityServicesStateChangeListener(a11yChanged) } catch (_: Exception) {}
         InsertService.listener = null
         InsertService.keystroke = null
         try { getSystemService(AudioManager::class.java).unregisterAudioRecordingCallback(recordings) } catch (_: Exception) {}
@@ -713,8 +746,9 @@ class DictationService : Service() {
 
     companion object {
         private const val TAG = "SeogiDictation"
-        private const val CHANNEL = "dictation"
-        private const val ID_NOTIFICATION = 11
+        private const val CHANNEL = A11yWatch.CHANNEL
+        /** The key's notification; [A11yWatch] looks whether it is up. */
+        const val ID_NOTIFICATION = 11
         /** The full key's window; the face fills [KeyFace.FACE] of it (about 55 dp across). */
         private const val SIZE_DP = 59
         /** The least room at each side, wider than the back gesture strips of common phones. */
@@ -737,6 +771,8 @@ class DictationService : Service() {
          */
         fun start(context: Context) {
             DictationPrefs.setOn(context, true)
+            // When the key's whole process goes, nothing in it can say so: a check every while does (#98).
+            A11yWatch.schedule(context)
             val intent = Intent(context, DictationService::class.java)
             try {
                 if (Accessibility.isOn(context)) {
@@ -759,6 +795,7 @@ class DictationService : Service() {
          */
         fun resume(context: Context, why: String) {
             if (!DictationPrefs.isOn(context)) return
+            A11yWatch.schedule(context)
             if (Accessibility.isOn(context)) {
                 Log.i(TAG, "the key comes back with accessibility ($why)")
                 return
@@ -780,6 +817,7 @@ class DictationService : Service() {
         /** Turns the key off. Call while Seogi is on screen. */
         fun stop(context: Context) {
             DictationPrefs.setOn(context, false)
+            A11yWatch.unschedule(context)
             // Bound by accessibility, stopService would not reach it: it is told instead.
             try {
                 context.startService(Intent(context, DictationService::class.java).setAction(ACTION_OFF))

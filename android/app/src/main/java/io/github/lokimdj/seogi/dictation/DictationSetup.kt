@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.provider.Settings
 import java.io.File
+import java.io.RandomAccessFile
 
 /**
  * The few things dictation remembers, in small files rather than shared
@@ -22,11 +23,33 @@ object DictationPrefs {
             if (value == null) {
                 f.delete()
             } else {
-                val tmp = File(dir(context), "$name.tmp")
+                // A name of its own per process: the key's process and the app's may write at once.
+                val tmp = File(dir(context), "$name.${android.os.Process.myPid()}.tmp")
                 tmp.writeText(value)
                 tmp.renameTo(f)
             }
         } catch (_: Exception) {}
+    }
+
+    private val inProcess = Any()
+
+    /**
+     * Runs [block] holding the dictation files for this process and the
+     * other: read, change and write the accessibility state without the other
+     * process doing the same in between (#98).
+     */
+    fun <T> locked(context: Context, block: () -> T): T = synchronized(inProcess) {
+        val lock = try {
+            RandomAccessFile(File(dir(context), "lock"), "rw")
+        } catch (e: Exception) {
+            null
+        }
+        try {
+            val held = try { lock?.channel?.lock() } catch (e: Exception) { null }
+            try { block() } finally { try { held?.release() } catch (_: Exception) {} }
+        } finally {
+            try { lock?.close() } catch (_: Exception) {}
+        }
     }
 
     /** The user turned the floating key on (it comes back when Seogi is opened). */
@@ -35,7 +58,32 @@ object DictationPrefs {
 
     /** The user chose to go without the accessibility step: text is copied, not typed. */
     fun copyOnly(context: Context) = read(context, "copy-only") != null
-    fun setCopyOnly(context: Context, v: Boolean) = write(context, "copy-only", if (v) "1" else null)
+    fun setCopyOnly(context: Context, v: Boolean) {
+        write(context, "copy-only", if (v) "1" else null)
+        // Choosing copy only is choosing to go without accessibility: its going off is no drop (#98).
+        if (v) setA11yWasOn(context, false)
+    }
+
+    /** The accessibility service was connected once and the user has not chosen copy only since (#98). */
+    fun a11yWasOn(context: Context) = read(context, "a11y-was-on") != null
+    fun setA11yWasOn(context: Context, v: Boolean) = write(context, "a11y-was-on", if (v) "1" else null)
+
+    /** Since when (wall clock ms) accessibility has been on in the settings and not bound. */
+    fun a11yUnboundSince(context: Context) = read(context, "a11y-unbound-since")?.trim()?.toLongOrNull()
+    fun setA11yUnboundSince(context: Context, at: Long?) = write(context, "a11y-unbound-since", at?.toString())
+
+    /** The connection's status as last seen, so a change is noted once in the drop log. */
+    fun a11yLastStatus(context: Context) =
+        read(context, "a11y-status")?.trim()?.let { s -> A11yStatus.entries.firstOrNull { it.name == s } }
+    fun setA11yLastStatus(context: Context, s: A11yStatus) = write(context, "a11y-status", s.name)
+
+    /** The newest process end already looked at for the drop log (wall clock ms). */
+    fun exitsSeenUpTo(context: Context) = read(context, "exits-seen")?.trim()?.toLongOrNull()
+    fun setExitsSeenUpTo(context: Context, at: Long) = write(context, "exits-seen", at.toString())
+
+    /** The drop log's lines ([A11yLog]). */
+    fun a11yLog(context: Context): List<String> = read(context, "a11y-log")?.lines()?.filter { it.isNotBlank() }.orEmpty()
+    fun setA11yLog(context: Context, lines: List<String>) = write(context, "a11y-log", lines.joinToString("\n"))
 
     /** Where the floating key was last left. */
     fun place(context: Context) = BubblePlace.decode(read(context, "place"))

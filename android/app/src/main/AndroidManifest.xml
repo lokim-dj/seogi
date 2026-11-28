@@ -55,6 +55,29 @@
             android:process=":dictation" />
 
         <!--
+            Dictation's speech engine (native, about 1.4 GB) in a process of
+            its own: when it crashes or is ended for memory, the accessibility
+            service in :dictation stays connected (issue #98).
+        -->
+        <service
+            android:name=".dictation.EngineService"
+            android:exported="false"
+            android:process=":engine" />
+
+        <!--
+            A notification's tap that opens Seogi's accessibility switch in
+            Android's settings, or the accessibility list where a phone does
+            not offer that page. Shows nothing itself.
+        -->
+        <activity
+            android:name=".dictation.A11yFixActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay" />
+
+        <!--
             Puts the spoken text into the field with the cursor. Switched on by
             the user in Android's accessibility settings, after Seogi explains it.
         -->

@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.os.StatFs
 import android.provider.Settings as SystemSettings
+import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -50,11 +51,14 @@ import io.github.lokimdj.seogi.data.MeetingList
 import io.github.lokimdj.seogi.data.Recording
 import io.github.lokimdj.seogi.data.UploadError
 import io.github.lokimdj.seogi.data.UploadState
+import io.github.lokimdj.seogi.dictation.A11yHealth
+import io.github.lokimdj.seogi.dictation.A11yLog
+import io.github.lokimdj.seogi.dictation.A11yStatus
+import io.github.lokimdj.seogi.dictation.A11yWatch
 import io.github.lokimdj.seogi.dictation.Accessibility
 import io.github.lokimdj.seogi.dictation.DictationModel
 import io.github.lokimdj.seogi.dictation.DictationPrefs
 import io.github.lokimdj.seogi.dictation.DictationService
-import io.github.lokimdj.seogi.dictation.InsertService
 import io.github.lokimdj.seogi.dictation.ModelDownloadWorker
 import io.github.lokimdj.seogi.dictation.SetupState
 import io.github.lokimdj.seogi.dictation.SetupStep
@@ -276,11 +280,31 @@ class MainActivity : ComponentActivity() {
     )
 
     /** Android's page for Seogi's accessibility service, or the accessibility list where that page is not offered. */
-    private fun openAccessibilitySettings() = tryStart(
-        Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS")
-            .putExtra(Intent.EXTRA_COMPONENT_NAME, android.content.ComponentName(this, InsertService::class.java).flattenToString()),
-        Intent(SystemSettings.ACTION_ACCESSIBILITY_SETTINGS),
-    )
+    private fun openAccessibilitySettings() = A11yWatch.openSettings(this)
+
+    /** Where the floating key's accessibility connection stands (#98); the screens show the one tap when it dropped. */
+    private var a11y by mutableStateOf(A11yStatus.NOT_NEEDED)
+    private var a11yLog by mutableStateOf(emptyList<A11yLog.Entry>())
+    private val a11yChanged = AccessibilityManager.AccessibilityServicesStateChangeListener { lookA11y() }
+
+    private fun lookA11y() {
+        a11y = A11yWatch.look(this)
+        a11yLog = A11yWatch.entries(this)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        try {
+            getSystemService(AccessibilityManager::class.java)?.addAccessibilityServicesStateChangeListener(mainExecutor, a11yChanged)
+        } catch (_: Exception) {}
+        A11yWatch.noteExits(this)
+        lookA11y()
+    }
+
+    override fun onPause() {
+        try { getSystemService(AccessibilityManager::class.java)?.removeAccessibilityServicesStateChangeListener(a11yChanged) } catch (_: Exception) {}
+        super.onPause()
+    }
 
     private fun tryStart(vararg intents: Intent) {
         for (i in intents) {
@@ -433,6 +457,13 @@ class MainActivity : ComponentActivity() {
             lifecycleScope.launch { events = withContext(Dispatchers.IO) { CalendarReader.today(this@MainActivity) } }
         }
         LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh() }
+        // On in the settings and not bound yet: look again once Android has had its moment.
+        LaunchedEffect(a11y) {
+            if (a11y == A11yStatus.CONNECTING) {
+                kotlinx.coroutines.delay(A11yHealth.GRACE_MS)
+                lookA11y()
+            }
+        }
         // Leaving the app ends the undo window: the delete happens now.
         LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
             val screenOn = getSystemService(PowerManager::class.java).isInteractive
@@ -583,6 +614,8 @@ class MainActivity : ComponentActivity() {
                     saveProblem = saveProblem,
                     onOpen = ::openMeeting,
                     onDeleteMeeting = { deleteMeetingTarget = it },
+                    a11yProblem = dictOn && A11yHealth.needsFix(a11y),
+                    onFixA11y = ::openAccessibilitySettings,
                 )
                 Screen.RECORDING -> RecordingScreen(
                     rec = rec,
@@ -673,6 +706,9 @@ class MainActivity : ComponentActivity() {
                     onCopyComputerApp = { ComputerApp.copyLink(this@MainActivity) },
                 )
                 Screen.DICTATION -> DictationScreen(
+                    a11yProblem = dictOn && A11yHealth.needsFix(a11y),
+                    onFixA11y = ::openAccessibilitySettings,
+                    log = a11yLog,
                     state = dict,
                     cpuSupported = cpuSupported,
                     on = dictOn,
