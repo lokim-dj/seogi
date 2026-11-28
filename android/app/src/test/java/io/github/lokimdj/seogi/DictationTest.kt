@@ -349,10 +349,14 @@ class DictationTest {
     @Test fun aWalkCutShortTrustsOnlyTheFocus() {
         val many = (1..10).map { N("row$it") }
         val unseen = N("late", editable = true)
-        val page = N("page", kids = listOf(N("early", editable = true)) + many + unseen)
-        // Not every part was seen: "the only field" or "the only cursor" could be wrong.
-        assertEquals(null, inner(page, limit = 5))
-        assertEquals("early", inner(page))
+        // One field, then a long list: seen whole it is the only one; cut short, it may not be.
+        val lone = N("page", kids = listOf(N("early", editable = true)) + many)
+        assertEquals("early", inner(lone))
+        assertEquals(null, inner(lone, limit = 5))
+        val cursorEarly = N("page", kids = listOf(N("early", editable = true, cursor = true)) + many + unseen)
+        assertEquals("early", inner(cursorEarly))
+        // Not every part was seen: an unseen field could have a cursor too.
+        assertEquals(null, inner(cursorEarly, limit = 5))
         val focusedEarly = N("page", kids = listOf(N("early", editable = true, focused = true)) + many + unseen)
         assertEquals("early", inner(focusedEarly, limit = 5))
     }
