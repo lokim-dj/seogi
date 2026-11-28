@@ -42,6 +42,7 @@ object A11yWatch {
     const val ID_PROMPT = 12
 
     private const val WORK = "a11y-watch"
+    private const val ACTION_DETAILS = "android.settings.ACCESSIBILITY_DETAILS_SETTINGS"
 
     fun component(context: Context) = ComponentName(context, InsertService::class.java)
 
@@ -136,7 +137,8 @@ object A11yWatch {
      */
     fun openSettings(context: Context) {
         val intents = listOf(
-            Intent(Settings.ACTION_ACCESSIBILITY_DETAILS_SETTINGS)
+            // Android's ACCESSIBILITY_DETAILS_SETTINGS (API 31+), not a public constant in the SDK.
+            Intent(ACTION_DETAILS)
                 .putExtra(Intent.EXTRA_COMPONENT_NAME, component(context).flattenToString()),
             Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
         )
