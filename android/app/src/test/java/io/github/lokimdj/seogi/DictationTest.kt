@@ -9,6 +9,7 @@ import io.github.lokimdj.seogi.dictation.InnerField
 import io.github.lokimdj.seogi.dictation.InsertTarget
 import io.github.lokimdj.seogi.dictation.Inserter
 import io.github.lokimdj.seogi.dictation.KeyKeeper
+import io.github.lokimdj.seogi.dictation.KeyFace
 import io.github.lokimdj.seogi.dictation.KeyPresence
 import io.github.lokimdj.seogi.dictation.KeyRule
 import io.github.lokimdj.seogi.dictation.Typing
@@ -208,6 +209,25 @@ class DictationTest {
         assertEquals(1000 - 100 - 50, BubblePlace(1f, 0f).toPixels(1000, 1000, 100, margin = 50).first)
         // A screen too narrow for the margin still shows the whole key.
         assertEquals(0, BubblePlace(0f, 0f).toPixels(100, 1000, 100, margin = 50).first)
+    }
+
+    @Test fun onlyTheDrawnFaceTakesATouch() {
+        // A 168-pixel window: the face's radius is its share of 84, plus the slack.
+        assertEquals(84 * KeyFace.FACE + 10f, KeyFace.radius(168, 1f, 10f), 0.001f)
+        assertTrue(KeyFace.contains(84f, 84f, 168, 1f, 10f))
+        assertTrue(KeyFace.contains(84f, 2f, 168, 1f, 10f)) // the top of the face, with its slack
+        // The window's corners are outside the face: those touches belong to what is below.
+        assertFalse(KeyFace.contains(4f, 4f, 168, 1f, 10f))
+        assertFalse(KeyFace.contains(164f, 164f, 168, 1f, 10f))
+        // Pressed (drawn smaller), the face takes less.
+        assertTrue(KeyFace.contains(84f, 30f, 168, 1f, 0f))
+        assertFalse(KeyFace.contains(84f, 30f, 168, 0.55f, 0f))
+    }
+
+    @Test fun theSpringStaysInsideTheWindow() {
+        // OvershootInterpolator(3.2) peaks near 1.275 of the way: 0.86 springs back to about 1.0385.
+        val peak = 0.86f + (1f - 0.86f) * 1.275f
+        assertTrue(KeyFace.FACE * peak < 0.99f)
     }
 
     @Test fun placeReadsBackAndBadTextGivesTheDefault() {

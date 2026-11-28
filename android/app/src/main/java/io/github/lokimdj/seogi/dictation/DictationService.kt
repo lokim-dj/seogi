@@ -261,8 +261,8 @@ class DictationService : Service() {
         val insert = if (way == KeyKeeper.Way.ACCESSIBILITY) InsertService.instance ?: return else null
         if (insert == null && !Settings.canDrawOverlays(this)) return
         val host = insert?.getSystemService(WindowManager::class.java) ?: wm
-        val size = (SIZE_DP * resources.displayMetrics.density).toInt()
-        val v = BubbleView(this, ::onTouch)
+        val size = fullSize()
+        val v = BubbleView(this, ::onTouch, ::fit)
         v.mode = mode
         v.setAccessibilityDelegate(object : android.view.View.AccessibilityDelegate() {
             override fun performAccessibilityAction(host: android.view.View, action: Int, args: android.os.Bundle?): Boolean {
@@ -340,10 +340,27 @@ class DictationService : Service() {
         val p = params ?: return
         val (w, h) = screen()
         placedFloor = floor()
-        val (x, y) = place.toPixels(w, h, p.width, sideMargin(), placedFloor)
-        p.x = x
-        p.y = y
+        // Placed as the full key; a key stepped back (a smaller window) keeps the same centre.
+        val full = fullSize()
+        val (x, y) = place.toPixels(w, h, full, sideMargin(), placedFloor)
+        p.x = x + (full - p.width) / 2
+        p.y = y + (full - p.height) / 2
         view?.let { try { (keyWm ?: wm).updateViewLayout(it, p) } catch (_: Exception) {} }
+    }
+
+    private fun fullSize() = (SIZE_DP * resources.displayMetrics.density).toInt()
+
+    /**
+     * The window fits the face: smaller while the key steps back, so a touch
+     * beside the small face reaches the keyboard or app below.
+     */
+    private fun fit(small: Boolean) {
+        val p = params ?: return
+        val n = if (small) (fullSize() * KeyFace.BACK).toInt() else fullSize()
+        if (p.width == n) return
+        p.width = n
+        p.height = n
+        placeAt(DictationPrefs.place(this))
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -632,8 +649,8 @@ class DictationService : Service() {
         private const val TAG = "SeogiDictation"
         private const val CHANNEL = "dictation"
         private const val ID_NOTIFICATION = 11
-        /** The window; the face inside is a little smaller ([BubbleView]), so the spring has room. */
-        private const val SIZE_DP = 64
+        /** The full key's window; the face fills [KeyFace.FACE] of it (about 55 dp across). */
+        private const val SIZE_DP = 59
         /** The least room at each side, wider than the back gesture strips of common phones. */
         private const val EDGE_DP = 28
         private const val WARM_AFTER_MS = 250L

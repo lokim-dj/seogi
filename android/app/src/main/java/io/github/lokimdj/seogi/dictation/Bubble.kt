@@ -57,6 +57,36 @@ data class BubblePlace(val x: Float, val y: Float) {
 }
 
 /**
+ * The part of the key's window that takes a touch: the face as it is drawn,
+ * with a little room around it. A touch outside it is for the app or
+ * keyboard below.
+ */
+object KeyFace {
+    /**
+     * The face's radius as a share of the window's half. The spring back
+     * from a press overshoots to about 1.04 of the face (OvershootInterpolator
+     * at 3.2 from 0.86), which with the rim's line still fits in the window;
+     * any more room is window over the keyboard for nothing.
+     */
+    const val FACE = 0.94f
+
+    /** The window's share of its full size while the user types by hand: small, out of the way. */
+    const val BACK = 0.55f
+
+    /** Radius in pixels, from the window's centre, for a [window]-pixel window drawn at [scale]. */
+    fun radius(window: Int, scale: Float, slack: Float): Float = window / 2f * FACE * scale + slack
+
+    /** Whether window pixel ([x], [y]) is on the face. */
+    fun contains(x: Float, y: Float, window: Int, scale: Float, slack: Float): Boolean {
+        val c = window / 2f
+        val r = radius(window, scale, slack)
+        val dx = x - c
+        val dy = y - c
+        return dx * dx + dy * dy <= r * r
+    }
+}
+
+/**
  * What a touch on the floating key means. Speaking starts the moment the key
  * is touched (no words lost while deciding); then
  * - let go after holding at least [holdMs]: stop and write (hold to talk);
