@@ -35,7 +35,32 @@ object DictationPrefs {
 
     /** The user chose to go without the accessibility step: text is copied, not typed. */
     fun copyOnly(context: Context) = read(context, "copy-only") != null
-    fun setCopyOnly(context: Context, v: Boolean) = write(context, "copy-only", if (v) "1" else null)
+    fun setCopyOnly(context: Context, v: Boolean) {
+        write(context, "copy-only", if (v) "1" else null)
+        // Choosing copy only is choosing to go without accessibility: its going off is no drop (#98).
+        if (v) setA11yWasOn(context, false)
+    }
+
+    /** The accessibility service was connected once and the user has not chosen copy only since (#98). */
+    fun a11yWasOn(context: Context) = read(context, "a11y-was-on") != null
+    fun setA11yWasOn(context: Context, v: Boolean) = write(context, "a11y-was-on", if (v) "1" else null)
+
+    /** Since when (wall clock ms) accessibility has been on in the settings and not bound. */
+    fun a11yUnboundSince(context: Context) = read(context, "a11y-unbound-since")?.trim()?.toLongOrNull()
+    fun setA11yUnboundSince(context: Context, at: Long?) = write(context, "a11y-unbound-since", at?.toString())
+
+    /** The connection's status as last seen, so a change is noted once in the drop log. */
+    fun a11yLastStatus(context: Context) =
+        read(context, "a11y-status")?.trim()?.let { s -> A11yStatus.entries.firstOrNull { it.name == s } }
+    fun setA11yLastStatus(context: Context, s: A11yStatus) = write(context, "a11y-status", s.name)
+
+    /** The newest process end already looked at for the drop log (wall clock ms). */
+    fun exitsSeenUpTo(context: Context) = read(context, "exits-seen")?.trim()?.toLongOrNull() ?: 0L
+    fun setExitsSeenUpTo(context: Context, at: Long) = write(context, "exits-seen", at.toString())
+
+    /** The drop log's lines ([A11yLog]). */
+    fun a11yLog(context: Context): List<String> = read(context, "a11y-log")?.lines()?.filter { it.isNotBlank() }.orEmpty()
+    fun setA11yLog(context: Context, lines: List<String>) = write(context, "a11y-log", lines.joinToString("\n"))
 
     /** Where the floating key was last left. */
     fun place(context: Context) = BubblePlace.decode(read(context, "place"))

@@ -29,6 +29,10 @@ import android.view.accessibility.AccessibilityWindowInfo
  * nothing and sends nothing. Runs in the `:dictation` process beside
  * [DictationService], which it holds bound: Android keeps an accessibility
  * service running, so the key needs no notification of its own while it waits.
+ * The speech engine is kept out of this process ([EngineService]): Android
+ * stops restarting a service whose process crashes twice in a row, and an
+ * accessibility service stopped that way stays "not working" until the user
+ * switches it off and on (#98). [A11yWatch] notices that and asks for the tap.
  */
 class InsertService : AccessibilityService() {
     /**
@@ -46,6 +50,8 @@ class InsertService : AccessibilityService() {
 
     override fun onServiceConnected() {
         instance = this
+        // Back after a drop: noted, and the one-tap notification goes.
+        A11yWatch.connected(this)
         // Also bound again after an update or a restart: the key the user left on comes back.
         holdKey()
         check()
@@ -186,6 +192,8 @@ class InsertService : AccessibilityService() {
         typing = false
         keyboardTop = null
         listener?.invoke()
+        // Switched off in the settings, or unbound by Android: noted, and the key's notification says so.
+        A11yWatch.look(this, bound = false)
     }
 
     /**

@@ -9,6 +9,8 @@ import io.github.lokimdj.seogi.data.PhoneFile
 import io.github.lokimdj.seogi.data.Reconcile
 import io.github.lokimdj.seogi.data.RecordingStore
 import io.github.lokimdj.seogi.data.Settings
+import io.github.lokimdj.seogi.dictation.A11yWatch
+import io.github.lokimdj.seogi.dictation.DictationPrefs
 import io.github.lokimdj.seogi.record.Finalizer
 import io.github.lokimdj.seogi.record.Notifications
 import io.github.lokimdj.seogi.record.RecorderService
@@ -50,6 +52,8 @@ class SeogiApp : Application() {
         if (store.restoredFromBackup) scope.launch { reconcileWithPhone() }
         recoverLeftovers()
         UploadQueue.enqueue(this, UploadQueue.Mode.KEEP)
+        // The floating key's accessibility check (#98), for keys left on before it existed.
+        if (DictationPrefs.isOn(this)) A11yWatch.schedule(this)
     }
 
     /** The meetings in the shared Drive folder, the computer's too (issue #67). */
