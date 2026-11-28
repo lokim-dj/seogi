@@ -11,9 +11,14 @@ import io.github.lokimdj.seogi.dictation.InsertService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Test
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -39,6 +44,42 @@ class DictationAndroidTest {
         assertEquals(BubblePlace.Default, DictationPrefs.place(context))
         DictationPrefs.setPlace(context, BubblePlace(0f, 0.3f))
         assertEquals(BubblePlace(0f, 0.3f), DictationPrefs.place(context))
+    }
+
+    @After fun keyOff() = DictationPrefs.setOn(context, false)
+
+    /**
+     * Accessibility on: a start that Android asks to go into the foreground
+     * (Seogi opened while the setting was read as off, or a late listening
+     * start) is answered and left at once; the binding keeps the key.
+     */
+    @Test fun keptByAccessibilityAForegroundStartIsLeftAtOnce() {
+        shadowOf(context).grantPermissions(android.Manifest.permission.RECORD_AUDIO)
+        DictationPrefs.setOn(context, true)
+        val intent = android.content.Intent(context, DictationService::class.java)
+            .putExtra(DictationService.EXTRA_FOREGROUND, true)
+        val controller = Robolectric.buildService(DictationService::class.java, intent).create().bind()
+        val shadow = shadowOf(controller.get())
+        assertNull("bound and waiting: no notification", shadow.lastForegroundNotification)
+        assertFalse(shadow.isForegroundStopped)
+        controller.startCommand(0, 1)
+        // Only a service that went into the foreground can leave it.
+        assertTrue("answered, then left at once", shadow.isForegroundStopped)
+        assertNull("the notification went with it", shadow.lastForegroundNotification)
+    }
+
+    /** Without accessibility it is a foreground service with its notification; accessibility coming on takes that away. */
+    @Test fun theNotificationGoesWhenAccessibilityTakesTheKeyOver() {
+        shadowOf(context).grantPermissions(android.Manifest.permission.RECORD_AUDIO)
+        DictationPrefs.setOn(context, true)
+        val controller = Robolectric.buildService(DictationService::class.java).create().startCommand(0, 1)
+        val shadow = shadowOf(controller.get())
+        val shown = shadow.lastForegroundNotification
+        assertNotNull(shown)
+        assertEquals("hide and off", 2, shown!!.actions.size)
+        assertFalse(shadow.isForegroundStopped)
+        controller.bind()
+        assertTrue(shadow.isForegroundStopped)
     }
 
     /** The engine never shares a process with the recorder: a crash in it cannot stop a meeting's recording. */

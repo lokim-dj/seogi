@@ -8,6 +8,7 @@ import io.github.lokimdj.seogi.dictation.DictationModel
 import io.github.lokimdj.seogi.dictation.InnerField
 import io.github.lokimdj.seogi.dictation.InsertTarget
 import io.github.lokimdj.seogi.dictation.Inserter
+import io.github.lokimdj.seogi.dictation.KeyKeeper
 import io.github.lokimdj.seogi.dictation.KeyPresence
 import io.github.lokimdj.seogi.dictation.KeyRule
 import io.github.lokimdj.seogi.dictation.Typing
@@ -372,6 +373,42 @@ class DictationTest {
         assertTrue(Typing.from(keyboardShowing = null, editableFocused = true, hardKeyboard = false))
         assertFalse(Typing.from(keyboardShowing = null, editableFocused = false, hardKeyboard = false))
         assertTrue(Typing.from(keyboardShowing = false, editableFocused = true, hardKeyboard = true))
+    }
+
+    @Test fun neverTypingOnTheLockScreen() {
+        assertFalse(Typing.from(keyboardShowing = true, editableFocused = true, hardKeyboard = false, locked = true))
+        assertFalse(Typing.from(keyboardShowing = null, editableFocused = true, hardKeyboard = true, locked = true))
+        assertTrue(Typing.from(keyboardShowing = true, editableFocused = true, hardKeyboard = false, locked = false))
+    }
+
+    @Test fun theKeyStaysAboveTheKeyboard() {
+        val place = BubblePlace(1f, 0.62f)
+        val (_, free) = place.toPixels(1080, 2400, 160)
+        assertEquals("no keyboard: where it was left", ((2400 - 160) * 0.62f).toInt(), free)
+        val (_, up) = place.toPixels(1080, 2400, 160, floor = 1500)
+        assertEquals("keyboard from 1500 down: just above it", 1340, up)
+        val (_, high) = BubblePlace(1f, 0.1f).toPixels(1080, 2400, 160, floor = 1500)
+        assertEquals("already above: stays", ((2400 - 160) * 0.1f).toInt(), high)
+        assertEquals("never off the top", 0, BubblePlace.above(500, 160, floor = 100))
+    }
+
+    @Test fun withAccessibilityTheKeyIsForegroundOnlyWhileTheMicIsOpen() {
+        val a11y = KeyKeeper.way(boundByAccessibility = true)
+        assertEquals(KeyKeeper.Way.ACCESSIBILITY, a11y)
+        assertFalse("waiting: no notification", KeyKeeper.foreground(a11y, micOpen = false))
+        assertTrue("listening: a microphone foreground service", KeyKeeper.foreground(a11y, micOpen = true))
+        assertTrue("kept by the binding, not by the foreground", KeyKeeper.alive(a11y, foreground = false, on = true))
+        assertFalse(KeyKeeper.alive(a11y, foreground = false, on = false))
+    }
+
+    @Test fun withoutAccessibilityTheKeyStaysAForegroundService() {
+        val fgs = KeyKeeper.way(boundByAccessibility = false)
+        assertEquals(KeyKeeper.Way.FOREGROUND, fgs)
+        assertTrue(KeyKeeper.foreground(fgs, micOpen = false))
+        assertTrue(KeyKeeper.foreground(fgs, micOpen = true))
+        assertTrue(KeyKeeper.alive(fgs, foreground = true, on = true))
+        assertFalse("nothing keeps it out of the foreground", KeyKeeper.alive(fgs, foreground = false, on = true))
+        assertFalse(KeyKeeper.alive(fgs, foreground = true, on = false))
     }
 
     @Test fun theKeyShowsOnlyWhileTyping() {
