@@ -209,6 +209,8 @@ const en: Strings = {
     what: "The original recording, the transcript and the minutes go with it. You can bring it back from the Trash, at the right end of the Dock.",
     whatWindows:
       "The original recording, the transcript and the minutes go with it. You can bring it back from the Recycle Bin on the desktop.",
+    drive:
+      "Its folder in Google Drive goes to Drive's trash too, so it leaves the phone. Undo right away and it returns to Drive; a meeting taken out of the Trash later returns with 'Put back in Drive' in its menu.",
     openTrash: "Open the trash",
     move: "Move to trash",
     cancel: "Cancel",

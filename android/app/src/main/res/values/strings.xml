@@ -108,6 +108,11 @@
     <string name="delete_other_account">다른 계정(%1$s)에 올린 파일이라 드라이브 휴지통으로 보내지 못했어요. 그 계정의 드라이브에서 지워 주세요.</string>
     <string name="delete_drive_not_found">드라이브에서 그 파일을 찾지 못했어요. 이미 지웠거나 다른 계정에 있을 수 있어요. 드라이브에서 확인해 주세요.</string>
     <string name="delete_list_failed">폰 파일은 지웠지만 목록에서 빼지 못했어요. 앱을 다시 열어 주세요.</string>
+    <string name="delete_meeting_title">이 회의를 지울까요?</string>
+    <string name="delete_meeting_body">드라이브의 이 회의 폴더(녹음 · 받아쓴 글 · 회의록)를 드라이브 휴지통으로 옮깁니다. 드라이브 휴지통에서 되살릴 수 있고, 컴퓨터의 서기에는 그대로 남아요.</string>
+    <string name="delete_meeting_body_phone">드라이브의 이 회의 폴더(녹음 · 받아쓴 글 · 회의록)를 드라이브 휴지통으로 옮기고, 폰의 녹음 파일도 지웁니다. 녹음은 드라이브 휴지통에서 되살릴 수 있고, 컴퓨터의 서기에는 그대로 남아요.</string>
+    <string name="delete_meeting_offline">인터넷이 끊겨 회의를 지우지 못했어요. 연결된 뒤 다시 해 주세요.</string>
+    <string name="delete_meeting_login">구글 로그인이 풀려 회의를 지우지 못했어요. 다시 로그인한 뒤 해 주세요.</string>
     <string name="delete_drive_failed">드라이브 휴지통으로 보내지 못했어요. 드라이브에서 직접 지워 주세요.</string>
 
     <!-- uploads -->

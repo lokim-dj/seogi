@@ -62,6 +62,7 @@ fun HomeScreen(
     onDelete: (Recording) -> Unit = {},
     saveProblem: Boolean = false,
     onOpen: (ListEntry) -> Unit = {},
+    onDeleteMeeting: (ListEntry) -> Unit = {},
 ) {
     val zone = ZoneId.systemDefault()
     val eventLine: @Composable () -> Unit = {
@@ -126,8 +127,12 @@ fun HomeScreen(
                         r != null && r.upload == UploadState.FAILED -> ({ onRetry(r) })
                         else -> onUploads
                     },
-                    onLongClick = r?.let { ({ onDelete(it) }) },
-                    longClickLabel = if (r != null) stringResource(R.string.delete_confirm) else null,
+                    onLongClick = when {
+                        e.meeting != null -> ({ onDeleteMeeting(e) })
+                        r != null -> ({ onDelete(r) })
+                        else -> null
+                    },
+                    longClickLabel = stringResource(R.string.delete_confirm),
                 )
                 Hairline()
             }

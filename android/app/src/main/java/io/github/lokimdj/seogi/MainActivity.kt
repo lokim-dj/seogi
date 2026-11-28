@@ -100,6 +100,7 @@ class MainActivity : ComponentActivity() {
     private var pickedEmail: String? = null
 
     private var deleteTarget by mutableStateOf<Recording?>(null)
+    private var deleteMeetingTarget by mutableStateOf<ListEntry?>(null)
 
     /** Plays the open meeting's recording (read only). */
     private val player by lazy { AudioPlayer(this) }
@@ -409,7 +410,8 @@ class MainActivity : ComponentActivity() {
         val driveMeetings by app.meetings.all.collectAsState()
         val meetingsProblem by app.meetingsProblem.collectAsState()
         val editsChanged by app.meetings.editsChanged.collectAsState()
-        val entries = MeetingList.merge(recordings, driveMeetings)
+        val deletingMeetings by app.deletingMeetings.collectAsState()
+        val entries = MeetingList.merge(recordings, driveMeetings.filter { it.id !in deletingMeetings })
         var openEntry by rememberSaveable { mutableStateOf<String?>(null) }
         var openedFrom by rememberSaveable { mutableStateOf(Screen.HOME) }
         var dict by remember { mutableStateOf(dictationSetup()) }
@@ -580,6 +582,7 @@ class MainActivity : ComponentActivity() {
                     onDelete = { deleteTarget = it },
                     saveProblem = saveProblem,
                     onOpen = ::openMeeting,
+                    onDeleteMeeting = { deleteMeetingTarget = it },
                 )
                 Screen.RECORDING -> RecordingScreen(
                     rec = rec,
@@ -603,6 +606,7 @@ class MainActivity : ComponentActivity() {
                     onWifiOnly = ::setWifiOnly,
                     onDelete = { deleteTarget = it },
                     onOpen = ::openMeeting,
+                    onDeleteMeeting = { deleteMeetingTarget = it },
                     listProblem = when (meetingsProblem) {
                         MeetingLibrary.Outcome.OFFLINE -> stringResource(R.string.list_offline)
                         MeetingLibrary.Outcome.FAILED -> stringResource(R.string.list_failed)
@@ -707,6 +711,20 @@ class MainActivity : ComponentActivity() {
                     Modifier.align(Alignment.BottomCenter).widthIn(max = ReadingWidth),
                 )
             }
+        }
+        deleteMeetingTarget?.let { e ->
+            ConfirmDialog(
+                title = stringResource(R.string.delete_meeting_title),
+                body = stringResource(if (e.recording != null) R.string.delete_meeting_body_phone else R.string.delete_meeting_body),
+                confirm = stringResource(R.string.delete_confirm),
+                cancel = stringResource(R.string.cancel),
+                onConfirm = {
+                    deleteMeetingTarget = null
+                    if (openEntry == e.key) closeMeeting()
+                    app.deleteMeeting(e)
+                },
+                onDismiss = { deleteMeetingTarget = null },
+            )
         }
         deleteTarget?.let { r ->
             val uploaded = Deleter.offerDriveTrash(r, app.settings.driveFolderId)

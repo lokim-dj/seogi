@@ -35,6 +35,17 @@ export function ConfirmDelete({
   const refreshMeetings = useSeogi((s) => s.refreshMeetings);
   const [trouble, setTrouble] = useState("");
   const [going, setGoing] = useState(false);
+  // In the shared Drive folder: its folder there goes to Drive's trash too.
+  const [inDrive, setInDrive] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void commands.seogiDriveStatus().then((status) => {
+      if (live) setInDrive((status?.uploaded ?? []).includes(meeting.id));
+    });
+    return () => {
+      live = false;
+    };
+  }, [meeting.id]);
 
   useEffect(() => {
     const away = (event: KeyboardEvent) => {
@@ -83,6 +94,9 @@ export function ConfirmDelete({
         <p className="mt-3 mb-0 text-[13.5px] t3">
           {t(platform() === "windows" ? "trash.whatWindows" : "trash.what")}
         </p>
+        {inDrive ? (
+          <p className="mt-2 mb-0 text-[13.5px] t3">{t("trash.drive")}</p>
+        ) : null}
         {busy(meeting) ? (
           <p className="mt-3 mb-0 text-[13.5px] rt">{t("trash.busy")}</p>
         ) : null}

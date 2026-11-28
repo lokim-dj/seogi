@@ -357,6 +357,9 @@ struct Slot {
 
 /// A meeting moved to the trash a moment ago.
 struct Trashed {
+    id: String,
+    /// Its Drive folder went to Drive's trash with it (decision 5 of #67).
+    from_drive: bool,
     folder: PathBuf,
     sha256: String,
     /// Where it lies in the trash, when the system says.
@@ -1097,7 +1100,15 @@ impl Secretary {
                 bail!("the meeting could not be moved to the trash ({e})");
             }
         };
+        // Its folder in Drive goes to Drive's trash too, so the phone's list
+        // follows; the meeting here is in the system's trash, not gone.
+        let from_drive = self.uploads.in_drive(id);
+        if from_drive {
+            self.uploads.exclude(id);
+        }
         *lock(&self.trashed) = Some(Trashed {
+            id: id.to_string(),
+            from_drive,
             folder: folder.clone(),
             sha256: meeting.sha256.clone(),
             in_trash,
@@ -1129,6 +1140,9 @@ impl Secretary {
             }
         }
         self.pick_up_library();
+        if trashed.from_drive {
+            self.uploads.include(&trashed.id);
+        }
         info!("A meeting was brought back from the trash");
         Ok(())
     }

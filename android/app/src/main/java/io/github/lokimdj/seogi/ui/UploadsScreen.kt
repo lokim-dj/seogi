@@ -39,6 +39,7 @@ fun UploadsScreen(
     onWifiOnly: (Boolean) -> Unit,
     onDelete: (Recording) -> Unit = {},
     onOpen: (ListEntry) -> Unit = {},
+    onDeleteMeeting: (ListEntry) -> Unit = {},
     listProblem: String? = null,
     onRefresh: () -> Unit = {},
 ) {
@@ -82,8 +83,12 @@ fun UploadsScreen(
                         r != null && r.upload == UploadState.FAILED -> ({ onRetry(r) })
                         else -> null
                     },
-                    onLongClick = r?.let { ({ onDelete(it) }) },
-                    longClickLabel = if (r != null) stringResource(R.string.delete_confirm) else null,
+                    onLongClick = when {
+                        e.meeting != null -> ({ onDeleteMeeting(e) })
+                        r != null -> ({ onDelete(r) })
+                        else -> null
+                    },
+                    longClickLabel = stringResource(R.string.delete_confirm),
                 )
             }
             if (entries.isNotEmpty()) item { Hairline() }

@@ -90,6 +90,7 @@ class EditsTest {
             files += DriveItem("P", name, folderId, 1, null, 1, null)
             return "P"
         }
+        override fun trash(token: String, fileId: String) = true
         override fun rewriteJson(token: String, fileId: String, text: String) {
             writes++
             this.text[fileId] = text

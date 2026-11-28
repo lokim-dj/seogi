@@ -121,6 +121,11 @@ struct Up {
     /// left alone.
     #[serde(default)]
     edits_since: i64,
+    /// Its folder last put in Drive's trash, with what was in it: taken out
+    /// of the trash again when the meeting goes back to Drive, so nothing
+    /// goes up twice and a phone's recording moved there comes back with it.
+    #[serde(default)]
+    trashed_folder: Option<TrashedFolder>,
 }
 
 impl Up {
@@ -153,6 +158,14 @@ impl Saved {
         let text = serde_json::to_string_pretty(self)?;
         store::write_atomically(&data_dir.join(STATE_NAME), text.as_bytes())
     }
+}
+
+/// A meeting's folder in Drive's trash, and what had been sent into it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct TrashedFolder {
+    id: String,
+    #[serde(default)]
+    files: BTreeMap<String, Sent>,
 }
 
 /// Where putting meetings in Drive stands, for the screen.
@@ -225,6 +238,7 @@ pub trait Remote {
     fn rename(&self, id: &str, name: &str) -> Result<()>;
     fn move_into(&self, id: &str, to: &str, from: &[String]) -> Result<()>;
     fn trash(&self, id: &str) -> Result<()>;
+    fn untrash(&self, id: &str) -> Result<()>;
     fn create(&self, parent: &str, name: &str, mime: &str, bytes: &[u8]) -> Result<String>;
     fn update(&self, id: &str, mime: &str, bytes: &[u8]) -> Result<()>;
     fn free_space(&self) -> Result<Option<u64>>;
@@ -235,6 +249,8 @@ pub trait Remote {
     fn find_everywhere(&self, name: &str) -> Result<Vec<Versioned>>;
     /// A small file's content.
     fn read(&self, id: &str) -> Result<Vec<u8>>;
+    /// The folders in `root` that are in Drive's trash.
+    fn trashed_folders(&self, root: &str) -> Result<Vec<String>>;
 }
 
 /// [`Remote`] through the user's Google sign-in.
@@ -270,6 +286,9 @@ impl Remote for Live<'_> {
     fn trash(&self, id: &str) -> Result<()> {
         self.0.call(|token| google::trash(token, id))
     }
+    fn untrash(&self, id: &str) -> Result<()> {
+        self.0.call(|token| google::untrash(token, id))
+    }
     fn create(&self, parent: &str, name: &str, mime: &str, bytes: &[u8]) -> Result<String> {
         self.0
             .call(|token| google::create_small(token, parent, name, mime, bytes))
@@ -300,11 +319,27 @@ impl Remote for Live<'_> {
         self.0
             .call(|token| google::read_small(token, id, EDITS_LIMIT))
     }
+    fn trashed_folders(&self, root: &str) -> Result<Vec<String>> {
+        self.0.call(|token| google::trashed_folders(token, root))
+    }
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
+
+/// The meeting's Drive folder went to Drive's trash: it is not put there
+/// again.
+#[derive(Debug)]
+struct TakenOut;
+
+impl std::fmt::Display for TakenOut {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("its Drive folder is in Drive's trash")
+    }
+}
+
+impl std::error::Error for TakenOut {}
 
 /// The meeting cannot take changes right now (it is being worked on): they
 /// are read again at a later turn, and nothing is wrong.
@@ -428,6 +463,14 @@ impl Uploads {
             .is_some_and(|up| up.excluded)
     }
 
+    /// Whether a meeting is in Drive (or on its way there).
+    pub fn in_drive(&self, id: &str) -> bool {
+        lock(&self.saved)
+            .meetings
+            .get(id)
+            .is_some_and(|up| !up.excluded && (up.uploaded() || up.wanted || !up.folder.is_empty()))
+    }
+
     /// Has a meeting put in Drive (again, when it changed) at the next turn,
     /// unless the user took it out.
     pub fn want(&self, id: &str) {
@@ -491,7 +534,9 @@ impl Uploads {
     pub fn edited(&self, id: &str, changes: Vec<(String, serde_json::Value)>, at_ms: i64) {
         let mut again = false;
         self.change(|saved| {
-            if changes.is_empty() && !saved.meetings.contains_key(id) {
+            // A meeting never put in Drive has no one to tell: nothing is
+            // kept, and a computer without Google stays as it was.
+            if !saved.meetings.contains_key(id) {
                 return;
             }
             let up = saved.meetings.entry(id.to_string()).or_default();
@@ -623,6 +668,12 @@ impl Uploads {
                 }
             }
         }
+        if let Err(e) = self.notice_trashed_folders(remote, &root) {
+            if stops_the_turn(&e) {
+                return Err(e);
+            }
+            warn!("Could not look for meeting folders in Drive's trash: {e:#}");
+        }
         match self.pull_phone_edits(remote, library) {
             Ok(()) => {}
             Err(e) if stops_the_turn(&e) => return Err(e),
@@ -643,6 +694,7 @@ impl Uploads {
             }
             match self.upload_meeting(remote, library, &root, &id) {
                 Ok(()) => {}
+                Err(e) if e.downcast_ref::<TakenOut>().is_some() => {}
                 Err(e) if stops_the_turn(&e) => return Err(e),
                 Err(e) => {
                     // Its own trouble (a file that cannot be read here, one
@@ -657,6 +709,48 @@ impl Uploads {
             Some(e) => Err(e),
             None => Ok(()),
         }
+    }
+
+    /// Notes that a meeting's Drive folder was put in Drive's trash: the
+    /// meeting is taken out of Drive and stays here.
+    fn taken_out_in_drive(&self, id: &str) {
+        info!("Meeting {id}'s Drive folder is in Drive's trash: it stays out of Drive");
+        self.put_up(id, |up| {
+            if !up.folder.is_empty() {
+                up.trashed_folder = Some(TrashedFolder {
+                    id: up.folder.clone(),
+                    files: up.files.clone(),
+                });
+            }
+            up.excluded = true;
+            up.wanted = false;
+            up.to_trash = false;
+            up.audio_waits = false;
+            up.session = None;
+            up.folder.clear();
+            up.folder_name.clear();
+            up.files.clear();
+        });
+    }
+
+    /// Meetings whose Drive folder was put in Drive's trash (on the phone,
+    /// or by hand) are taken out of Drive: one search for all of them.
+    fn notice_trashed_folders(&self, remote: &dyn Remote, root: &str) -> Result<()> {
+        let folders: BTreeMap<String, String> = lock(&self.saved)
+            .meetings
+            .iter()
+            .filter(|(_, up)| !up.excluded && !up.folder.is_empty())
+            .map(|(id, up)| (up.folder.clone(), id.clone()))
+            .collect();
+        if folders.is_empty() {
+            return Ok(());
+        }
+        for folder in remote.trashed_folders(root)? {
+            if let Some(id) = folders.get(&folder) {
+                self.taken_out_in_drive(id);
+            }
+        }
+        Ok(())
     }
 
     /// Reads the phone's files of changes that are new or changed since the
@@ -762,14 +856,22 @@ impl Uploads {
         } else {
             Some(up.folder.clone())
         };
+        let mut trashed = None;
         if let Some(folder) = folder {
             match remote.trash(&folder) {
-                Ok(()) => info!("Meeting {id}'s Drive folder went to Drive's trash"),
+                Ok(()) => {
+                    info!("Meeting {id}'s Drive folder went to Drive's trash");
+                    trashed = Some(TrashedFolder {
+                        id: folder,
+                        files: up.files.clone(),
+                    });
+                }
                 Err(e) if is_not_found(&e) => {}
                 Err(e) => return Err(e),
             }
         }
         self.put_up(id, |up| {
+            up.trashed_folder = trashed;
             up.to_trash = false;
             up.folder.clear();
             up.folder_name.clear();
@@ -792,15 +894,42 @@ impl Uploads {
                     }
                     return Ok(up.folder);
                 }
-                _ => {
-                    // The user put it in the trash or it is gone: what was
-                    // in it is sent again into a new one.
+                Some(_) => {
+                    // Put in Drive's trash (from the phone, or by hand):
+                    // taken out of Drive, as "드라이브에서 빼기" does
+                    // (decision 5 of #67). "드라이브에 다시 올리기" puts it back.
+                    self.taken_out_in_drive(id);
+                    return Err(TakenOut.into());
+                }
+                None => {
+                    // Gone for good: what was in it is sent again into a
+                    // new one.
                     self.put_up(id, |up| {
                         up.folder.clear();
                         up.files.clear();
                         up.session = None;
                     });
                 }
+            }
+        }
+        if let Some(trashed) = self.up(id).trashed_folder {
+            // Back in Drive: its old folder comes out of the trash, with the
+            // recording (and a phone's recording moved there) still in it.
+            let back = match remote.untrash(&trashed.id) {
+                Ok(()) => true,
+                Err(e) if is_not_found(&e) => false,
+                Err(e) => return Err(e),
+            };
+            self.put_up(id, |up| up.trashed_folder = None);
+            if back {
+                info!("Meeting {id}'s Drive folder came out of Drive's trash");
+                remote.rename(&trashed.id, name)?;
+                self.put_up(id, |up| {
+                    up.folder = trashed.id.clone();
+                    up.folder_name = name.to_string();
+                    up.files = trashed.files.clone();
+                });
+                return Ok(trashed.id);
             }
         }
         let folder = match remote.find_meeting_folder(root, id)? {
@@ -1354,6 +1483,16 @@ mod tests {
             lock(&self.files).get_mut(id).unwrap().trashed = true;
             Ok(())
         }
+        fn untrash(&self, id: &str) -> Result<()> {
+            self.note("untrash");
+            match lock(&self.files).get_mut(id) {
+                Some(f) => {
+                    f.trashed = false;
+                    Ok(())
+                }
+                None => Err(google::HttpStatus(404).into()),
+            }
+        }
         fn create(&self, parent: &str, name: &str, _mime: &str, bytes: &[u8]) -> Result<String> {
             self.note("create");
             let id = self.new_id("F");
@@ -1381,6 +1520,13 @@ mod tests {
         fn read(&self, id: &str) -> Result<Vec<u8>> {
             self.note("read");
             Ok(lock(&self.content).get(id).cloned().unwrap_or_default())
+        }
+        fn trashed_folders(&self, root: &str) -> Result<Vec<String>> {
+            Ok(lock(&self.files)
+                .values()
+                .filter(|f| f.trashed && f.parents.iter().any(|p| p == root))
+                .map(|f| f.id.clone())
+                .collect())
         }
         fn free_space(&self) -> Result<Option<u64>> {
             Ok(self.free)
@@ -1716,11 +1862,29 @@ mod tests {
         assert!(folder.join("녹음.wav").exists());
         assert_eq!(uploads.status().excluded, vec!["m1".to_string()]);
 
-        // Put back: a new folder.
+        // Put back: the same folder comes out of the trash, and the
+        // recording is not sent again.
+        let folder_id = lock(&drive.files)
+            .values()
+            .find(|f| f.trashed && f.parents == vec!["ROOT".to_string()])
+            .map(|f| f.id.clone())
+            .unwrap();
+        let chunks = drive.called("chunk");
+        uploads.include("m1");
+        uploads.run_once(&drive, &library).unwrap();
+        assert_eq!(drive.called("mkdir"), 1);
+        assert_eq!(drive.called("untrash"), 1);
+        assert_eq!(uploads.up("m1").folder, folder_id);
+        assert_eq!(drive.called("chunk"), chunks);
+        assert!(!uploads.is_excluded("m1"));
+
+        // Deleted for good meanwhile: a new folder.
+        uploads.exclude("m1");
+        uploads.run_once(&drive, &library).unwrap();
+        lock(&drive.files).remove(&folder_id);
         uploads.include("m1");
         uploads.run_once(&drive, &library).unwrap();
         assert_eq!(drive.called("mkdir"), 2);
-        assert!(!uploads.is_excluded("m1"));
     }
 
     /// A library whose meeting is asked for again while it is being read,
@@ -1807,11 +1971,17 @@ mod tests {
             fn read(&self, id: &str) -> Result<Vec<u8>> {
                 self.0.read(id)
             }
+            fn trashed_folders(&self, r: &str) -> Result<Vec<String>> {
+                self.0.trashed_folders(r)
+            }
             fn move_into(&self, id: &str, t: &str, f: &[String]) -> Result<()> {
                 self.0.move_into(id, t, f)
             }
             fn trash(&self, _id: &str) -> Result<()> {
                 Err(google::HttpStatus(403).into())
+            }
+            fn untrash(&self, id: &str) -> Result<()> {
+                self.0.untrash(id)
             }
             fn create(&self, p: &str, n: &str, m: &str, b: &[u8]) -> Result<String> {
                 self.0.create(p, n, m, b)
@@ -1985,6 +2155,66 @@ mod tests {
         assert!(!uploads.status().uploaded.contains(&"m9".to_string()));
         uploads.edited("m9", vec![("done:x".into(), json!(true))], 1);
         assert!(!uploads.up("m9").wanted);
+    }
+
+    /// Decision 5 of #67: a meeting's Drive folder put in Drive's trash (on
+    /// the phone) takes the meeting out of Drive; it is not made again, and
+    /// the meeting here stays as it is.
+    #[test]
+    fn a_folder_trashed_on_the_phone_is_not_put_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let uploads = uploads(&dir.path().join("data"));
+        let drive = FakeDrive::default();
+        let library = FakeLibrary::new();
+        let (m, folder) = meeting(dir.path(), "m1", Origin::Recorded, b"audio");
+        lock(&library.meetings).insert("m1".into(), (m, folder.clone()));
+        uploads.want("m1");
+        uploads.run_once(&drive, &library).unwrap();
+        let drive_folder = uploads.up("m1").folder;
+        assert!(uploads.in_drive("m1"));
+
+        lock(&drive.files).get_mut(&drive_folder).unwrap().trashed = true;
+        uploads.run_once(&drive, &library).unwrap();
+        assert!(uploads.is_excluded("m1"));
+        assert!(!uploads.in_drive("m1"));
+        // Changed here afterwards: still not put back.
+        uploads.want("m1");
+        uploads.run_once(&drive, &library).unwrap();
+        assert_eq!(drive.called("mkdir"), 1);
+        assert!(folder.join("녹음.wav").exists());
+        // "드라이브에 다시 올리기" (or undoing the delete) takes the same
+        // folder out of the trash.
+        uploads.include("m1");
+        uploads.run_once(&drive, &library).unwrap();
+        assert_eq!(drive.called("mkdir"), 1);
+        assert_eq!(uploads.up("m1").folder, drive_folder);
+        assert!(!lock(&drive.files)[&drive_folder].trashed);
+    }
+
+    /// Asked to go up again after its folder was trashed by hand, before the
+    /// turn that looks for trashed folders: it is taken out, not remade.
+    #[test]
+    fn a_trashed_folder_met_while_uploading_takes_the_meeting_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let uploads = uploads(&dir.path().join("data"));
+        let drive = FakeDrive::default();
+        let library = FakeLibrary::new();
+        let (m, folder) = meeting(dir.path(), "m1", Origin::Recorded, b"audio");
+        lock(&library.meetings).insert("m1".into(), (m, folder));
+        uploads.want("m1");
+        uploads.run_once(&drive, &library).unwrap();
+        let drive_folder = uploads.up("m1").folder;
+        // Moved out of the root first, so the look for trashed folders misses it.
+        {
+            let mut files = lock(&drive.files);
+            let f = files.get_mut(&drive_folder).unwrap();
+            f.trashed = true;
+            f.parents = vec!["ELSEWHERE".into()];
+        }
+        uploads.want("m1");
+        uploads.run_once(&drive, &library).unwrap();
+        assert!(uploads.is_excluded("m1"));
+        assert_eq!(drive.called("mkdir"), 1);
     }
 
     /// Two phone files in one folder (two phones, or a reply lost while one
