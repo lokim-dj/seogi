@@ -65,6 +65,7 @@ import {
   pieces,
   quotedRo,
 } from "../lib/wordfix";
+import { polishedLines, withPolish } from "../lib/polish";
 import { NS } from "../i18n";
 import { clock, fullDay, hm, hms, isoDay, shortModel } from "../lib/format";
 import { joinPath, usePlayer, type Player } from "../lib/player";
@@ -2388,6 +2389,10 @@ function Transcript({
   const [seeing, setSeeing] = useState<number | null>(null);
   // The whole transcript as first written, before any fix.
   const [asWritten, setAsWritten] = useState(false);
+  // The transcript polished for reading (#108), unless asked as said.
+  const [asSaid, setAsSaid] = useState(false);
+  const polished = useMemo(() => polishedLines(meeting), [meeting]);
+  const reading = polished.size > 0 && !asSaid && !asWritten;
   // A fixed word whose fix is shown ("start|from|to"), the words being
   // fixed, the fix just made, and the minutes asked to be written again.
   const [seeingFix, setSeeingFix] = useState<string | null>(null);
@@ -2398,7 +2403,7 @@ function Transcript({
   const box = useRef<HTMLDivElement | null>(null);
   const [picked, dropPicked] = usePickedWords(
     box,
-    asWritten || fixing !== null || panel !== null,
+    asWritten || reading || fixing !== null || panel !== null,
   );
   const current = useRef<HTMLDivElement | null>(null);
   const transcript = meeting.transcript;
@@ -2415,10 +2420,10 @@ function Transcript({
     </div>
   );
 
-  const lines = useMemo(
-    () => paragraphs(transcript?.segments ?? []),
-    [transcript],
-  );
+  const lines = useMemo(() => {
+    const segments = transcript?.segments ?? [];
+    return paragraphs(reading ? withPolish(segments, polished) : segments);
+  }, [transcript, polished, reading]);
   // Each speaker's tone, by number: a new name keeps it.
   const tones = useMemo(() => tonesOf(transcript), [transcript]);
   // A line the speech model made up is shown faintly; the minutes did not
@@ -2476,7 +2481,32 @@ function Transcript({
       className="max-h-[70vh] overflow-y-auto pr-1"
     >
       <p className="mt-0 mb-2 text-[13.5px] t3">
-        {asWritten ? t("edit.originalLead") : t("minutes.transcriptLead")}
+        {asWritten
+          ? t("edit.originalLead")
+          : polished.size > 0
+            ? t(reading ? "polish.polishedLead" : "polish.saidLead")
+            : t("minutes.transcriptLead")}
+        {polished.size > 0 && !asWritten ? (
+          <>
+            {" "}
+            <button
+              type="button"
+              className="lnk text-[13px] t2"
+              aria-pressed={asSaid}
+              onClick={() => {
+                setAsSaid(!asSaid);
+                setFixing(null);
+                setPanel(null);
+              }}
+            >
+              {asSaid ? t("polish.showPolished") : t("polish.showSaid")}
+            </button>
+          </>
+        ) : null}
+        {meeting.polish?.note === "limit" ||
+        meeting.polish?.note === "failed" ? (
+          <span className="block t3">{t(`polish.${meeting.polish.note}`)}</span>
+        ) : null}
         {anyEdited ? (
           <>
             {" "}

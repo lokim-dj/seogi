@@ -492,6 +492,19 @@ const ko = {
     transcribedBy: "받아쓰기 {{speech}}",
     redoWith: "{{model}} 모델로 다시 받아쓰기",
   },
+  polish: {
+    title: "받아쓴 글 다듬기",
+    hint: "띄어쓰기와 문장 부호를 고치고 '어, 음' 같은 군말을 빼서 읽기 쉽게 보여 줘요. 처음 받아쓴 글과 회의록은 그대로예요.",
+    with: "회의록과 같은 모델로 다듬어요: {{who}} · {{model}}",
+    change: "바꾸기",
+    showSaid: "말한 그대로 보기",
+    showPolished: "다듬은 글 보기",
+    saidLead: "말한 그대로, 처음 받아쓴 글입니다.",
+    polishedLead:
+      "읽기 쉽게 다듬은 글입니다. 숫자·이름·날짜와 '안, 못'은 바꾸지 않았어요.",
+    limit: "사용 한도가 차서 다듬지 못한 줄이 있어요.",
+    failed: "모델에 닿지 않아 다듬지 못한 줄이 있어요.",
+  },
   edit: {
     fix: "고치기",
     remove: "지우기",

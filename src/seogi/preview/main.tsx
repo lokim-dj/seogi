@@ -8,7 +8,8 @@
 //            banner-ready | settings-dictation |
 //            indicator-listening | indicator-tidying | indicator-note |
 //            indicator-nowhere | card | card-empty | minutes-edited |
-//            minutes-editing | minutes-fixed | settings-vocabulary
+//            minutes-editing | minutes-fixed | settings-vocabulary |
+//            minutes-polished | settings-polish
 //   &claude=missing|signed_out|signed_in&codex=… sets where the two
 //   subscription tools stand (settings, onboarding).
 //   &summary=key starts on '내 API 키' (Anthropic); &key=anthropic has its
@@ -21,6 +22,9 @@
 //   task and a line. minutes-fixed has a misheard word fixed by the user
 //   and one fixed by the vocabulary as the recording was transcribed;
 //   settings-vocabulary opens 설정 › 녹음 › 용어집.
+//   minutes-polished shows the transcript polished for reading, with the
+//   '말한 그대로 보기' key; settings-polish opens 설정 › 녹음 with
+//   '받아쓴 글 다듬기' on.
 //   card opens the one-page summary of the made-up consultation; card-empty
 //   the same meeting with no decisions, no numbers, nothing to check and a
 //   long title. What the card's save keys would write is kept in
@@ -128,6 +132,29 @@ if (screen === "minutes-fixed") {
   const auto = segments[9];
   if (auto) auto.fixes = [{ at: 4, from: "삼연동", to: "3연동", auto: true }];
 }
+if (screen === "minutes-polished") {
+  // The transcript polished for reading (src-tauri/src/seogi/polish.rs):
+  // a few lines read tidied, the rest as said.
+  const tidied: Record<number, string> = {
+    0: "안녕하세요, 이서진 고객님. 저는 디자인을 맡은 김서윤 실장입니다.",
+    2: "네, 안녕하세요. 32평인데 예산은 4500만원 안쪽으로 맞추고 싶어요.",
+    3: "알겠습니다. 먼저 거실부터 말씀드리면, 우물천장을 살리고 간접등을 넣는 안을 준비했습니다.",
+    13: "거실과 방은 각마루로 하고, 주방만 타일로 나누는 분들이 많습니다.",
+    20: "주방은 상부장을 없애고 싶은데, 수납이 부족할까 봐 걱정이에요.",
+    22: "그건 견적을 보고 결정할게요.",
+    24: "안방에는 붙박이장을 새로 짜고 싶어요.",
+  };
+  const segments = done.transcript?.segments ?? [];
+  done.polish = {
+    model: "claude sonnet",
+    lines: Object.entries(tidied).flatMap(([index, text]) => {
+      const line = segments[Number(index)];
+      return line ? [{ start_ms: line.start_ms, from: line.text, text }] : [];
+    }),
+    note: "",
+    kept_as_said: 1,
+  };
+}
 if (screen === "card-empty") {
   // Nothing decided, no amounts, nothing doubted, and a long title.
   done.customer = "";
@@ -185,6 +212,7 @@ const config: Config = {
   minutes_beside_source: true,
   drive_upload_own: true,
   drive_upload_audio: true,
+  polish: screen === "settings-polish",
   dictation: {
     enabled: screen === "settings-dictation" || screen === "onboarding",
     tidy: screen === "settings-dictation",
@@ -1551,6 +1579,8 @@ async function show() {
     if (screen === "settings") state.go({ name: "settings" });
     if (screen === "settings-dictation")
       state.go({ name: "settings", part: "dictation" });
+    if (screen === "settings-polish")
+      state.go({ name: "settings", part: "recording" });
     if (screen === "settings-vocabulary") {
       state.go({ name: "settings", part: "recording" });
       // Press the vocabulary's "열기" once the settings are on the screen.

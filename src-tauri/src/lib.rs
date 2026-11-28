@@ -1114,6 +1114,7 @@ pub fn run(cli_args: CliArgs) {
         || cli_args.list_models
         || cli_args.seogi_transcribe.is_some()
         || cli_args.seogi_minutes_from.is_some()
+        || cli_args.seogi_polish_from.is_some()
         || cli_args.seogi_library.is_some();
 
     #[allow(unused_mut)]
@@ -1269,6 +1270,7 @@ pub fn run(cli_args: CliArgs) {
                     let code = run_headless_guarded(|| {
                         if args.seogi_transcribe.is_some()
                             || args.seogi_minutes_from.is_some()
+                            || args.seogi_polish_from.is_some()
                             || args.seogi_library.is_some()
                         {
                             seogi::cli::run(&handle, &args)

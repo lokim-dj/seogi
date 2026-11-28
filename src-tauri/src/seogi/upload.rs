@@ -1294,6 +1294,10 @@ pub fn meeting_json(meeting: &Meeting, audio_in_folder: bool, edits_since: i64) 
         .transcript
         .as_ref()
         .map(super::transcript::Transcript::as_read);
+    let polished = match (&meeting.polish, &meeting.transcript) {
+        (Some(polish), Some(t)) => polish.shown(t),
+        _ => Default::default(),
+    };
     let sections: Vec<serde_json::Value> = minutes
         .map(|minutes| {
             minutes
@@ -1354,12 +1358,20 @@ pub fn meeting_json(meeting: &Meeting, audio_in_folder: bool, edits_since: i64) 
             "id": s.id,
             "name": t.speaker_name(s.id),
         })).collect::<Vec<_>>()).unwrap_or_default(),
-        "lines": transcript.as_ref().map(|t| t.segments.iter().map(|segment| json!({
-            "start_ms": segment.start_ms,
-            "end_ms": segment.end_ms,
-            "speaker": segment.speaker,
-            "text": segment.text,
-        })).collect::<Vec<_>>()).unwrap_or_default(),
+        "lines": transcript.as_ref().map(|t| t.segments.iter().map(|segment| {
+            let mut line = json!({
+                "start_ms": segment.start_ms,
+                "end_ms": segment.end_ms,
+                "speaker": segment.speaker,
+                "text": segment.text,
+            });
+            // The line polished for reading, when it is (#108); a line the
+            // user fixed has none.
+            if let Some(polished) = polished.get(&segment.start_ms) {
+                line["polished"] = json!(polished);
+            }
+            line
+        }).collect::<Vec<_>>()).unwrap_or_default(),
     });
     serde_json::to_vec_pretty(&record).unwrap_or_default()
 }
@@ -1665,6 +1677,49 @@ mod tests {
 
     fn uploads(dir: &Path) -> Uploads {
         Uploads::new(dir, Arc::new(Google::new(dir)))
+    }
+
+    #[test]
+    fn the_polished_lines_go_up_beside_the_lines_as_said() {
+        use crate::seogi::polish::{Polish, PolishedLine};
+        use crate::seogi::transcript::{Segment, Transcript};
+        let mut meeting = Meeting::new(0, Origin::Recorded, "녹음.wav");
+        let line = |start_ms: u64, text: &str| Segment {
+            start_ms,
+            end_ms: start_ms + 1_000,
+            speaker: 1,
+            text: text.into(),
+            ..Default::default()
+        };
+        let mut fixed = line(2_000, "어 그건 안돼요");
+        fixed.edited = Some("그건 안 돼요!".into());
+        meeting.transcript = Some(Transcript {
+            segments: vec![line(0, "음 안녕하세요"), fixed],
+            ..Default::default()
+        });
+        meeting.polish = Some(Polish {
+            lines: vec![
+                PolishedLine {
+                    start_ms: 0,
+                    from: "음 안녕하세요".into(),
+                    text: "안녕하세요.".into(),
+                },
+                PolishedLine {
+                    start_ms: 2_000,
+                    from: "어 그건 안돼요".into(),
+                    text: "그건 안 돼요.".into(),
+                },
+            ],
+            ..Default::default()
+        });
+        let json: serde_json::Value =
+            serde_json::from_slice(&meeting_json(&meeting, false, 0)).unwrap();
+        let lines = json["lines"].as_array().unwrap();
+        assert_eq!(lines[0]["text"], "음 안녕하세요");
+        assert_eq!(lines[0]["polished"], "안녕하세요.");
+        // The user's fix wins: no polished words for that line.
+        assert_eq!(lines[1]["text"], "그건 안 돼요!");
+        assert!(lines[1].get("polished").is_none());
     }
 
     #[test]

@@ -111,6 +111,12 @@ pub struct CliArgs {
     #[arg(long, value_name = "QUESTION")]
     pub seogi_ask: Option<String>,
 
+    /// Polish the lines of a meeting.json or transcript.json for reading,
+    /// as the setting does, and write polish.json to --seogi-out: the
+    /// model's answers and the lines the checks kept (for eval/polish.py).
+    #[arg(long, value_name = "JSON")]
+    pub seogi_polish_from: Option<PathBuf>,
+
     /// Run the whole secretary headlessly against this library folder (one
     /// folder per meeting is made in it) and exit when the work is done.
     /// Combine with --seogi-import, --seogi-watch or --seogi-record. The

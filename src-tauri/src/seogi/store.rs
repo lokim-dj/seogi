@@ -28,6 +28,7 @@ use specta::Type;
 
 use super::minutes::{Entry, Minutes, MinutesSection};
 use super::pipeline::Stats;
+use super::polish::Polish;
 use super::render::{self, Header};
 use super::templates::{SectionKind, OPEN_SECTION};
 use super::transcript::Transcript;
@@ -239,6 +240,11 @@ pub struct Meeting {
     pub minutes_ms: u64,
     #[serde(default)]
     pub total_ms: u64,
+    /// The transcript polished for reading, when the user turned polishing
+    /// on (#108). A layer beside the transcript: `transcript` and
+    /// `전사.txt` stay as transcribed, and the minutes do not read it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub polish: Option<Polish>,
 }
 
 /// The most places a search gives for one meeting; `Found::total` counts
@@ -360,6 +366,7 @@ impl Meeting {
             minutes: Vec::new(),
             minutes_ms: 0,
             total_ms: 0,
+            polish: None,
         }
     }
 

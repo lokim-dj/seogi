@@ -29,6 +29,7 @@ import { BackIcon, RightIcon } from "../components/icons";
 import DictationSettings from "./DictationSettings";
 import Permissions from "../components/Permissions";
 import PhoneRow from "../components/PhoneRow";
+import PolishSetting from "../components/PolishSetting";
 import VocabularyWords from "../components/VocabularyWords";
 import SignInRows from "../components/SignInRows";
 import { NS } from "../i18n";
@@ -850,6 +851,12 @@ export default function Settings() {
                     </button>
                   </div>
                 </div>
+                <PolishSetting
+                  config={config}
+                  model={inUse?.label ?? config.summary.model}
+                  onSave={(next) => void save(next)}
+                  onChangeModel={() => setPart("summary")}
+                />
                 <div className="srow">
                   <div>
                     <div className="l">{t("settings.microphone")}</div>

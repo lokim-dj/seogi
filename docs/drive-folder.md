@@ -162,4 +162,8 @@ Fields are only ever added; `format` changes only if one changes meaning.
   is changed in it. Meetings written before ids existed get them when first
   uploaded.
 - Times (`ms`, `start_ms`, `marks_ms`) are milliseconds into the recording.
-- `lines` are the transcript as the user reads it (with their fixes).
+- `lines` are the transcript as the user reads it (with their fixes). A line
+  may also have `polished`: its words tidied for reading (spacing,
+  punctuation, fillers), when the user turned "받아쓴 글 다듬기" on. `text`
+  stays the words as said; a line the user fixed has no `polished`. Older
+  files have none, and an app that does not know it reads `text`.
