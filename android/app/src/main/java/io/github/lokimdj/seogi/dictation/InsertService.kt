@@ -109,6 +109,24 @@ class InsertService : AccessibilityService() {
         return inWindow ?: first
     }
 
+    /**
+     * The field inside [node] when the focus is on a frame that takes no text
+     * itself ([InnerField]). Only when writing ([InsertTarget] asks last):
+     * walking the parts on every focus change would cost the phone for nothing.
+     */
+    private fun inner(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        return try {
+            InnerField.pick(
+                node,
+                children = { n -> (0 until n.childCount).mapNotNull { i -> n.getChild(i) } },
+                // A field kept out of sight (some pages hold one for their own use) is not the user's.
+                editable = { it.isEditable && it.isVisibleToUser },
+                focused = { it.isFocused },
+                hasCursor = { it.textSelectionStart >= 0 },
+            )
+        } catch (e: Exception) { null }
+    }
+
     private fun hardKeyboard(): Boolean {
         val c = resources.configuration
         return c.keyboard != Configuration.KEYBOARD_NOKEYS && c.hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO
@@ -146,6 +164,7 @@ class InsertService : AccessibilityService() {
             focused(), last,
             editable = { it.isEditable },
             onScreen = { n -> n.refresh() && n.isVisibleToUser && (shown.isEmpty() || n.windowId in shown) },
+            inside = ::inner,
         )
         val node = choice.field
         if (node == null) {

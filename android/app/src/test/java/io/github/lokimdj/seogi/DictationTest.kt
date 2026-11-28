@@ -5,6 +5,7 @@ import io.github.lokimdj.seogi.dictation.BubbleGesture.Act
 import io.github.lokimdj.seogi.dictation.BubbleGesture.Mode
 import io.github.lokimdj.seogi.dictation.BubblePlace
 import io.github.lokimdj.seogi.dictation.DictationModel
+import io.github.lokimdj.seogi.dictation.InnerField
 import io.github.lokimdj.seogi.dictation.InsertTarget
 import io.github.lokimdj.seogi.dictation.Inserter
 import io.github.lokimdj.seogi.dictation.KeyPresence
@@ -287,6 +288,73 @@ class DictationTest {
         assertEquals(null, pick(null, F("before", editable = false)).field)
         val same = F("label", editable = false)
         assertEquals(null, pick(same, same).field)
+    }
+
+    @Test fun aFocusedFrameThatTakesNoTextGivesTheFieldInsideIt() {
+        val frame = F("frame", editable = false)
+        val body = F("body")
+        val c = InsertTarget.pick(frame, null, editable = { it.editable }, onScreen = { it.onScreen }, inside = { body })
+        assertEquals(body, c.field)
+        assertFalse(c.refocus)
+        // The field the user was typing in still comes before it.
+        val r = InsertTarget.pick(frame, F("before"), editable = { it.editable }, onScreen = { it.onScreen }, inside = { body })
+        assertEquals(F("before"), r.field)
+        val none = InsertTarget.pick(frame, null, editable = { it.editable }, onScreen = { it.onScreen }, inside = { null })
+        assertEquals(null, none.field)
+        assertEquals("focused field takes no text, none remembered, none inside it", none.why)
+    }
+
+    // --- the field inside a focused frame ---
+
+    private data class N(
+        val name: String,
+        val editable: Boolean = false,
+        val focused: Boolean = false,
+        val cursor: Boolean = false,
+        val kids: List<N> = emptyList(),
+    )
+
+    private fun inner(top: N, limit: Int = 300) = InnerField.pick(
+        top, children = { it.kids }, editable = { it.editable }, focused = { it.focused }, hasCursor = { it.cursor }, limit = limit,
+    )?.name
+
+    @Test fun theOnlyFieldInsideTheFrameIsTaken() {
+        // Samsung Notes' body: the focus on a ScrollView, the EditText within, no cursor reported.
+        val note = N("scroll", kids = listOf(N("layout", kids = listOf(N("body", editable = true)))))
+        assertEquals("body", inner(note))
+    }
+
+    @Test fun amongSeveralFieldsTheOneWithTheCursorIsTaken() {
+        val focusedOne = N("page", kids = listOf(N("title", editable = true), N("body", editable = true, focused = true)))
+        assertEquals("body", inner(focusedOne))
+        val cursorOne = N("page", kids = listOf(N("title", editable = true), N("body", editable = true, cursor = true)))
+        assertEquals("body", inner(cursorOne))
+        // The input focus outranks a cursor left behind in another field.
+        val both = N("page", kids = listOf(N("title", editable = true, cursor = true), N("body", editable = true, focused = true, cursor = true)))
+        assertEquals("body", inner(both))
+    }
+
+    @Test fun severalFieldsWithNothingToTellThemApartAreLeftAlone() {
+        assertEquals(null, inner(N("page", kids = listOf(N("a", editable = true), N("b", editable = true)))))
+        assertEquals(null, inner(N("page", kids = listOf(N("a", editable = true, cursor = true), N("b", editable = true, cursor = true)))))
+        assertEquals(null, inner(N("page", kids = listOf(N("label"), N("button")))))
+        assertEquals(null, inner(N("empty")))
+    }
+
+    @Test fun aFieldsOwnPartsAreNotCountedAsFields() {
+        val field = N("field", editable = true, kids = listOf(N("inner", editable = true)))
+        assertEquals("field", inner(N("frame", kids = listOf(field))))
+    }
+
+    @Test fun aWalkCutShortTrustsOnlyTheFocus() {
+        val many = (1..10).map { N("row$it") }
+        val unseen = N("late", editable = true)
+        val page = N("page", kids = listOf(N("early", editable = true)) + many + unseen)
+        // Not every part was seen: "the only field" or "the only cursor" could be wrong.
+        assertEquals(null, inner(page, limit = 5))
+        assertEquals("early", inner(page))
+        val focusedEarly = N("page", kids = listOf(N("early", editable = true, focused = true)) + many + unseen)
+        assertEquals("early", inner(focusedEarly, limit = 5))
     }
 
     // --- when the key is on the screen ---
