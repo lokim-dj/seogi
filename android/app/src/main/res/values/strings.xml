@@ -135,6 +135,9 @@
     <string name="set_feedback_why">GitHub 이슈로 보내 주세요. 녹음이나 이름은 쓰지 마세요.</string>
     <string name="set_version">버전</string>
     <string name="set_licenses">오픈소스 라이선스</string>
+    <string name="set_computer_app">컴퓨터용 서기 받기</string>
+    <string name="set_computer_app_why">폰으로 녹음한 회의를 회의록으로 쓰는 건 컴퓨터(맥 · 윈도우)의 서기예요.</string>
+    <string name="set_copy_link">링크 복사</string>
 
     <!-- dictation: the floating key -->
     <string name="channel_dictation">말로 입력</string>
