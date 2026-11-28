@@ -15,6 +15,8 @@ import android.util.Log
 import android.view.accessibility.AccessibilityManager
 import androidx.core.app.NotificationCompat
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.Worker
@@ -42,6 +44,7 @@ object A11yWatch {
     const val ID_PROMPT = 12
 
     private const val WORK = "a11y-watch"
+    private const val WORK_AGAIN = "a11y-watch-again"
     private const val ACTION_DETAILS = "android.settings.ACCESSIBILITY_DETAILS_SETTINGS"
 
     fun component(context: Context) = ComponentName(context, InsertService::class.java)
@@ -62,8 +65,10 @@ object A11yWatch {
      * is passed by the service itself, which knows better than the list in
      * the moment it connects or goes.
      */
-    @Synchronized
-    fun look(context: Context, bound: Boolean = isBound(context), now: Long = System.currentTimeMillis()): A11yStatus {
+    fun look(context: Context, bound: Boolean = isBound(context), now: Long = System.currentTimeMillis()): A11yStatus =
+        DictationPrefs.locked(context) { lookLocked(context, bound, now) }
+
+    private fun lookLocked(context: Context, bound: Boolean, now: Long): A11yStatus {
         val enabled = Accessibility.isOn(context)
         val since = A11yHealth.unboundSince(DictationPrefs.a11yUnboundSince(context), enabled, bound, now)
         if (since != DictationPrefs.a11yUnboundSince(context)) DictationPrefs.setA11yUnboundSince(context, since)
@@ -80,8 +85,8 @@ object A11yWatch {
             val kind = A11yHealth.note(before, status)
             if (kind != null) {
                 // Android's reason for a process that ended goes in first, so the log reads in order.
-                noteExits(context)
-                add(context, A11yLog.Entry(now, kind))
+                noteExitsLocked(context, now)
+                addLocked(context, A11yLog.Entry(now, kind))
                 Log.i(TAG, "accessibility: $before -> $status")
             }
         }
@@ -90,15 +95,16 @@ object A11yWatch {
 
     /** The service connected: remember it was on, note the way back, take the prompt down. */
     fun connected(context: Context) {
-        DictationPrefs.setA11yWasOn(context, true)
-        look(context, bound = true)
-        noteExits(context)
+        DictationPrefs.locked(context) {
+            DictationPrefs.setA11yWasOn(context, true)
+            val now = System.currentTimeMillis()
+            lookLocked(context, bound = true, now = now)
+            noteExitsLocked(context, now)
+        }
         cancelPrompt(context)
     }
 
-    /** Adds [e] to the drop log. */
-    @Synchronized
-    fun add(context: Context, e: A11yLog.Entry) {
+    private fun addLocked(context: Context, e: A11yLog.Entry) {
         DictationPrefs.setA11yLog(context, A11yLog.appended(DictationPrefs.a11yLog(context), e))
     }
 
@@ -110,8 +116,17 @@ object A11yWatch {
      * ([ExitNote]): Android keeps their reasons (low memory, a crash, a
      * force stop) in [ActivityManager.getHistoricalProcessExitReasons].
      */
-    @Synchronized
     fun noteExits(context: Context) {
+        DictationPrefs.locked(context) { noteExitsLocked(context, System.currentTimeMillis()) }
+    }
+
+    private fun noteExitsLocked(context: Context, now: Long) {
+        val seen = DictationPrefs.exitsSeenUpTo(context)
+        if (seen == null) {
+            // First look after this version came: older ends are not drops this log can explain.
+            DictationPrefs.setExitsSeenUpTo(context, now)
+            return
+        }
         val exits = try {
             context.getSystemService(ActivityManager::class.java)
                 ?.getHistoricalProcessExitReasons(context.packageName, 0, 16)
@@ -120,10 +135,10 @@ object A11yWatch {
         } catch (e: Exception) {
             return
         }
-        val seen = DictationPrefs.exitsSeenUpTo(context)
-        val fresh = ExitNote.fresh(exits, seen)
-        for ((at, process, reason) in fresh) {
-            add(context, A11yLog.Entry(at, A11yLog.Kind.EXIT, ExitNote.detail(process, reason)))
+        // With the key off or accessibility never on, Android reaping an idle `:dictation` is no drop.
+        val keyInUse = DictationPrefs.isOn(context) && DictationPrefs.a11yWasOn(context)
+        for ((at, process, reason) in ExitNote.fresh(exits, seen, keyInUse)) {
+            addLocked(context, A11yLog.Entry(at, A11yLog.Kind.EXIT, ExitNote.detail(process, reason)))
         }
         val newest = exits.maxOfOrNull { it.first } ?: return
         if (newest > seen) DictationPrefs.setExitsSeenUpTo(context, newest)
@@ -174,12 +189,24 @@ object A11yWatch {
     }
 
     /**
-     * Looks, and posts or takes down the one-tap notification. For when the
-     * key's process is not running to say it: the periodic check, Seogi's start.
+     * Looks, and posts or takes down the one-tap notification: the
+     * accessibility service going, the periodic check, Seogi's start. When
+     * Android may still be bringing the service back, and this is the main
+     * process (where WorkManager runs), looks again once the grace has passed.
      */
-    fun check(context: Context) {
-        val status = look(context)
+    fun check(context: Context, bound: Boolean = isBound(context), canSchedule: Boolean = true) {
+        val status = look(context, bound)
         if (A11yHealth.promptNotification(status, keyNotificationShowing(context))) postPrompt(context) else cancelPrompt(context)
+        if (status == A11yStatus.CONNECTING && canSchedule) {
+            try {
+                WorkManager.getInstance(context).enqueueUniqueWork(
+                    WORK_AGAIN, ExistingWorkPolicy.REPLACE,
+                    OneTimeWorkRequestBuilder<Check>().setInitialDelay(A11yHealth.GRACE_MS + 1_000, TimeUnit.MILLISECONDS).build(),
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "could not schedule the accessibility check", e)
+            }
+        }
     }
 
     private fun postPrompt(context: Context) {
@@ -221,11 +248,14 @@ object A11yWatch {
     }
 
     fun unschedule(context: Context) {
-        try { WorkManager.getInstance(context).cancelUniqueWork(WORK) } catch (_: Exception) {}
+        try {
+            WorkManager.getInstance(context).cancelUniqueWork(WORK)
+            WorkManager.getInstance(context).cancelUniqueWork(WORK_AGAIN)
+        } catch (_: Exception) {}
         cancelPrompt(context)
     }
 
-    /** The periodic check ([schedule]). */
+    /** The periodic check ([schedule]), and the look again after the grace ([check]). */
     class Check(context: Context, params: WorkerParameters) : Worker(context, params) {
         override fun doWork(): Result {
             A11yWatch.check(applicationContext)

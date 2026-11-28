@@ -122,8 +122,10 @@ start and tap to stop; the words go into the field that has the cursor.
   or it was on and is gone from the settings (stopping the app by force does
   that), the key's notification, a notification of its own when the key is not
   running, and the top of the app say "접근성이 끊겼어요"; one tap opens
-  Seogi's accessibility switch. A check every 15 minutes covers the key's
-  whole process being gone. The dictation screen lists the last drops (time,
+  Seogi's accessibility switch. Switching it off is told at once; a check every
+  15 minutes (and once more 30 s later) covers the key's whole process being
+  gone. After a force stop Android runs none of Seogi's checks until Seogi is
+  opened, so the notice shows then, at the top of the app. The dictation screen lists the last drops (time,
   what was seen, Android's reason for a process that ended; nothing said or
   written).
 - No notification while the key waits, when accessibility is on: the

@@ -192,8 +192,9 @@ class InsertService : AccessibilityService() {
         typing = false
         keyboardTop = null
         listener?.invoke()
-        // Switched off in the settings, or unbound by Android: noted, and the key's notification says so.
-        A11yWatch.look(this, bound = false)
+        // Switched off in the settings, or unbound by Android: noted, and the one tap offered at once
+        // (the key's own notification says it instead when it is up). WorkManager runs in the app's process only.
+        A11yWatch.check(this, bound = false, canSchedule = false)
     }
 
     /**

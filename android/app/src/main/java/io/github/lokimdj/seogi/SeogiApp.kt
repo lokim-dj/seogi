@@ -53,7 +53,10 @@ class SeogiApp : Application() {
         recoverLeftovers()
         UploadQueue.enqueue(this, UploadQueue.Mode.KEEP)
         // The floating key's accessibility check (#98), for keys left on before it existed.
-        if (DictationPrefs.isOn(this)) A11yWatch.schedule(this)
+        if (DictationPrefs.isOn(this)) {
+            A11yWatch.schedule(this)
+            scope.launch { A11yWatch.check(this@SeogiApp) }
+        }
     }
 
     /** The meetings in the shared Drive folder, the computer's too (issue #67). */

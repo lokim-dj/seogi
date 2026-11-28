@@ -47,7 +47,10 @@ class A11yHealthTest {
         assertEquals(A11yStatus.DROPPED, status(wasOn = false, unboundForMs = grace))
     }
 
-    /** Stopping the app by force takes it out of the settings (AccessibilityManagerService, onHandleForceStop). */
+    /**
+     * Stopping the app by force takes it out of the settings (AccessibilityManagerService,
+     * onHandleForceStop); Seogi sees it when it is next opened.
+     */
     @Test fun wasOnNowOffIsTurnedOff() {
         assertEquals(A11yStatus.TURNED_OFF, status(enabled = false, wasOn = true))
     }
@@ -190,5 +193,14 @@ class A11yHealthTest {
         )
         val fresh = ExitNote.fresh(exits, seenUpTo = 100)
         assertEquals(listOf(250L, 300L), fresh.map { it.first })
+    }
+
+    /** The key off, or accessibility never on: Android reaping the idle key process is no drop, an engine crash still is. */
+    @Test fun idleKeyProcessEndsAreNotNoted() {
+        val exits = listOf(
+            Triple(300L, "p:dictation", ApplicationExitInfo.REASON_LOW_MEMORY),
+            Triple(250L, "p:engine", ApplicationExitInfo.REASON_CRASH_NATIVE),
+        )
+        assertEquals(listOf(250L), ExitNote.fresh(exits, seenUpTo = 0, keyInUse = false).map { it.first })
     }
 }

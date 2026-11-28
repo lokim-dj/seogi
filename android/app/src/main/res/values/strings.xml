@@ -207,7 +207,7 @@
     <string name="a11y_log_exit_engine">글자 바꾸기가 멈춤 · %1$s</string>
     <string name="exit_low_memory">메모리 부족</string>
     <string name="exit_crash">오류</string>
-    <string name="exit_native_crash">엔진 오류</string>
+    <string name="exit_native_crash">프로그램 오류</string>
     <string name="exit_anr">응답 없음</string>
     <string name="exit_force_stop">강제 중지</string>
     <string name="exit_signaled">시스템이 끝냄</string>

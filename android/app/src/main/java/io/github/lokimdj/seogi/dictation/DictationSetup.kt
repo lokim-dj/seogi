@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.provider.Settings
 import java.io.File
+import java.io.RandomAccessFile
 
 /**
  * The few things dictation remembers, in small files rather than shared
@@ -22,11 +23,33 @@ object DictationPrefs {
             if (value == null) {
                 f.delete()
             } else {
-                val tmp = File(dir(context), "$name.tmp")
+                // A name of its own per process: the key's process and the app's may write at once.
+                val tmp = File(dir(context), "$name.${android.os.Process.myPid()}.tmp")
                 tmp.writeText(value)
                 tmp.renameTo(f)
             }
         } catch (_: Exception) {}
+    }
+
+    private val inProcess = Any()
+
+    /**
+     * Runs [block] holding the dictation files for this process and the
+     * other: read, change and write the accessibility state without the other
+     * process doing the same in between (#98).
+     */
+    fun <T> locked(context: Context, block: () -> T): T = synchronized(inProcess) {
+        val lock = try {
+            RandomAccessFile(File(dir(context), "lock"), "rw")
+        } catch (e: Exception) {
+            null
+        }
+        try {
+            val held = try { lock?.channel?.lock() } catch (e: Exception) { null }
+            try { block() } finally { try { held?.release() } catch (_: Exception) {} }
+        } finally {
+            try { lock?.close() } catch (_: Exception) {}
+        }
     }
 
     /** The user turned the floating key on (it comes back when Seogi is opened). */
@@ -55,7 +78,7 @@ object DictationPrefs {
     fun setA11yLastStatus(context: Context, s: A11yStatus) = write(context, "a11y-status", s.name)
 
     /** The newest process end already looked at for the drop log (wall clock ms). */
-    fun exitsSeenUpTo(context: Context) = read(context, "exits-seen")?.trim()?.toLongOrNull() ?: 0L
+    fun exitsSeenUpTo(context: Context) = read(context, "exits-seen")?.trim()?.toLongOrNull()
     fun setExitsSeenUpTo(context: Context, at: Long) = write(context, "exits-seen", at.toString())
 
     /** The drop log's lines ([A11yLog]). */

@@ -178,9 +178,15 @@ object ExitNote {
         else -> "other"
     }
 
-    /** Which exits to note: newer than [seenUpTo], worth it, oldest first. Each is (time, process, reason). */
-    fun fresh(exits: List<Triple<Long, String, Int>>, seenUpTo: Long): List<Triple<Long, String, Int>> =
-        exits.filter { it.first > seenUpTo && worth(it.second, it.third) }.sortedBy { it.first }
+    /**
+     * Which exits to note: newer than [seenUpTo], worth it, oldest first.
+     * Each is (time, process, reason). Ends of `:dictation` only while
+     * [keyInUse] (the key on and accessibility once connected): otherwise
+     * Android reaping the idle process is no drop.
+     */
+    fun fresh(exits: List<Triple<Long, String, Int>>, seenUpTo: Long, keyInUse: Boolean = true): List<Triple<Long, String, Int>> =
+        exits.filter { it.first > seenUpTo && worth(it.second, it.third) && (keyInUse || !it.second.endsWith(DICTATION)) }
+            .sortedBy { it.first }
 }
 
 /** What the key's notification says while it runs without accessibility. Pure, so it is tested. */
