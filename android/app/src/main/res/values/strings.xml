@@ -128,6 +128,7 @@
     <string name="st_minutes">회의록</string>
     <string name="st_open_tasks">할 일 %1$d</string>
     <string name="sub_from_computer">컴퓨터</string>
+    <string name="list_reading">회의 목록을 새로 읽고 있어요</string>
     <string name="list_offline">인터넷이 끊겨 전에 받아 둔 회의만 보여요</string>
     <string name="list_failed">드라이브의 회의를 읽지 못했어요 · 눌러서 다시</string>
     <string name="m_tasks">할 일</string>

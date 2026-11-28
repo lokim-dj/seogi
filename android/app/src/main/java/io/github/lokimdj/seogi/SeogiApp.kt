@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.MediaStore
 import io.github.lokimdj.seogi.data.ListEntry
 import io.github.lokimdj.seogi.data.MeetingLibrary
+import io.github.lokimdj.seogi.data.MeetingLook
 import io.github.lokimdj.seogi.data.PhoneFile
 import io.github.lokimdj.seogi.data.Reconcile
 import io.github.lokimdj.seogi.data.RecordingStore
@@ -27,6 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.io.File
 import java.time.ZoneId
@@ -75,19 +77,24 @@ class SeogiApp : Application() {
 
     /** How the last look at the shared folder went; null while it went fine. */
     val meetingsProblem = MutableStateFlow<MeetingLibrary.Outcome?>(null)
-    private var lastLook = 0L
+    private val look = MeetingLook()
+
+    /** A look at the shared folder is under way: the lists' ring turns (issue #102). */
+    val readingMeetings: StateFlow<Boolean> get() = look.reading
 
     /**
      * Looks at the shared Drive folder for new or changed meetings, at most
-     * once a minute unless [now]. Does nothing before the first sign-in.
+     * once a minute unless [now] (a pull on the list). Does nothing before
+     * the first sign-in, or while a look is already under way.
      */
     fun refreshMeetings(now: Boolean = false) {
-        if (settings.email.value == null) return
-        val t = System.currentTimeMillis()
-        if (!now && t - lastLook < 60_000) return
-        lastLook = t
+        if (!look.start(settings.email.value != null, System.currentTimeMillis(), now)) return
         scope.launch {
-            val outcome = meetings.refresh()
+            val outcome = try {
+                meetings.refresh()
+            } finally {
+                look.done()
+            }
             meetingsProblem.value = outcome.takeIf { it != MeetingLibrary.Outcome.DONE }
             if (outcome == MeetingLibrary.Outcome.DONE) meetings.pushEdits()
         }
